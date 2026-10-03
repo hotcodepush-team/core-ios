@@ -1,0 +1,17 @@
+included:
+  - Sources
+  - Tests
+disabled_rules:
+  - nesting
+  - todo
+  - function_body_length
+  - line_length
+  - type_body_length
+  - file_length
+  - cyclomatic_complexity
+  - function_parameter_count
+  - large_tuple
+  - identifier_name
+  - force_try
+  - force_unwrapping
+  - force_cast

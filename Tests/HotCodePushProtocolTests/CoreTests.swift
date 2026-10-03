@@ -1,0 +1,754 @@
+import XCTest
+@testable import HotCodePushProtocol
+
+final class CoreTests: XCTestCase {
+    func testShouldRunTheEmbeddedBundleAndBeUpToDateOnAnEmptyChannel() async {
+        let harness = Harness()
+        harness.publish([], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .upToDate(nil))
+        XCTAssertTrue(harness.listener.available.isEmpty)
+        XCTAssertTrue(harness.listener.failed.isEmpty)
+    }
+
+    func testShouldDownloadAReleaseAndApplyItAtTheNextStart() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .updated(v2.release.release, notes: "notes 1", installAt: .nextStart))
+        XCTAssertEqual(harness.loader.persisted, .some("b2"))
+        XCTAssertEqual(harness.loader.loaded, [])
+        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
+        XCTAssertEqual(try Data(contentsOf: harness.loader.projectionDirectory(bundleId: "b2").appendingPathComponent("index.html")), Data("<html>v2</html>".utf8))
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.nextRelease, v2.release.release)
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.index?.sequence, 1)
+
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        let started = await harness.core.getState()
+        XCTAssertEqual(started.currentRelease, v2.release.release)
+        XCTAssertNil(started.nextRelease)
+        XCTAssertNil(started.fallbackRelease)
+        XCTAssertEqual(harness.scheduler.tasks.count, 1)
+        let ready = await harness.core.notifyReady()
+        XCTAssertEqual(ready, NotifyReadyResult(currentRelease: v2.release.release, previousRelease: nil, isRolledBack: false, rollbackReason: nil))
+        let confirmed = await harness.core.getState()
+        XCTAssertEqual(confirmed.fallbackRelease, v2.release.release)
+        XCTAssertTrue(harness.scheduler.tasks[0].isCancelled)
+    }
+
+    func testShouldStartOnTheEmbeddedBundleWhenTheBinaryChanged() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        StateStore(store: harness.store).failedBundleIds = ["b0"]
+        harness.loader.served = nil
+        harness.restart(configuration: Fixture.configuration(builtAt: Fixture.builtAt.addingTimeInterval(86_400)))
+        await harness.core.handleAppStart()
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertNil(status.nextRelease)
+        XCTAssertNil(status.fallbackRelease)
+        XCTAssertEqual(status.failedBundleIds, [])
+        XCTAssertEqual(harness.loader.persisted, .some(nil))
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        XCTAssertEqual(harness.files.bundleIds(), [])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: harness.loader.projectionDirectory(bundleId: "b2").path))
+    }
+
+    func testShouldKeepTheCurrentReleaseWhenTheBinaryIsTheSame() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        harness.restart()
+        await harness.core.handleAppStart()
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease, v2.release.release)
+        XCTAssertEqual(status.fallbackRelease, v2.release.release)
+        XCTAssertEqual(harness.files.bundleIds(), ["b2"])
+    }
+
+    func testShouldStartOnTheEmbeddedBundleWhenTheCurrentReleaseHasNoFilesOnDisk() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        harness.files.deleteEverything()
+        harness.loader.deleteProjection(bundleId: "b2")
+        harness.restart()
+        await harness.core.handleAppStart()
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertNil(status.fallbackRelease)
+        XCTAssertEqual(harness.loader.persisted, .some(nil))
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+        XCTAssertTrue(harness.listener.rolledBack.isEmpty)
+    }
+
+    func testShouldStartOnTheEmbeddedBundleWhenTheNextReleaseHasNoFilesOnDisk() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        harness.files.deleteEverything()
+        harness.loader.deleteProjection(bundleId: "b2")
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertNil(status.nextRelease)
+        XCTAssertEqual(harness.loader.persisted, .some(nil))
+        XCTAssertEqual(harness.loader.loaded, [nil])
+    }
+
+    func testShouldRollBackAReleaseThatNeverRendersAndBlocklistIt() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.installAt, .immediate)
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        XCTAssertEqual(harness.scheduler.tasks.count, 1)
+        harness.scheduler.fire()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.failedBundleIds, ["b2"])
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+        let again = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(again, .skipped(v2.release.release, reason: .failedBefore))
+        let ready = await harness.core.notifyReady()
+        XCTAssertEqual(ready.isRolledBack, true)
+        XCTAssertEqual(ready.rollbackReason, .readyTimeout)
+        XCTAssertEqual(ready.previousRelease, v2.release.release)
+    }
+
+    func testShouldTreatAStartOnAnUnconfirmedReleaseAsACrash() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        harness.restart()
+        await harness.core.handleAppStart()
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.failedBundleIds, ["b2"])
+        XCTAssertEqual(harness.listener.rolledBack.last?.reason, .crashed)
+        XCTAssertEqual(harness.loader.loaded.last, .some(nil))
+    }
+
+    func testShouldFallBackToTheLastConfirmedReleaseNotTheEmbeddedBundle() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
+        harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
+        _ = await harness.core.sync(trigger: .manual)
+        try? await harness.core.rollback(detail: "fatal")
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease, v2.release.release)
+        XCTAssertEqual(status.failedBundleIds, ["b3"])
+        XCTAssertEqual(harness.loader.loaded.last, "b2")
+        let events = StateStore(store: harness.store).unsentEvents
+        XCTAssertEqual(events.last?.type, "rolledBack")
+        XCTAssertEqual(events.last?.toReleaseId, "r1")
+    }
+
+    func testShouldKeepTheCachedIndexOfflineAndIgnoreAnOlderSequence() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 5)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        harness.http.isOffline = true
+        let offline = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(offline.status, .updated)
+        harness.http.isOffline = false
+        harness.publish([], sequence: 4, etag: "\"e0\"")
+        let stale = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(stale.status, .updated)
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.index?.sequence, 5)
+    }
+
+    func testShouldFailOfflineWithoutACachedIndex() async {
+        let harness = Harness()
+        harness.http.isOffline = true
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertEqual(result.reason, FailedReason.offline.rawValue)
+    }
+
+    func testShouldSendTheEtagAndAcceptANotModified() async {
+        let harness = Harness()
+        harness.publish([], sequence: 1, etag: "\"e1\"")
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        harness.http.stub(Fixture.indexUrl(), status: 304, body: Data())
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .upToDate(nil))
+        XCTAssertEqual(harness.http.requests.last?.headers["If-None-Match"], "\"e1\"")
+    }
+
+    func testShouldCheckWithoutDownloading() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.checkForUpdate()
+        XCTAssertEqual(result, .available(v2.release.release, notes: "notes 1", downloadBytes: 15))
+        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
+        XCTAssertEqual(harness.listener.available.map { $0.release }, [v2.release.release])
+        XCTAssertEqual(harness.listener.available.first?.trigger, .manual)
+    }
+
+    func testShouldFailVerificationOnATamperedManifest() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        harness.http.stubJson(v2.release.manifestUrl, ManifestEnvelope(manifest: v2.envelope.manifest + " ", signature: nil))
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertEqual(result.reason, FailedReason.verificationFailed.rawValue)
+    }
+
+    func testShouldRefuseAnUnsignedManifestOnceAPublicKeyIsConfigured() async {
+        let harness = Harness(configuration: Fixture.configuration(publicKeys: ["k1"]))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.reason, FailedReason.invalidSignature.rawValue)
+    }
+
+    func testShouldAdoptAReleaseCarryingTheRunningBundleWithoutAReload() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        let rollback = Fixture.release(number: 2, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2, rollback], sequence: 2, etag: "\"e2\"")
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .updated(rollback.release.release, notes: "notes 2", installAt: .immediate))
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease?.id, "r2")
+        XCTAssertEqual(status.fallbackRelease?.id, "r2")
+    }
+
+    func testShouldRevertToTheEmbeddedBundleWhenTheRunningReleaseIsRevoked() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        harness.publish([v2], sequence: 2, revoked: ["r1"], etag: "\"e2\"")
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .skipped(nil, reason: .releaseRevoked))
+        XCTAssertEqual(harness.loader.loaded.last, .some(nil))
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+    }
+
+    func testShouldQueueTheSwitchWithTheReloadWhileRestartsAreNotAllowed() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.setRestartAllowed(false)
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.installAt, .immediate)
+        XCTAssertEqual(harness.loader.loaded, [])
+        let queued = await harness.core.getState()
+        XCTAssertNil(queued.currentRelease)
+        XCTAssertEqual(queued.nextRelease, v2.release.release)
+        XCTAssertEqual(harness.scheduler.tasks.count, 0)
+        XCTAssertFalse(StateStore(store: harness.store).unsentEvents.contains { $0.type == "applied" })
+        await harness.core.setRestartAllowed(true)
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        let installed = await harness.core.getState()
+        XCTAssertEqual(installed.currentRelease, v2.release.release)
+        XCTAssertNil(installed.nextRelease)
+        XCTAssertEqual(harness.scheduler.tasks.count, 1)
+    }
+
+    func testShouldApplyUpdateAtOnceWhileRestartsAreNotAllowed() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.setRestartAllowed(false)
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.installAt, .manual)
+        await harness.core.applyUpdate()
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease, v2.release.release)
+        XCTAssertNil(status.nextRelease)
+    }
+
+    func testShouldRollBackAtOnceWhileRestartsAreNotAllowed() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        await harness.core.setRestartAllowed(false)
+        try? await harness.core.rollback(detail: "fatal")
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.failedBundleIds, ["b2"])
+    }
+
+    func testShouldClearUpdatesAtOnceWhileRestartsAreNotAllowed() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        await harness.core.setRestartAllowed(false)
+        await harness.core.clearUpdates()
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(harness.files.bundleIds(), [])
+    }
+
+    func testShouldInstallANextResumeReleaseAfterInstallOnResumeAfter() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextResume))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.installAt, .nextResume)
+        await harness.core.handleAppPause()
+        harness.clock.now = harness.clock.now.addingTimeInterval(300)
+        await harness.core.handleAppResume()
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease, v2.release.release)
+        XCTAssertNil(status.nextRelease)
+        XCTAssertEqual(harness.scheduler.tasks.count, 1)
+    }
+
+    func testShouldKeepANextResumeReleaseWaitingAfterAShortBackground() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextResume))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        await harness.core.handleAppResume()
+        await harness.core.handleAppPause()
+        harness.clock.now = harness.clock.now.addingTimeInterval(299)
+        await harness.core.handleAppResume()
+        XCTAssertEqual(harness.loader.loaded, [])
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.nextRelease, v2.release.release)
+    }
+
+    func testShouldSkipOnAMeteredConnectionUnderTheUnmeteredStrategy() async {
+        let harness = Harness()
+        harness.loader.isMetered = true
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual, options: SyncOptions(downloadStrategy: .unmetered))
+        XCTAssertEqual(result, .skipped(v2.release.release, reason: .meteredConnection))
+    }
+
+    func testShouldResolveAChannelNameThroughTheChannelsIndex() async {
+        let harness = Harness()
+        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: "c-staging", name: "staging")]))
+        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/c-staging/ios/v1/index.json", ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: "c-staging", platform: "ios", releases: []))
+        await harness.core.setChannel(.name("staging"))
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .upToDate(nil))
+        let channel = await harness.core.channel()
+        XCTAssertEqual(channel, ChannelResult(id: "c-staging", name: "staging", source: .runtime))
+        await harness.core.setChannel(.name("nowhere"))
+        let unknown = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(unknown.reason, FailedReason.unknownChannel.rawValue)
+    }
+
+    func testShouldMergeAttributesAndRefuseInvalidOnes() async throws {
+        let harness = Harness()
+        try await harness.core.setAttributes(["plan": "beta", "userId": "42"])
+        try await harness.core.setAttributes(["plan": nil])
+        let device = await harness.core.deviceResult()
+        XCTAssertEqual(device.attributes, ["userId": "42"])
+        XCTAssertEqual(device.channel.source, .config)
+        XCTAssertEqual(device.fingerprint, "fp1:abc")
+        do {
+            try await harness.core.setAttributes(["bad key": "x"])
+            XCTFail("expected a plain error")
+        } catch let error as PlainError {
+            XCTAssertTrue(error.message.contains("identifier"))
+        }
+    }
+
+    func testShouldReportChecksOncePerRelease() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), conditions: [.os(range: ">=99")])
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.sync(trigger: .manual)
+        let events = StateStore(store: harness.store).unsentEvents.filter { $0.type == "checked" }
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events[0].reason, SkippedReason.incompatible.rawValue)
+        XCTAssertEqual(events[0].condition, .os)
+    }
+
+    func testShouldSendTheOutboxAndTheReportAfterASyncAndClearThemOnA202() async throws {
+        let harness = Harness()
+        harness.acknowledgeEvents()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.http.posts.count, 1)
+        XCTAssertEqual(harness.http.posts[0].url.absoluteString, Fixture.eventsUrl())
+        XCTAssertEqual(harness.http.posts[0].headers["Content-Type"], "application/json")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: harness.http.posts[0].body) as? [String: Any])
+        let state = StateStore(store: harness.store)
+        XCTAssertEqual(body["deviceId"] as? String, state.deviceId)
+        XCTAssertEqual(body["platform"] as? String, "ios")
+        XCTAssertEqual(body["sdkVersion"] as? String, "0.0.0")
+        XCTAssertEqual((body["events"] as? [[String: Any]])?.map { $0["type"] as? String }, ["checked", "downloaded"])
+        let report = try XCTUnwrap(body["report"] as? [String: Any])
+        XCTAssertEqual(report["channelId"] as? String, Fixture.channelId)
+        XCTAssertEqual(report["channelSource"] as? String, "config")
+        XCTAssertEqual(report["binaryVersion"] as? String, "2.4.1")
+        XCTAssertEqual(report["fingerprint"] as? String, "fp1:abc")
+        XCTAssertEqual(report["embeddedBundleId"] as? String, "embedded")
+        XCTAssertTrue(report["releaseId"] is NSNull)
+        XCTAssertEqual(state.unsentEvents, [])
+        XCTAssertEqual(state.reportedAt, Iso8601.parse("2023-11-14T23:00:00.000Z"))
+        XCTAssertEqual(state.acknowledgedReport?.channelId, Fixture.channelId)
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.lastReportAt, state.reportedAt)
+    }
+
+    func testShouldKeepTheOutboxWhenTheEventsEndpointFailsAndRetryAtTheNextSync() async throws {
+        let harness = Harness()
+        harness.http.stub(Fixture.eventsUrl(), status: 500, body: Data())
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.http.posts.count, 1)
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.count, 2)
+        XCTAssertNil(StateStore(store: harness.store).reportedAt)
+        harness.acknowledgeEvents()
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.http.posts.count, 2)
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
+    }
+
+    func testShouldSendTheReportOncePerChangeAndAgainWhenTheMonthBegan() async throws {
+        let harness = Harness()
+        harness.acknowledgeEvents()
+        harness.publish([], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.http.posts.count, 1)
+        try await harness.core.setAttributes(["plan": "beta"])
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.http.posts.count, 2)
+        let changed = try XCTUnwrap(JSONSerialization.jsonObject(with: harness.http.posts[1].body) as? [String: Any])
+        XCTAssertEqual((changed["report"] as? [String: Any])?["attributes"] as? [String: String], ["plan": "beta"])
+        XCTAssertEqual((changed["events"] as? [Any])?.count, 0)
+        harness.clock.now = harness.clock.now.addingTimeInterval(40 * 86_400)
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.http.posts.count, 3)
+        let monthly = try XCTUnwrap(JSONSerialization.jsonObject(with: harness.http.posts[2].body) as? [String: Any])
+        XCTAssertNotNil(monthly["report"] as? [String: Any])
+    }
+
+    func testShouldSendNothingWhenLiveUpdatesAreOffInADebugBuild() async throws {
+        let harness = Harness(configuration: Fixture.configuration(enabledInDebugBuilds: false), isDebugBuild: true)
+        harness.acknowledgeEvents()
+        harness.publish([], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(result, .skipped(nil, reason: .debugBuild))
+        XCTAssertEqual(harness.http.posts.count, 0)
+    }
+
+    func testShouldSyncOnStartAndResumeWhenAutoCheckIsOn() async throws {
+        let harness = Harness(configuration: Fixture.configuration(autoCheck: true))
+        harness.publish([], sequence: 1)
+        await harness.core.handleAppStart()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
+        await harness.core.handleAppResume()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
+        harness.clock.now = harness.clock.now.addingTimeInterval(1000)
+        harness.restart(configuration: Fixture.configuration(autoCheck: true))
+        await harness.core.handleAppResume()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .resume)
+    }
+
+    func testShouldPauseTheIntervalTimerInTheBackgroundAndReArmItOnResume() async throws {
+        let harness = Harness(configuration: Fixture.configuration(autoCheck: true))
+        harness.publish([], sequence: 1)
+        await harness.core.handleAppStart()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [900])
+        await harness.core.handleAppPause()
+        XCTAssertTrue(harness.scheduler.tasks[0].isCancelled)
+        harness.clock.now = harness.clock.now.addingTimeInterval(600)
+        await harness.core.handleAppResume()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
+        XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [900, 300])
+    }
+
+    func testShouldDeleteTheServedTreesAndFilesOfBundlesNoKeptReleaseLists() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
+        let v4 = Fixture.release(number: 3, bundleId: "b4", content: Data("<html>v4</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        harness.publish([v2, v3, v4], sequence: 3, etag: "\"e3\"")
+        _ = await harness.core.sync(trigger: .manual, options: SyncOptions(installStrategy: .nextStart))
+        for bundleId in ["b2", "b3", "b4"] {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: harness.loader.projectionDirectory(bundleId: bundleId).appendingPathComponent("index.html").path), bundleId)
+        }
+        harness.loader.served = "b4"
+        harness.restart(configuration: Fixture.configuration(installStrategy: .immediate))
+        await harness.core.handleAppStart()
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease?.bundleId, "b4")
+        XCTAssertEqual(status.fallbackRelease?.bundleId, "b3")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: harness.loader.projectionDirectory(bundleId: "b2").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: harness.loader.projectionDirectory(bundleId: "b3").appendingPathComponent("index.html").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: harness.loader.projectionDirectory(bundleId: "b4").appendingPathComponent("index.html").path))
+        XCTAssertEqual(harness.files.bundleIds(), ["b3", "b4"])
+        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
+        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex("js-b2")))
+        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v3</html>")))
+        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v4</html>")))
+    }
+
+    func testShouldClearUpdatesToTheEmbeddedBundleAndKeepTheIdentity() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        try await harness.core.setAttributes(["plan": "beta"])
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        await harness.core.clearUpdates()
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.failedBundleIds, [])
+        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
+        XCTAssertEqual(harness.loader.loaded.last, .some(nil))
+        let device = await harness.core.deviceResult()
+        XCTAssertEqual(device.attributes, ["plan": "beta"])
+    }
+
+    func testShouldStopAfterTheCheckUnderTheManualDownloadStrategyAndDownloadOnCall() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .manual, downloadStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let synced = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(synced, .available(v2.release.release, notes: "notes 1", downloadBytes: 15))
+        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
+        XCTAssertEqual(harness.listener.available.count, 1)
+        let downloaded = await harness.core.downloadUpdate()
+        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1"))
+        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
+        XCTAssertEqual(harness.listener.downloaded.map { $0.installAt }, [.manual])
+        XCTAssertEqual(harness.loader.loaded, [])
+        let state = await harness.core.getState()
+        XCTAssertEqual(state.nextRelease, v2.release.release)
+        XCTAssertEqual(state.lastCheck?.result.status, .available)
+        let applied = await harness.core.applyUpdate()
+        XCTAssertEqual(applied, ApplyResult(status: .applied, release: v2.release.release))
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        let nothing = await harness.core.applyUpdate()
+        XCTAssertEqual(nothing, ApplyResult(status: .nothingToApply, release: v2.release.release))
+    }
+
+    func testShouldDownloadOnCallWhateverTheConnectionUnderTheUnmeteredStrategy() async {
+        let harness = Harness(configuration: Fixture.configuration(downloadStrategy: .unmetered))
+        harness.loader.isMetered = true
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let skipped = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(skipped, .skipped(v2.release.release, reason: .meteredConnection))
+        let downloaded = await harness.core.downloadUpdate()
+        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1"))
+        XCTAssertEqual(harness.listener.downloaded.map { $0.installAt }, [.nextStart])
+    }
+
+    func testShouldInstallAMandatoryReleaseAtOnceWhateverTheInstallStrategy() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextStart))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.installAt, .immediate)
+        XCTAssertEqual(result.release?.isMandatory, true)
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        XCTAssertTrue(harness.listener.downloaded.isEmpty)
+    }
+
+    func testShouldHandAMandatoryReleaseToTheAppUnderTheManualMandatoryStrategy() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextStart, mandatoryInstallStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .updated(v2.release.release, notes: "notes 1", installAt: .manual))
+        XCTAssertEqual(harness.listener.downloaded.map { $0.release.isMandatory }, [true])
+        XCTAssertEqual(harness.loader.loaded, [])
+        harness.loader.served = nil
+        harness.restart(configuration: Fixture.configuration(installStrategy: .nextStart, mandatoryInstallStrategy: .manual))
+        await harness.core.handleAppStart()
+        let state = await harness.core.getState()
+        XCTAssertNil(state.currentRelease)
+        XCTAssertEqual(state.nextRelease, v2.release.release)
+    }
+
+    func testShouldTreatTheNewestReleaseAsMandatoryWhenAMandatoryOneWasMissed() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextStart, mandatoryInstallStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
+        let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
+        harness.publish([v2, v3], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.release?.id, "r2")
+        XCTAssertEqual(result.release?.isMandatory, true)
+        XCTAssertEqual(result.installAt, .manual)
+    }
+
+    func testShouldCarryTheAppsRollbackReasonOnTheFailureEvent() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        try await harness.core.rollback(detail: "checkout crashed")
+        let failed = StateStore(store: harness.store).unsentEvents.last { $0.type == "failed" }
+        XCTAssertEqual(failed?.reason, RollbackReason.reportedByApp.rawValue)
+        XCTAssertEqual(failed?.detail, "checkout crashed")
+        do {
+            try await harness.core.rollback(detail: "a\nb")
+            XCTFail("expected a plain error")
+        } catch is PlainError {}
+    }
+
+    func testShouldSyncAndCleanUpAtAStartThatRollsBackACrash() async throws {
+        let harness = Harness(configuration: Fixture.configuration(autoCheck: true))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        harness.loader.served = "b2"
+        harness.restart(configuration: Fixture.configuration(autoCheck: true))
+        await harness.core.handleAppStart()
+        harness.restart(configuration: Fixture.configuration(autoCheck: true))
+        await harness.core.handleAppStart()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.listener.rolledBack.last?.reason, .crashed)
+        XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
+        XCTAssertEqual(harness.files.bundleIds(), [])
+    }
+
+    func testShouldAnnounceTheRollbackWhenTheReloadRunsAndNotBefore() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        await harness.core.setRestartAllowed(false)
+        harness.scheduler.fire()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(harness.listener.rolledBack.isEmpty)
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        await harness.core.setRestartAllowed(true)
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
+    }
+
+    func testShouldFailOfflineNotUnknownWhenAChannelNameCannotBeResolved() async {
+        let harness = Harness()
+        await harness.core.setChannel(.name("staging"))
+        harness.http.isOffline = true
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.reason, FailedReason.offline.rawValue)
+        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.offline])
+    }
+
+    func testShouldFetchTheDeltaAgainstTheEmbeddedBundleOnTheFirstUpdate() async throws {
+        let harness = Harness()
+        let content = Data("<html>v2</html>".utf8)
+        var v2 = Fixture.release(number: 1, bundleId: "b2", content: content)
+        let deltaUrl = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/b2/deltas/embedded"
+        let manifest = BundleManifest(bundleId: "b2", appId: Fixture.appId, version: v2.manifest.version, createdAt: v2.manifest.createdAt, files: v2.manifest.files, pack: v2.manifest.pack, deltas: [.init(baseBundleId: "embedded", url: deltaUrl, sizeBytes: v2.pack.count)])
+        let manifestJson = String(bytes: try Json.encoder.encode(manifest), encoding: .utf8) ?? ""
+        v2.release = IndexRelease(id: "r1", number: 1, createdAt: v2.release.createdAt, notes: "notes 1", bundleId: "b2", bundleVersion: manifest.version, manifestUrl: v2.release.manifestUrl, manifestSha256: Hashing.sha256Hex(manifestJson), sizeBytes: content.count)
+        harness.publish([], sequence: 1)
+        harness.http.stubJson(Fixture.indexUrl(), Fixture.index(sequence: 1, releases: [v2.release]), headers: ["ETag": "\"e1\""])
+        harness.http.stubJson(v2.release.manifestUrl, ManifestEnvelope(manifest: manifestJson, signature: nil))
+        harness.http.stub(deltaUrl, body: v2.pack)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.status, .updated)
+        XCTAssertTrue(harness.http.requests.contains { $0.url.absoluteString == deltaUrl })
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.first { $0.type == "downloaded" }?.packKind, PackKind.delta.rawValue)
+    }
+}

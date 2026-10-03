@@ -1,0 +1,10 @@
+.DS_Store
+node_modules
+
+.build
+.swiftpm
+DerivedData
+Package.resolved
+Pods
+Podfile.lock
+xcuserdata

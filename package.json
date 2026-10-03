@@ -1,0 +1,16 @@
+{
+  "name": "@hotcodepush/protocol-ios-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The protocol fixtures the Swift package's tests read; nothing of this file ships",
+  "license": "MIT",
+  "scripts": {
+    "fmt": "swiftlint --fix --quiet",
+    "lint": "swiftlint lint --quiet --strict",
+    "test": "swift test",
+    "verify": "npm run lint && npm run test"
+  },
+  "devDependencies": {
+    "@hotcodepush/protocol": "https://pkg.pr.new/hotcodepush-team/protocol-js/@hotcodepush/protocol@ada56e8c8a86bc7a6fda7fa2442e5dc6cde85b44"
+  }
+}
