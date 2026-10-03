@@ -38,7 +38,7 @@ final class FakeHttpClient: HttpClient {
     func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws {
         requests.append((url, [:]))
         if isOffline { throw URLError(.notConnectedToInternet) }
-        guard let stub = stubs[url.absoluteString], stub.status == 200 else { throw DownloadFailure.downloadFailed("HTTP 404") }
+        guard let stub = stubs[url.absoluteString], stub.status == 200 else { throw HttpStatusError(status: stubs[url.absoluteString]?.status ?? 404) }
         guard stub.body.count <= maximumBytes else { throw DownloadFailure.downloadFailed("\(url.lastPathComponent) is larger than its \(maximumBytes) bytes") }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try stub.body.write(to: file)

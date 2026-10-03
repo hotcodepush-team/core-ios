@@ -734,6 +734,28 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.offline])
     }
 
+    func testShouldTakeTheStreamedDeltaWhenTheDeviceIsTwoReleasesBehind() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
+        let v4 = Fixture.release(number: 3, bundleId: "b4", content: Data("<html>v4</html>".utf8))
+        harness.publish([v3, v4], sequence: 2, etag: "\"e2\"")
+        let precomputedDeltaUrl = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/b4/deltas/b3"
+        harness.http.stubJson(v4.release.manifestUrl, ManifestEnvelope(bundleId: "b4", createdAt: v4.envelope.createdAt, manifest: v4.envelope.manifest, pack: v4.envelope.pack, deltas: [.init(baseBundleId: "b3", url: precomputedDeltaUrl, sizeBytes: v4.pack.count)]))
+        let streamedDeltaUrl = "\(Fixture.updatesBaseUrl)/v1/apps/\(Fixture.appId)/bundles/b4/deltas/b2"
+        harness.http.stub(streamedDeltaUrl, body: v4.pack)
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.status, .updated)
+        XCTAssertEqual(result.release?.bundleId, "b4")
+        XCTAssertTrue(harness.http.requests.contains { $0.url.absoluteString == streamedDeltaUrl })
+        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == precomputedDeltaUrl || $0.url.absoluteString == v4.envelope.pack.url })
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.last { $0.type == "downloaded" }?.packKind, PackKind.streamed.rawValue)
+    }
+
     func testShouldFetchTheDeltaAgainstTheEmbeddedBundleOnTheFirstUpdate() async throws {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))

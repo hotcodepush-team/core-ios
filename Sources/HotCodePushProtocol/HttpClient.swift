@@ -16,12 +16,24 @@ public struct HttpResponse {
     }
 }
 
+/// A download answered with a status other than 200 or 206; a redirect is one, since a download follows none.
+public struct HttpStatusError: Error, Equatable, LocalizedError {
+    public let status: Int
+
+    public init(status: Int) {
+        self.status = status
+    }
+
+    public var errorDescription: String? { "HTTP \(status)" }
+}
+
 /// The three HTTP shapes the core needs: a small GET, a small POST and a large download that resumes.
 public protocol HttpClient {
     func get(_ url: URL, headers: [String: String]) async throws -> HttpResponse
     func post(_ url: URL, headers: [String: String], body: Data) async throws -> HttpResponse
     /// Downloads to the file, appending from its current size with a `Range` request when it exists; what arrived stays when the
-    /// connection drops, for the next attempt to resume. Past `maximumBytes`, or on a status other than 200 or 206, it stops and deletes the file.
+    /// connection drops, for the next attempt to resume. Past `maximumBytes` it stops and deletes the file; on a status other than
+    /// 200 or 206 — a redirect included, which it never follows — it deletes the file and throws `HttpStatusError`.
     func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws
 }
 
@@ -185,7 +197,7 @@ private final class TransferDelegate: NSObject, URLSessionDataDelegate {
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 || status == 206 else {
-            transfer.abandon(DownloadFailure.downloadFailed("HTTP \(status) for \(transfer.url.lastPathComponent)"))
+            transfer.abandon(HttpStatusError(status: status))
             completionHandler(.cancel)
             return
         }
@@ -196,6 +208,11 @@ private final class TransferDelegate: NSObject, URLSessionDataDelegate {
             transfer.abandon(error)
             completionHandler(.cancel)
         }
+    }
+
+    /// A download stays on the URL the core pinned: its redirect is the answer, never a second request to wherever it points.
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(transfer(for: task) == nil ? request : nil)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {

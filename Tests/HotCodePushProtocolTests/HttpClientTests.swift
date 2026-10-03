@@ -34,7 +34,19 @@ final class HttpClientTests: XCTestCase {
         try writePartialFile("abc")
         let client = StubUrlProtocol.client { _ in .init(status: 416, body: Data()) }
         let error = await download(with: client, maximumBytes: 8)
-        XCTAssertEqual((error as? DownloadFailure)?.reason, .downloadFailed)
+        XCTAssertEqual(error as? HttpStatusError, HttpStatusError(status: 416))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testShouldAnswerARedirectWithItsStatusAndNeverFollowIt() async throws {
+        var requested: [URL?] = []
+        let client = StubUrlProtocol.client { request in
+            requested.append(request.url)
+            return .init(status: 302, body: Data(), redirectLocation: URL(string: "https://elsewhere.test/pack"))
+        }
+        let error = await download(with: client, maximumBytes: 8)
+        XCTAssertEqual(error as? HttpStatusError, HttpStatusError(status: 302))
+        XCTAssertEqual(requested, [url])
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
     }
 
@@ -87,6 +99,8 @@ final class StubUrlProtocol: URLProtocol {
         let body: Data
         /// The connection drops once the body has been read, as a network drops after what it delivered.
         var isInterrupted = false
+        /// Where a redirect points; the loading system then asks the session whether to follow.
+        var redirectLocation: URL?
     }
 
     static var reply: (URLRequest) -> Reply = { _ in Reply(status: 404, body: Data()) }
@@ -104,6 +118,9 @@ final class StubUrlProtocol: URLProtocol {
     override func startLoading() {
         let reply = StubUrlProtocol.reply(request)
         let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: [:])!
+        if let location = reply.redirectLocation {
+            client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: location), redirectResponse: response)
+        }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: reply.body)
         if reply.isInterrupted {

@@ -26,6 +26,14 @@ public struct DownloadOutcome: Equatable {
     public let packKind: PackKind
 }
 
+/// Where a pack comes from: its URL, its size where the envelope states one, the most bytes it may hold and how the bytes arrive.
+struct PackSource: Equatable {
+    let url: String
+    let sizeBytes: Int?
+    let maximumBytes: Int
+    let kind: PackKind
+}
+
 /// Manifest, signature, missing files, pack, verification, files to disk — each step one function.
 public final class Downloader {
     private let configuration: Configuration
@@ -46,13 +54,12 @@ public final class Downloader {
         let (envelope, manifest) = try await fetchBundleManifest(target)
         let missing = resolveMissingFiles(manifest)
         let pack = missing.isEmpty ? nil : resolvePack(envelope, currentBundleId: currentBundleId, missing: missing)
-        try verifyFreeSpace(forBytes: missing.reduce(0) { $0 + $1.sizeBytes } + (pack?.source.sizeBytes ?? 0))
+        try verifyFreeSpace(forBytes: missing.reduce(0) { $0 + $1.sizeBytes } + (pack?.maximumBytes ?? 0))
         var bytes = 0
         var packKind = PackKind.files
         if let pack = pack {
             let wanted = Dictionary(missing.map { ($0.sha256, $0.sizeBytes) }, uniquingKeysWith: { first, _ in first })
-            bytes += try await downloadPack(pack.source, bundleId: envelope.bundleId, wanted: wanted, progress: progress)
-            packKind = pack.kind
+            (bytes, packKind) = try await downloadPack(pack, envelope: envelope, wanted: wanted, progress: progress)
         }
         for file in resolveMissingFiles(manifest) {
             bytes += try await downloadFile(file)
@@ -95,15 +102,22 @@ public final class Downloader {
         return manifest.files.filter { !files.hasFile(sha256: $0.sha256) && !embedded.has(sha256: $0.sha256) }
     }
 
-    /// The delta pack against the running bundle where one exists, the full pack otherwise; nothing when the pack would cost more than the files.
-    func resolvePack(_ envelope: ManifestEnvelope, currentBundleId: String?, missing: [BundleManifest.File]) -> (source: ManifestEnvelope.Pack, kind: PackKind)? {
+    /// The delta pack the bucket holds against the running bundle; for any other base the device runs, the delta the updates host
+    /// streams, never larger than the full pack whose entries it shares; without a base the full pack; nothing when one file is cheaper than a pack.
+    func resolvePack(_ envelope: ManifestEnvelope, currentBundleId: String?, missing: [BundleManifest.File]) -> PackSource? {
         if let currentBundleId = currentBundleId, let delta = envelope.deltas.first(where: { $0.baseBundleId == currentBundleId }) {
-            return (.init(url: delta.url, sizeBytes: delta.sizeBytes), .delta)
+            return PackSource(url: delta.url, sizeBytes: delta.sizeBytes, maximumBytes: delta.sizeBytes, kind: .delta)
         }
-        if missing.count > 1 {
-            return (envelope.pack, .full)
+        guard missing.count > 1 else { return nil }
+        if let currentBundleId = currentBundleId {
+            let url = "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/bundles/\(envelope.bundleId)/deltas/\(currentBundleId)"
+            return PackSource(url: url, sizeBytes: nil, maximumBytes: envelope.pack.sizeBytes, kind: .streamed)
         }
-        return nil
+        return resolveFullPack(envelope)
+    }
+
+    private func resolveFullPack(_ envelope: ManifestEnvelope) -> PackSource {
+        return PackSource(url: envelope.pack.url, sizeBytes: envelope.pack.sizeBytes, maximumBytes: envelope.pack.sizeBytes, kind: .full)
     }
 
     /// The download needs its bytes on disk at its peak: every missing file and the pack they arrive in.
@@ -112,21 +126,36 @@ public final class Downloader {
         throw DownloadFailure.downloadFailed("The download needs \(requiredBytes) bytes and \(availableBytes) are free")
     }
 
-    /// Streams the pack to disk, resuming what an earlier attempt left and never past its size in the manifest, then inflates each
+    /// The pack's wanted entries in the store and how they arrived. A streamed delta the updates host does not serve — its redirect
+    /// to the full pack above twenty objects or for a base the bucket no longer knows, a limit, an error — gives way to the full pack: slower, never failed.
+    func downloadPack(_ source: PackSource, envelope: ManifestEnvelope, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> (bytes: Int, kind: PackKind) {
+        do {
+            return (try await downloadPackEntries(source, bundleId: envelope.bundleId, wanted: wanted, progress: progress), source.kind)
+        } catch let refusal as HttpStatusError {
+            guard source.kind == .streamed else { throw DownloadFailure.downloadFailed("HTTP \(refusal.status) for the pack") }
+            return try await downloadPack(resolveFullPack(envelope), envelope: envelope, wanted: wanted, progress: progress)
+        }
+    }
+
+    /// Streams the pack to disk, resuming what an earlier attempt left and never past its bound, then inflates each
     /// wanted entry up to its file's size: an entry is always the gzip bytes the bucket serves.
-    func downloadPack(_ source: ManifestEnvelope.Pack, bundleId: String, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> Int {
+    func downloadPackEntries(_ source: PackSource, bundleId: String, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> Int {
         let url = try resolvePinnedUrl(source.url)
         let file = temporaryDirectory.appendingPathComponent("\(bundleId)-\(Hashing.sha256Hex(source.url).prefix(16)).pack")
         do {
-            try await http.download(url, to: file, maximumBytes: source.sizeBytes, progress: progress)
+            try await http.download(url, to: file, maximumBytes: source.maximumBytes, progress: progress)
         } catch let failure as DownloadFailure {
             throw failure
+        } catch let refusal as HttpStatusError {
+            throw refusal
         } catch {
             throw DownloadFailure.downloadFailed("The pack could not be downloaded: \(error.localizedDescription)")
         }
         defer { try? FileManager.default.removeItem(at: file) }
         guard let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { throw DownloadFailure.downloadFailed("The pack could not be read") }
-        guard data.count == source.sizeBytes else { throw DownloadFailure.verificationFailed("The pack holds \(data.count) of its \(source.sizeBytes) bytes") }
+        if let sizeBytes = source.sizeBytes, data.count != sizeBytes {
+            throw DownloadFailure.verificationFailed("The pack holds \(data.count) of its \(sizeBytes) bytes")
+        }
         do {
             try PackReader.forEachEntry(in: data) { entry in
                 guard let sizeBytes = wanted[entry.sha256] else { return }
