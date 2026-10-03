@@ -61,21 +61,35 @@ public enum Evaluation: Equatable {
     case skipped(IndexRelease?, reason: SkippedReason, condition: ConditionType?)
 }
 
+/// The outcome with the verdicts behind it, newest release first; an index the device does not evaluate — older than the applied one, or capped — leaves them empty.
+public struct IndexEvaluation: Equatable {
+    public let outcome: Evaluation
+    public let verdicts: [ReleaseVerdict]
+}
+
 /// The device protocol's evaluation, the same rules as `@hotcodepush/protocol`'s, pinned by its fixture suite.
 public enum Evaluator {
     private static let embeddedReleaseNumber = 0
 
     public static func evaluate(_ index: ChannelIndex, device: DeviceInfo) -> Evaluation {
+        return evaluation(of: index, device: device).outcome
+    }
+
+    public static func evaluation(of index: ChannelIndex, device: DeviceInfo) -> IndexEvaluation {
         let currentIndexRelease = device.currentRelease.flatMap { current in index.releases.first { $0.id == current.id } }
         if let applied = device.appliedIndexSequence, index.sequence < applied {
-            return .upToDate(currentIndexRelease)
+            return IndexEvaluation(outcome: .upToDate(currentIndexRelease), verdicts: [])
         }
         if isDeviceBeyondCap(index, device: device) {
-            return .skipped(nil, reason: .spendingCapReached, condition: nil)
+            return IndexEvaluation(outcome: .skipped(nil, reason: .spendingCapReached, condition: nil), verdicts: [])
         }
         let verdicts = index.releases.sorted { $0.number > $1.number }.map { verdict(for: $0, in: index, device: device) }
+        return IndexEvaluation(outcome: outcome(of: verdicts, in: index, device: device, currentIndexRelease: currentIndexRelease), verdicts: verdicts)
+    }
+
+    private static func outcome(of verdicts: [ReleaseVerdict], in index: ChannelIndex, device: DeviceInfo, currentIndexRelease: IndexRelease?) -> Evaluation {
         let currentNumber = device.currentRelease?.number ?? embeddedReleaseNumber
-        let isCurrentRevoked = device.currentRelease.map { isRevoked(id: $0.id, number: $0.number, in: index) } ?? false
+        let isCurrentRevoked = device.currentRelease.map { isRevoked(id: $0.id, in: index) } ?? false
         let newerVerdict = verdicts.first { $0.release.number > currentNumber && $0.reason != .releaseRevoked }
         let newerEligible = verdicts.first { $0.isEligible && $0.release.number > currentNumber }
         let olderEligible = verdicts.first { $0.isEligible && $0.release.number < currentNumber }
@@ -101,7 +115,7 @@ public enum Evaluator {
     }
 
     public static func verdict(for release: IndexRelease, in index: ChannelIndex, device: DeviceInfo) -> ReleaseVerdict {
-        if isRevoked(id: release.id, number: release.number, in: index) {
+        if isRevoked(id: release.id, in: index) {
             return ReleaseVerdict(release: release, isEligible: false, reason: .releaseRevoked, condition: nil)
         }
         if release.createdAt < device.builtAt {
@@ -165,8 +179,7 @@ public enum Evaluator {
         return verdicts.contains { $0.release.isMandatory && $0.release.number > currentNumber && $0.release.number <= target.number }
     }
 
-    static func isRevoked(id: String, number: Int, in index: ChannelIndex) -> Bool {
-        if index.revokedReleaseIds.contains(id) { return true }
-        return index.rollBackToEmbedded.map { number <= $0.aboveNumber } ?? false
+    static func isRevoked(id: String, in index: ChannelIndex) -> Bool {
+        return index.revokedReleaseIds.contains(id)
     }
 }

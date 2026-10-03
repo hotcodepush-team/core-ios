@@ -43,25 +43,26 @@ public final class Downloader {
     }
 
     public func downloadRelease(_ target: IndexRelease, currentBundleId: String?, progress: @escaping (Int, Int) -> Void) async throws -> DownloadOutcome {
-        let manifest = try await fetchBundleManifest(target)
+        let (envelope, manifest) = try await fetchBundleManifest(target)
         let missing = resolveMissingFiles(manifest)
-        let pack = missing.isEmpty ? nil : resolvePack(manifest, currentBundleId: currentBundleId, missing: missing)
+        let pack = missing.isEmpty ? nil : resolvePack(envelope, currentBundleId: currentBundleId, missing: missing)
         try verifyFreeSpace(forBytes: missing.reduce(0) { $0 + $1.sizeBytes } + (pack?.source.sizeBytes ?? 0))
         var bytes = 0
         var packKind = PackKind.files
         if let pack = pack {
             let wanted = Dictionary(missing.map { ($0.sha256, $0.sizeBytes) }, uniquingKeysWith: { first, _ in first })
-            bytes += try await downloadPack(pack.source, bundleId: manifest.bundleId, wanted: wanted, progress: progress)
+            bytes += try await downloadPack(pack.source, bundleId: envelope.bundleId, wanted: wanted, progress: progress)
             packKind = pack.kind
         }
         for file in resolveMissingFiles(manifest) {
             bytes += try await downloadFile(file)
         }
-        try files.writeManifest(manifest)
+        try files.writeManifest(manifest, bundleId: envelope.bundleId)
         return DownloadOutcome(manifest: manifest, bytes: bytes, packKind: packKind)
     }
 
-    func fetchBundleManifest(_ target: IndexRelease) async throws -> BundleManifest {
+    /// The envelope with its manifest decoded, once the manifest's bytes match the index and the envelope names the release's bundle.
+    func fetchBundleManifest(_ target: IndexRelease) async throws -> (envelope: ManifestEnvelope, manifest: BundleManifest) {
         let url = try resolvePinnedUrl(target.manifestUrl)
         let response: HttpResponse
         do {
@@ -74,8 +75,8 @@ public final class Downloader {
             throw DownloadFailure.verificationFailed("The manifest could not be parsed")
         }
         try verifyManifestSignature(envelope, expectedSha256: target.manifestSha256)
-        guard manifest.bundleId == target.bundleId else { throw DownloadFailure.verificationFailed("The manifest names another bundle") }
-        return manifest
+        guard envelope.bundleId == target.bundleId else { throw DownloadFailure.verificationFailed("The manifest names another bundle") }
+        return (envelope, manifest)
     }
 
     func verifyManifestSignature(_ envelope: ManifestEnvelope, expectedSha256: String) throws {
@@ -92,12 +93,12 @@ public final class Downloader {
     }
 
     /// The delta pack against the running bundle where one exists, the full pack otherwise; nothing when the pack would cost more than the files.
-    func resolvePack(_ manifest: BundleManifest, currentBundleId: String?, missing: [BundleManifest.File]) -> (source: BundleManifest.Pack, kind: PackKind)? {
-        if let currentBundleId = currentBundleId, let delta = manifest.deltas.first(where: { $0.baseBundleId == currentBundleId }) {
+    func resolvePack(_ envelope: ManifestEnvelope, currentBundleId: String?, missing: [BundleManifest.File]) -> (source: ManifestEnvelope.Pack, kind: PackKind)? {
+        if let currentBundleId = currentBundleId, let delta = envelope.deltas.first(where: { $0.baseBundleId == currentBundleId }) {
             return (.init(url: delta.url, sizeBytes: delta.sizeBytes), .delta)
         }
-        if let pack = manifest.pack, missing.count > 1 {
-            return (pack, .full)
+        if missing.count > 1 {
+            return (envelope.pack, .full)
         }
         return nil
     }
@@ -110,7 +111,7 @@ public final class Downloader {
 
     /// Streams the pack to disk, resuming what an earlier attempt left and never past its size in the manifest, then inflates each
     /// wanted entry up to its file's size: an entry is always the gzip bytes the bucket serves.
-    func downloadPack(_ source: BundleManifest.Pack, bundleId: String, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> Int {
+    func downloadPack(_ source: ManifestEnvelope.Pack, bundleId: String, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> Int {
         let url = try resolvePinnedUrl(source.url)
         let file = temporaryDirectory.appendingPathComponent("\(bundleId)-\(Hashing.sha256Hex(source.url).prefix(16)).pack")
         do {

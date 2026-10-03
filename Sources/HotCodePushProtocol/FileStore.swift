@@ -41,8 +41,8 @@ public final class FileStore {
         return try? Json.decoder.decode(BundleManifest.self, from: data)
     }
 
-    public func writeManifest(_ manifest: BundleManifest) throws {
-        let url = manifestURL(bundleId: manifest.bundleId)
+    public func writeManifest(_ manifest: BundleManifest, bundleId: String) throws {
+        let url = manifestURL(bundleId: bundleId)
         try createDirectory(url.deletingLastPathComponent())
         try Json.encoder.encode(manifest).write(to: url, options: .atomic)
     }

@@ -69,9 +69,11 @@ public struct DeviceReport: Codable, Equatable {
     public let fingerprint: String?
     public let osVersion: String
     public let releaseId: String?
+    /// The runtime version a bridge reports; this SDK has none.
+    public let runtimeVersion: String?
 
     enum CodingKeys: String, CodingKey {
-        case attributes, binaryBuild, binaryVersion, channelId, channelSource, embeddedBundleId, fingerprint, osVersion, releaseId
+        case attributes, binaryBuild, binaryVersion, channelId, channelSource, embeddedBundleId, fingerprint, osVersion, releaseId, runtimeVersion
     }
 
     /// Every key on the wire, `null` for the empty ones, as the endpoint's schema asks.
@@ -86,6 +88,7 @@ public struct DeviceReport: Codable, Equatable {
         try container.encode(fingerprint, forKey: .fingerprint)
         try container.encode(osVersion, forKey: .osVersion)
         try container.encode(releaseId, forKey: .releaseId)
+        try container.encode(runtimeVersion, forKey: .runtimeVersion)
     }
 }
 

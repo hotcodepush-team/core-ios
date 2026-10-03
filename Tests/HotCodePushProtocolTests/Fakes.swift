@@ -176,8 +176,8 @@ struct Fixture {
     static let builtAt = Date(timeIntervalSince1970: 1_700_000_000)
     static let embeddedIndexHtml = Data("<html>v1</html>".utf8)
 
-    static func embeddedManifest() -> BundleManifest {
-        return BundleManifest(bundleId: "embedded", appId: appId, version: "1.0.0", createdAt: builtAt, files: [.init(path: "index.html", sha256: Hashing.sha256Hex(embeddedIndexHtml), sizeBytes: embeddedIndexHtml.count)])
+    static func embeddedManifest() -> EmbeddedBundleManifest {
+        return EmbeddedBundleManifest(appId: appId, bundleVersion: "1.0.0", files: [.init(path: "index.html", sha256: Hashing.sha256Hex(embeddedIndexHtml), sizeBytes: embeddedIndexHtml.count)], platforms: ["ios"])
     }
 
     static func configuration(installStrategy: InstallStrategy = .nextStart, mandatoryInstallStrategy: MandatoryInstallStrategy = .immediate, downloadStrategy: DownloadStrategy = .auto, autoCheck: Bool = false, readySignal: ReadySignal = .render, publicKeys: [String] = [], fingerprint: String? = "fp1:abc", builtAt: Date = Fixture.builtAt, enabledInDebugBuilds: Bool = true) -> Configuration {
@@ -219,15 +219,15 @@ struct Fixture {
             PackEntry(sha256: sha256, body: try! Gzip.compress(content)),
             PackEntry(sha256: Hashing.sha256Hex(js), body: try! Gzip.compress(js))
         ])
-        let manifest = BundleManifest(bundleId: bundleId, appId: appId, version: "1.\(number).0", createdAt: createdAt, files: [.init(path: "index.html", sha256: sha256, sizeBytes: content.count), .init(path: "assets/app.js", sha256: Hashing.sha256Hex(js), sizeBytes: js.count)], pack: .init(url: "\(filesBaseUrl)/apps/\(appId)/bundles/\(bundleId)/pack", sizeBytes: pack.count))
+        let manifest = BundleManifest(appId: appId, bundleVersion: "1.\(number).0", files: [.init(path: "index.html", sha256: sha256, sizeBytes: content.count), .init(path: "assets/app.js", sha256: Hashing.sha256Hex(js), sizeBytes: js.count)], platforms: ["ios"])
         let manifestJson = String(bytes: try! Json.encoder.encode(manifest), encoding: .utf8) ?? ""
-        let envelope = ManifestEnvelope(manifest: manifestJson, signature: nil)
-        let release = IndexRelease(id: "r\(number)", number: number, createdAt: createdAt, isMandatory: isMandatory, notes: "notes \(number)", rollout: rollout, conditions: conditions, bundleId: bundleId, bundleVersion: manifest.version, manifestUrl: "\(filesBaseUrl)/apps/\(appId)/bundles/\(bundleId)/manifest.json", manifestSha256: Hashing.sha256Hex(manifestJson), sizeBytes: content.count)
+        let envelope = ManifestEnvelope(bundleId: bundleId, createdAt: createdAt, manifest: manifestJson, pack: .init(url: "\(filesBaseUrl)/apps/\(appId)/bundles/\(bundleId)/pack", sizeBytes: pack.count))
+        let release = IndexRelease(id: "r\(number)", number: number, createdAt: createdAt, isMandatory: isMandatory, notes: "notes \(number)", rollout: rollout, conditions: conditions, bundleId: bundleId, bundleVersion: manifest.bundleVersion, manifestUrl: "\(filesBaseUrl)/apps/\(appId)/bundles/\(bundleId)/manifest.json", manifestSha256: Hashing.sha256Hex(manifestJson), sizeBytes: content.count)
         return (release, manifest, envelope, pack)
     }
 
-    static func index(sequence: Int, releases: [IndexRelease], revoked: [String] = [], isPaused: Bool = false, cappedAt: Date? = nil, rollBackToEmbedded: RollBackToEmbedded? = nil) -> ChannelIndex {
-        return ChannelIndex(sequence: sequence, appId: appId, channelId: channelId, platform: "ios", isPaused: isPaused, cappedAt: cappedAt, revokedReleaseIds: revoked, rollBackToEmbedded: rollBackToEmbedded, releases: releases)
+    static func index(sequence: Int, releases: [IndexRelease], revoked: [String] = [], isPaused: Bool = false, cappedAt: Date? = nil) -> ChannelIndex {
+        return ChannelIndex(sequence: sequence, appId: appId, channelId: channelId, platform: "ios", isPaused: isPaused, cappedAt: cappedAt, revokedReleaseIds: revoked, releases: releases)
     }
 }
 
@@ -264,11 +264,11 @@ final class Harness {
         http.stubJson(Fixture.eventsUrl(), ["reportedAt": reportedAt], status: 202)
     }
 
-    func publish(_ releases: [(release: IndexRelease, manifest: BundleManifest, envelope: ManifestEnvelope, pack: Data)], sequence: Int, revoked: [String] = [], isPaused: Bool = false, cappedAt: Date? = nil, rollBackToEmbedded: RollBackToEmbedded? = nil, etag: String = "\"e1\"") {
-        http.stubJson(Fixture.indexUrl(), Fixture.index(sequence: sequence, releases: releases.map { $0.release }, revoked: revoked, isPaused: isPaused, cappedAt: cappedAt, rollBackToEmbedded: rollBackToEmbedded), headers: ["ETag": etag])
+    func publish(_ releases: [(release: IndexRelease, manifest: BundleManifest, envelope: ManifestEnvelope, pack: Data)], sequence: Int, revoked: [String] = [], isPaused: Bool = false, cappedAt: Date? = nil, etag: String = "\"e1\"") {
+        http.stubJson(Fixture.indexUrl(), Fixture.index(sequence: sequence, releases: releases.map { $0.release }, revoked: revoked, isPaused: isPaused, cappedAt: cappedAt), headers: ["ETag": etag])
         for entry in releases {
             http.stubJson(entry.release.manifestUrl, entry.envelope)
-            http.stub(entry.manifest.pack!.url, body: entry.pack)
+            http.stub(entry.envelope.pack.url, body: entry.pack)
         }
     }
 }

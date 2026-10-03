@@ -64,6 +64,7 @@ public actor Core {
         if isCurrentReleaseUnconfirmed() {
             rollbackCurrentRelease(reason: .crashed, detail: nil)
         }
+        discardNextReleaseThatLeftTheIndex()
         if let next = state.nextRelease, shouldSwitchAtStart(to: next) {
             switchToNextRelease()
         }
@@ -109,6 +110,7 @@ public actor Core {
     public func handleAppResume() {
         let backgroundDuration = backgroundedAt.map { clock.now.timeIntervalSince($0) }
         backgroundedAt = nil
+        discardNextReleaseThatLeftTheIndex()
         if let duration = backgroundDuration, configuration.installStrategy == .nextResume, state.nextRelease != nil, duration >= configuration.installOnResumeAfter {
             installNextRelease()
             return
@@ -153,6 +155,7 @@ public actor Core {
 
     /// The third stage: apply the downloaded update now and reload the app.
     public func applyUpdate() -> ApplyResult {
+        discardNextReleaseThatLeftTheIndex()
         guard let next = state.nextRelease else {
             return ApplyResult(status: .nothingToApply, release: state.currentRelease)
         }
@@ -408,6 +411,17 @@ public actor Core {
         state.nextRelease = release
     }
 
+    /// A downloaded release that has left the cached index since — revoked, or gone from it — is never installed: it is dropped and the served bundle stays the running one.
+    private func discardNextReleaseThatLeftTheIndex() {
+        guard let next = state.nextRelease, let index = state.cachedIndex?.body, hasLeftIndex(next, index) else { return }
+        state.nextRelease = nil
+        loader.persistServedBundle(bundleId: state.currentRelease?.bundleId)
+    }
+
+    private func hasLeftIndex(_ release: Release, _ index: ChannelIndex) -> Bool {
+        return index.revokedReleaseIds.contains(release.id) || !index.releases.contains { $0.id == release.id }
+    }
+
     private func switchToNextRelease() {
         guard let next = state.nextRelease else { return }
         state.currentRelease = next
@@ -612,9 +626,6 @@ public actor Core {
             guard let index = try? Json.decoder.decode(ChannelIndex.self, from: response.body) else {
                 return .invalid("The channel index could not be parsed")
             }
-            guard index.schema == ChannelIndex.schema else {
-                return .invalid("The channel index has schema \(index.schema), this SDK reads \(ChannelIndex.schema)")
-            }
             if let cached = cached, index.sequence < cached.body.sequence {
                 return .index(cached.body)
             }
@@ -679,7 +690,7 @@ public actor Core {
     private func buildDeviceReport() -> DeviceReport? {
         let channel = channel()
         guard !channel.id.isEmpty else { return nil }
-        let report = DeviceReport(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, channelId: channel.id, channelSource: channel.source, embeddedBundleId: configuration.embeddedBundleId, fingerprint: configuration.fingerprint, osVersion: device.osVersion, releaseId: state.currentRelease?.id)
+        let report = DeviceReport(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, channelId: channel.id, channelSource: channel.source, embeddedBundleId: configuration.embeddedBundleId, fingerprint: configuration.fingerprint, osVersion: device.osVersion, releaseId: state.currentRelease?.id, runtimeVersion: nil)
         if report == state.acknowledgedReport, let reportedAt = state.reportedAt, resolveMonth(of: reportedAt) == resolveMonth(of: clock.now) {
             return nil
         }

@@ -46,7 +46,7 @@ public struct Configuration: Codable, Equatable {
     public var publicKeys: [String]
     public var builtAt: Date
     public var fingerprint: String?
-    public var embeddedBundleManifest: BundleManifest
+    public var embeddedBundleManifest: EmbeddedBundleManifest
     public var embeddedBundleId: String?
     public var filesBaseUrl: String
     public var updatesBaseUrl: String
@@ -73,7 +73,7 @@ public struct Configuration: Codable, Equatable {
         publicKeys = try container.decodeIfPresent([String].self, forKey: .publicKeys) ?? []
         builtAt = try container.decode(Date.self, forKey: .builtAt)
         fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint)
-        embeddedBundleManifest = try container.decode(BundleManifest.self, forKey: .embeddedBundleManifest)
+        embeddedBundleManifest = try container.decode(EmbeddedBundleManifest.self, forKey: .embeddedBundleManifest)
         embeddedBundleId = try container.decodeIfPresent(String.self, forKey: .embeddedBundleId)
         filesBaseUrl = try container.decodeIfPresent(String.self, forKey: .filesBaseUrl) ?? Configuration.defaultFilesBaseUrl
         updatesBaseUrl = try container.decodeIfPresent(String.self, forKey: .updatesBaseUrl) ?? Configuration.defaultUpdatesBaseUrl

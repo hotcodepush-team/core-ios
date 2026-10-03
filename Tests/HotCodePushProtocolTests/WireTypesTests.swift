@@ -4,21 +4,21 @@ import XCTest
 final class WireTypesTests: XCTestCase {
     private let sha256 = Hashing.sha256Hex("content")
 
-    func testShouldRefuseAManifestWhoseBundleIdIsNotAnIdentifier() {
+    func testShouldRefuseAnEnvelopeWhoseBundleIdIsNotAnIdentifier() {
         for bundleId in ["../..", "", "bundles/b1", String(repeating: "b", count: 65), "bündle"] {
-            XCTAssertThrowsError(try decodeManifest(bundleId: bundleId, path: "index.html", sha256: sha256), bundleId)
+            XCTAssertThrowsError(try decodeEnvelope(bundleId: bundleId), bundleId)
         }
     }
 
     func testShouldRefuseAManifestPathThatClimbsOutOfItsDirectory() {
-        for path in ["../escape.html", "assets/../../escape.html", "/etc/hosts", "assets//app.js", "./index.html", "assets\\..\\escape.html", "index\u{0}.html", ""] {
-            XCTAssertThrowsError(try decodeManifest(bundleId: "b1", path: path, sha256: sha256), path)
+        for path in ["../escape.html", "assets/../../escape.html", "/etc/hosts", "assets//app.js", "./index.html", "assets\\..\\escape.html", "index\u{0}.html", "", "../\u{301}escape.html"] {
+            XCTAssertThrowsError(try decodeManifest(path: path, sha256: sha256), path)
         }
     }
 
     func testShouldRefuseAManifestFileHashThatIsNotALowercaseSha256() {
         for hash in ["../../Documents/escape", sha256.uppercased(), String(sha256.dropLast())] {
-            XCTAssertThrowsError(try decodeManifest(bundleId: "b1", path: "index.html", sha256: hash), hash)
+            XCTAssertThrowsError(try decodeManifest(path: "index.html", sha256: hash), hash)
         }
     }
 
@@ -32,17 +32,31 @@ final class WireTypesTests: XCTestCase {
         XCTAssertThrowsError(try decodeIndexRelease(id: "r1", bundleId: "b1", manifestSha256: "../escape"))
     }
 
+    func testShouldReadTimestampsInUtcOnlyAndToTheMillisecond() {
+        XCTAssertNil(Iso8601.parse("2026-09-29T12:00:00.000+02:00"))
+        XCTAssertNil(Iso8601.parse("2026-09-29T10:00:00"))
+        XCTAssertEqual(Iso8601.parse("2026-09-29T10:00:00.5Z"), Iso8601.parse("2026-09-29T10:00:00.500Z"))
+        XCTAssertEqual(Iso8601.parse("2026-09-29T10:00:00.1234567Z"), Iso8601.parse("2026-09-29T10:00:00.123Z"))
+        XCTAssertEqual(Iso8601.parse("2026-09-29T10:00:00Z").map(Iso8601.format), "2026-09-29T10:00:00.000Z")
+    }
+
     func testShouldAcceptTheIdsAndPathsTheApiWrites() throws {
         let bundleId = "0f8fad5b-d9cb-469f-a165-70867728950e"
         for path in ["index.html", "assets/index-a1b2c3.js", ".well-known/assetlinks.json", "assets/..hidden"] {
-            XCTAssertEqual(try decodeManifest(bundleId: bundleId, path: path, sha256: sha256).files.first?.path, path)
+            XCTAssertEqual(try decodeManifest(path: path, sha256: sha256).files.first?.path, path)
         }
+        XCTAssertEqual(try decodeEnvelope(bundleId: bundleId).bundleId, bundleId)
         XCTAssertEqual(try decodeIndexRelease(id: "1c6e2a3b-7f4d-4e1a-9b2c-3d4e5f6a7b8c", bundleId: bundleId).bundleId, bundleId)
     }
 
-    private func decodeManifest(bundleId: String, path: String, sha256: String) throws -> BundleManifest {
-        let manifest = BundleManifest(bundleId: bundleId, appId: Fixture.appId, version: "1.0.0", createdAt: Fixture.builtAt, files: [.init(path: path, sha256: sha256, sizeBytes: 7)])
+    private func decodeManifest(path: String, sha256: String) throws -> BundleManifest {
+        let manifest = BundleManifest(appId: Fixture.appId, bundleVersion: "1.0.0", files: [.init(path: path, sha256: sha256, sizeBytes: 7)], platforms: ["ios"])
         return try Json.decoder.decode(BundleManifest.self, from: Json.encoder.encode(manifest))
+    }
+
+    private func decodeEnvelope(bundleId: String) throws -> ManifestEnvelope {
+        let envelope = ManifestEnvelope(bundleId: bundleId, createdAt: Fixture.builtAt, manifest: "{}", pack: .init(url: "\(Fixture.filesBaseUrl)/pack", sizeBytes: 1))
+        return try Json.decoder.decode(ManifestEnvelope.self, from: Json.encoder.encode(envelope))
     }
 
     private func decodeIndexRelease(id: String, bundleId: String, manifestSha256: String? = nil) throws -> IndexRelease {

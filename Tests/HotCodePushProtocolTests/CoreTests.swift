@@ -231,7 +231,7 @@ final class CoreTests: XCTestCase {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
-        harness.http.stubJson(v2.release.manifestUrl, ManifestEnvelope(manifest: v2.envelope.manifest + " ", signature: nil))
+        harness.http.stubJson(v2.release.manifestUrl, ManifestEnvelope(bundleId: "b2", createdAt: v2.envelope.createdAt, manifest: v2.envelope.manifest + " ", pack: v2.envelope.pack))
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.status, .failed)
@@ -735,20 +735,50 @@ final class CoreTests: XCTestCase {
 
     func testShouldFetchTheDeltaAgainstTheEmbeddedBundleOnTheFirstUpdate() async throws {
         let harness = Harness()
-        let content = Data("<html>v2</html>".utf8)
-        var v2 = Fixture.release(number: 1, bundleId: "b2", content: content)
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         let deltaUrl = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/b2/deltas/embedded"
-        let manifest = BundleManifest(bundleId: "b2", appId: Fixture.appId, version: v2.manifest.version, createdAt: v2.manifest.createdAt, files: v2.manifest.files, pack: v2.manifest.pack, deltas: [.init(baseBundleId: "embedded", url: deltaUrl, sizeBytes: v2.pack.count)])
-        let manifestJson = String(bytes: try Json.encoder.encode(manifest), encoding: .utf8) ?? ""
-        v2.release = IndexRelease(id: "r1", number: 1, createdAt: v2.release.createdAt, notes: "notes 1", bundleId: "b2", bundleVersion: manifest.version, manifestUrl: v2.release.manifestUrl, manifestSha256: Hashing.sha256Hex(manifestJson), sizeBytes: content.count)
-        harness.publish([], sequence: 1)
-        harness.http.stubJson(Fixture.indexUrl(), Fixture.index(sequence: 1, releases: [v2.release]), headers: ["ETag": "\"e1\""])
-        harness.http.stubJson(v2.release.manifestUrl, ManifestEnvelope(manifest: manifestJson, signature: nil))
+        harness.publish([v2], sequence: 1)
+        harness.http.stubJson(v2.release.manifestUrl, ManifestEnvelope(bundleId: "b2", createdAt: v2.envelope.createdAt, manifest: v2.envelope.manifest, pack: v2.envelope.pack, deltas: [.init(baseBundleId: "embedded", url: deltaUrl, sizeBytes: v2.pack.count)]))
         harness.http.stub(deltaUrl, body: v2.pack)
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.status, .updated)
         XCTAssertTrue(harness.http.requests.contains { $0.url.absoluteString == deltaUrl })
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents.first { $0.type == "downloaded" }?.packKind, PackKind.delta.rawValue)
+    }
+
+    func testShouldDiscardADownloadedReleaseRevokedBeforeTheStartThatWouldInstallIt() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        harness.publish([v2], sequence: 2, revoked: ["r1"], etag: "\"e2\"")
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .upToDate(nil))
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertNil(status.nextRelease)
+        XCTAssertEqual(harness.loader.persisted, .some(nil))
+        XCTAssertEqual(harness.loader.loaded, [nil])
+    }
+
+    func testShouldDiscardADownloadedReleaseThatLeftTheIndexInsteadOfApplyingIt() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let downloaded = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(downloaded, .updated(v2.release.release, notes: "notes 1", installAt: .manual))
+        harness.publish([], sequence: 2, etag: "\"e2\"")
+        _ = await harness.core.sync(trigger: .manual)
+        let result = await harness.core.applyUpdate()
+        XCTAssertEqual(result, ApplyResult(status: .nothingToApply, release: nil))
+        XCTAssertEqual(harness.loader.loaded, [])
+        let status = await harness.core.getState()
+        XCTAssertNil(status.nextRelease)
     }
 }
