@@ -117,15 +117,26 @@ final class FixtureTests: XCTestCase {
     }
 
     private struct SignaturesFile: Decodable {
+        struct Key: Decodable {
+            let fingerprint: String
+            let publicKey: String
+            let scheme: String
+        }
         struct SignedManifest: Decodable {
             let manifest: String
             let signature: Signature?
+
+            var envelope: ManifestEnvelope {
+                return ManifestEnvelope(bundleId: "b1", createdAt: Fixture.builtAt, manifest: manifest, signature: signature, pack: .init(url: "\(Fixture.filesBaseUrl)/pack", sizeBytes: 0))
+            }
         }
         struct Case: Decodable {
             let name: String
             let envelope: SignedManifest
+            let publicKeys: [String]
             let isValid: Bool
         }
+        let keys: [Key]
         let manifests: [Case]
     }
 
@@ -230,13 +241,34 @@ final class FixtureTests: XCTestCase {
         }
     }
 
-    /// Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form; whether the signature verifies is the signing milestone's.
+    /// Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form.
     func testShouldDecodeTheManifestOfEverySignatureFixture() throws {
         let cases = try load("signatures.json", as: SignaturesFile.self).manifests
         XCTAssertGreaterThan(cases.count, 5)
         for testCase in cases {
             XCTAssertNoThrow(try Json.decoder.decode(BundleManifest.self, from: Data(testCase.envelope.manifest.utf8)), testCase.name)
         }
+    }
+
+    /// The suite's verdicts, case for case, within this core's allow-list: a signature of the Expo bridge's RSA scheme is outside it and verifies nothing here, whatever the suite says of a verifier that holds both schemes.
+    func testShouldMatchEverySignatureFixtureWithinTheAllowList() throws {
+        let file = try load("signatures.json", as: SignaturesFile.self)
+        for key in file.keys {
+            let parsed = SigningKeys.parsePublicKey(key.publicKey)
+            if SigningScheme(rawValue: key.scheme) == nil {
+                XCTAssertNil(parsed, key.publicKey)
+            } else {
+                XCTAssertEqual(parsed.map(SigningKeys.fingerprint), key.fingerprint, key.publicKey)
+            }
+        }
+        var verified = 0
+        for testCase in file.manifests {
+            let isWithinAllowList = testCase.envelope.signature.map { SelfDescribingBytes.parse($0.value) != nil } ?? false
+            let isValid = Signatures.verifyManifestSignature(testCase.envelope.envelope, publicKeys: testCase.publicKeys)
+            XCTAssertEqual(isValid, testCase.isValid && isWithinAllowList, testCase.name)
+            verified += isValid ? 1 : 0
+        }
+        XCTAssertGreaterThanOrEqual(verified, 2)
     }
 
     /// The bounds are the writer's: a reader takes a release with more conditions, and a device condition with more ids, than the API accepts.

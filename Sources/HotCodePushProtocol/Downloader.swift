@@ -79,12 +79,15 @@ public final class Downloader {
         return (envelope, manifest)
     }
 
+    /// The manifest's bytes against the index's hash, then, once the app carries public keys, against the customer's signature:
+    /// an unsigned or wrongly signed manifest is refused before a byte of the bundle is fetched.
     func verifyManifestSignature(_ envelope: ManifestEnvelope, expectedSha256: String) throws {
         let actual = Hashing.sha256Hex(envelope.manifest)
         guard actual == expectedSha256 else { throw DownloadFailure.verificationFailed("The manifest's hash does not match the index") }
-        if !configuration.publicKeys.isEmpty {
-            // TODO(milestone 3, code signing): verify the ed25519 signature over the manifest bytes against `publicKeys`.
-            throw DownloadFailure.invalidSignature("Signature verification is not available in this SDK version")
+        guard !configuration.publicKeys.isEmpty else { return }
+        guard envelope.signature != nil else { throw DownloadFailure.invalidSignature("The manifest is unsigned and the app accepts only signed bundles") }
+        guard Signatures.verifyManifestSignature(envelope, publicKeys: configuration.publicKeys) else {
+            throw DownloadFailure.invalidSignature("The manifest's signature does not verify against the app's public keys")
         }
     }
 

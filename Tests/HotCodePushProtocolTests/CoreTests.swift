@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 @testable import HotCodePushProtocol
 
@@ -239,7 +240,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldRefuseAnUnsignedManifestOnceAPublicKeyIsConfigured() async {
-        let harness = Harness(configuration: Fixture.configuration(publicKeys: ["k1"]))
+        let harness = Harness(configuration: Fixture.configuration(publicKeys: [SigningFixture.publicKey(of: Curve25519.Signing.PrivateKey())]))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
