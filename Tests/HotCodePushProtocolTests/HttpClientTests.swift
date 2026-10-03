@@ -95,7 +95,7 @@ final class StubUrlProtocol: URLProtocol {
         StubUrlProtocol.reply = reply
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubUrlProtocol.self]
-        return UrlSessionHttpClient(session: URLSession(configuration: configuration))
+        return UrlSessionHttpClient(configuration: configuration)
     }
 
     override static func canInit(with request: URLRequest) -> Bool { true }

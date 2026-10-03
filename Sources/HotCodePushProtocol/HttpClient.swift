@@ -25,13 +25,17 @@ public protocol HttpClient {
     func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws
 }
 
+/// `URLSession` on the package's floor: completion handlers for the small requests, the session's delegate for the streamed download.
 public final class UrlSessionHttpClient: HttpClient {
-    private static let chunkSize = 64 * 1024
-
     private let session: URLSession
+    private let transfers = TransferDelegate()
 
-    public init(session: URLSession = URLSession(configuration: .ephemeral)) {
-        self.session = session
+    public init(configuration: URLSessionConfiguration = .ephemeral) {
+        session = URLSession(configuration: configuration, delegate: transfers, delegateQueue: nil)
+    }
+
+    deinit {
+        session.finishTasksAndInvalidate()
     }
 
     public func get(_ url: URL, headers: [String: String]) async throws -> HttpResponse {
@@ -43,8 +47,19 @@ public final class UrlSessionHttpClient: HttpClient {
     }
 
     private func send(_ request: URLRequest) async throws -> HttpResponse {
-        let (data, response) = try await session.data(for: request)
-        return HttpResponse(status: (response as? HTTPURLResponse)?.statusCode ?? 0, headers: UrlSessionHttpClient.headers(of: response), body: data)
+        return try await withCheckedThrowingContinuation { continuation in
+            session.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let data = data, let response = response else {
+                    continuation.resume(throwing: URLError(.badServerResponse))
+                    return
+                }
+                continuation.resume(returning: HttpResponse(status: (response as? HTTPURLResponse)?.statusCode ?? 0, headers: UrlSessionHttpClient.headers(of: response), body: data))
+            }.resume()
+        }
     }
 
     private static func request(_ url: URL, method: String, headers: [String: String], body: Data?) -> URLRequest {
@@ -58,7 +73,7 @@ public final class UrlSessionHttpClient: HttpClient {
         return request
     }
 
-    /// Streams the body into the file chunk by chunk: a body larger than it may be never lands on disk whole, and a dropped connection leaves what arrived.
+    /// Streams the body into the file as it arrives: a body larger than it may be never lands on disk whole, and a dropped connection leaves what arrived.
     public func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws {
         var request = URLRequest(url: url)
         request.timeoutInterval = 60
@@ -66,44 +81,10 @@ public final class UrlSessionHttpClient: HttpClient {
         if existing > 0 {
             request.setValue("bytes=\(existing)-", forHTTPHeaderField: "Range")
         }
-        let (bytes, response) = try await session.bytes(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 || status == 206 else {
-            try? FileManager.default.removeItem(at: file)
-            throw DownloadFailure.downloadFailed("HTTP \(status) for \(url.lastPathComponent)")
-        }
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let isResumed = status == 206 && existing > 0
-        if !isResumed {
-            FileManager.default.createFile(atPath: file.path, contents: nil)
-        }
-        let handle = try FileHandle(forWritingTo: file)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
-        var written = isResumed ? existing : 0
-        var chunk: [UInt8] = []
-        chunk.reserveCapacity(UrlSessionHttpClient.chunkSize)
-        func writeChunk() throws {
-            written += chunk.count
-            guard written <= maximumBytes else {
-                try? FileManager.default.removeItem(at: file)
-                throw DownloadFailure.downloadFailed("\(url.lastPathComponent) is larger than its \(maximumBytes) bytes")
-            }
-            try handle.write(contentsOf: chunk)
-            chunk.removeAll(keepingCapacity: true)
-            progress(written, maximumBytes)
-        }
-        do {
-            for try await byte in bytes {
-                chunk.append(byte)
-                if chunk.count == UrlSessionHttpClient.chunkSize {
-                    try writeChunk()
-                }
-            }
-            try writeChunk()
-        } catch let dropped as URLError {
-            try? writeChunk()
-            throw dropped
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let task = session.dataTask(with: request)
+            transfers.begin(Transfer(url: url, file: file, maximumBytes: maximumBytes, existing: existing, progress: progress, continuation: continuation), for: task)
+            task.resume()
         }
     }
 
@@ -116,5 +97,133 @@ public final class UrlSessionHttpClient: HttpClient {
             }
         }
         return headers
+    }
+}
+
+/// One streamed download: where the bytes go, how many may come, and the continuation waiting for the end.
+private final class Transfer {
+    let url: URL
+    let file: URL
+    let maximumBytes: Int
+    let existing: Int
+    let progress: (Int, Int) -> Void
+    let continuation: CheckedContinuation<Void, Error>
+    var stream: OutputStream?
+    var written = 0
+    var failure: Error?
+
+    init(url: URL, file: URL, maximumBytes: Int, existing: Int, progress: @escaping (Int, Int) -> Void, continuation: CheckedContinuation<Void, Error>) {
+        self.url = url
+        self.file = file
+        self.maximumBytes = maximumBytes
+        self.existing = existing
+        self.progress = progress
+        self.continuation = continuation
+    }
+
+    /// Opens the file for the body: appended to when the server honours the range, started over otherwise.
+    func open(status: Int) throws {
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let isResumed = status == 206 && existing > 0
+        guard let stream = OutputStream(url: file, append: isResumed) else { throw DownloadFailure.downloadFailed("\(file.lastPathComponent) could not be opened") }
+        stream.open()
+        self.stream = stream
+        written = isResumed ? existing : 0
+    }
+
+    func write(_ data: Data) throws {
+        guard let stream = stream, !data.isEmpty else { return }
+        try data.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
+            var offset = 0
+            while offset < buffer.count {
+                let count = stream.write(buffer.baseAddress!.advanced(by: offset).assumingMemoryBound(to: UInt8.self), maxLength: buffer.count - offset)
+                guard count > 0 else { throw stream.streamError ?? DownloadFailure.downloadFailed("\(file.lastPathComponent) could not be written") }
+                offset += count
+            }
+        }
+    }
+
+    func close() {
+        stream?.close()
+        stream = nil
+    }
+
+    func abandon(_ error: Error) {
+        close()
+        try? FileManager.default.removeItem(at: file)
+        failure = error
+    }
+}
+
+/// The session's delegate for the streamed downloads, one transfer per task.
+private final class TransferDelegate: NSObject, URLSessionDataDelegate {
+    private let lock = NSLock()
+    private var transfers: [Int: Transfer] = [:]
+
+    func begin(_ transfer: Transfer, for task: URLSessionTask) {
+        lock.lock()
+        transfers[task.taskIdentifier] = transfer
+        lock.unlock()
+    }
+
+    private func transfer(for task: URLSessionTask) -> Transfer? {
+        lock.lock()
+        defer { lock.unlock() }
+        return transfers[task.taskIdentifier]
+    }
+
+    private func end(_ task: URLSessionTask) -> Transfer? {
+        lock.lock()
+        defer { lock.unlock() }
+        return transfers.removeValue(forKey: task.taskIdentifier)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let transfer = transfer(for: dataTask) else {
+            completionHandler(.cancel)
+            return
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 || status == 206 else {
+            transfer.abandon(DownloadFailure.downloadFailed("HTTP \(status) for \(transfer.url.lastPathComponent)"))
+            completionHandler(.cancel)
+            return
+        }
+        do {
+            try transfer.open(status: status)
+            completionHandler(.allow)
+        } catch {
+            transfer.abandon(error)
+            completionHandler(.cancel)
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard let transfer = transfer(for: dataTask) else { return }
+        transfer.written += data.count
+        guard transfer.written <= transfer.maximumBytes else {
+            transfer.abandon(DownloadFailure.downloadFailed("\(transfer.url.lastPathComponent) is larger than its \(transfer.maximumBytes) bytes"))
+            dataTask.cancel()
+            return
+        }
+        do {
+            try transfer.write(data)
+            transfer.progress(transfer.written, transfer.maximumBytes)
+        } catch {
+            transfer.abandon(error)
+            dataTask.cancel()
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let transfer = end(task) else { return }
+        transfer.close()
+        if let failure = transfer.failure {
+            transfer.continuation.resume(throwing: failure)
+        } else if let error = error {
+            transfer.continuation.resume(throwing: error)
+        } else {
+            transfer.continuation.resume()
+        }
     }
 }
