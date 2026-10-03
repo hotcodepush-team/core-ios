@@ -1,6 +1,6 @@
 # HotCodePushProtocol
 
-`HotCodePushProtocol` is the HotCodePush update-protocol client for iOS: the wire types, the evaluator, the downloader and the state machine behind every HotCodePush SDK on Apple platforms, held to the same fixture suite as the JavaScript and Android clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
+`HotCodePushProtocol` is the HotCodePush update-protocol client for iOS: the wire types, the evaluator, the downloader with its signature check, the state machine and the debug screen behind every HotCodePush SDK on Apple platforms, held to the same fixture suite as the JavaScript and Android clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
 
 ## Installation
 
@@ -29,6 +29,14 @@ let index = try Json.decoder.decode(ChannelIndex.self, from: data)
 let evaluation = Evaluator.evaluation(of: index, device: deviceInfo)
 // evaluation.outcome: the release to take, or the reason not to; evaluation.verdicts: every release explained
 ```
+
+An SDK opens the debug screen over its own view controller. The screen shows the device, the channel, the releases, the last check with its code, the index and this session's log, and its share button hands the same content to the share sheet as text:
+
+```swift
+DebugScreenViewController.present(core: core, from: viewController)
+```
+
+Once the resource file lists `publicKeys`, the downloader refuses a manifest that is unsigned or whose Ed25519 signature does not verify against them, before it fetches a byte of the bundle.
 
 The package is the foundation of the HotCodePush SDKs, not their supported API: an app uses the SDK for its framework.
 

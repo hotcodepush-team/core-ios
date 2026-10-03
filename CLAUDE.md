@@ -1,18 +1,18 @@
 # CLAUDE.md
 
-`HotCodePushProtocol`, the HotCodePush update-protocol client for Apple platforms: the wire types, the evaluator, the downloader, the file store and the state machine every HotCodePush SDK on iOS runs, held to the fixture suite of `@hotcodepush/protocol`.
+`HotCodePushProtocol`, the HotCodePush update-protocol client for Apple platforms: the wire types, the evaluator, the downloader, the signature check, the file store, the state machine and the debug screen every HotCodePush SDK on iOS runs, held to the fixture suite of `@hotcodepush/protocol`.
 `@hotcodepush/protocol` (`protocol-js`) and the Android library `com.hotcodepush:protocol-android` (`protocol-android`) implement the same functions and types; a change to one is a change to the other two.
 The Capacitor SDK consumes it at a pinned git revision until its publish decision — SPM by `revision`, the pod by `:git` and `:commit` — never a branch; it is not the supported API, apps use the SDK for their framework.
 Stack: Swift 5.9, iOS 13 and the macOS host for the tests, XCTest, SwiftLint, CocoaPods for the podspec, Node 24 for the fixtures.
 
 The plan is the private `handbook` repo, checked out beside this one: `../handbook/docs/`.
-Its `sdk-api.md` (the SDK surface, the state and the functions, statuses and reasons) and `architecture.md` (_The device protocol_, _Packs_, _Evolving the wire format_, _Testing_) are binding here.
+Its `sdk-api.md` (the SDK surface, the state and the functions, statuses and reasons) and `architecture.md` (_The device protocol_, _Signing_, _Packs_, _Debugging_, _Evolving the wire format_, _Testing_) are binding here.
 When code and plan disagree, stop and surface it; never improvise.
 
 ## Layout
 
 ```
-Sources/HotCodePushProtocol        the package: no UI import, no framework import; PrivacyInfo.xcprivacy is its resource
+Sources/HotCodePushProtocol        the package: no framework import, UIKit in DebugScreen.swift alone and behind canImport; PrivacyInfo.xcprivacy is its resource
 Tests/HotCodePushProtocolTests     XCTest on the host; FixtureTests reads node_modules/@hotcodepush/protocol/fixtures after npm ci
 Package.swift                      the manifest; HotCodePushProtocol.podspec mirrors it for CocoaPods
 package.json                       private, only the pinned @hotcodepush/protocol the fixtures come from
@@ -42,6 +42,9 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - Every key in the store is `hotcodepush.<name>`; three identity keys survive everything, the rest is a cache dropped on an unknown `stateVersion`.
 - Statuses and reasons are `SCREAMING_SNAKE_CASE` from the one catalog; a method throws a plain error only for a programming mistake.
 - Nothing here writes a cryptographic primitive or parses a standard format by hand beyond ustar and gzip: the platform's CryptoKit, zlib and Foundation do that.
+- The signature allow-list is pinned and has one entry, `ed25519`: the manifest string is verified as received under the key its `keyId` names, and a key or signature of the Expo bridge's `rsa-v1_5-sha256` verifies nothing here, so the suite's RSA cases are asserted as refused.
+- A download stays on the URL the core pinned and never follows a redirect; a streamed delta the updates host does not serve gives way to the envelope's full pack.
+- The debug screen shows what `DebugReport` renders, and the share text is the same sections: a fact joins both through `DebugReport`, never the screen alone. The session log lives in memory, the newest two hundred lines, never on disk and never on the wire.
 
 ## Naming
 
