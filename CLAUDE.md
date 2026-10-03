@@ -35,6 +35,7 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 ## Rules
 
 - The wire format is additive only and parsed strictly: every v1 field is present, a nullable one as `null`, an absent one refuses the document; a field, a condition type or a platform the reader does not know is kept, and an unknown condition fails closed.
+- What the device writes follows the same schema: a required key is always written, a nullable one as an explicit `null`, an optional one left out when empty. A synthesized `Encodable` drops a `nil`, so a type that goes on the wire or to the app writes its own `encode(to:)`.
 - A value is checked before it names anything: ids are identifiers, hashes lowercase sha256, paths relative with no `.` or `..` segment — split on scalars, never on characters — timestamps UTC with a `Z`, URLs absolute, and the pack's ustar headers carry a checksum that must add up.
 - The evaluator is `@hotcodepush/protocol`'s, case for case: the outcome and the verdicts behind it come from the fixtures, never from a reading of the plan.
 - A downloaded release that has left the cached index — revoked, or gone from it — is discarded before it would install, never applied.

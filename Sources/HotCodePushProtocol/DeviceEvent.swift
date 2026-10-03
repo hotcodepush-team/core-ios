@@ -29,6 +29,39 @@ public struct DeviceEvent: Codable, Equatable {
         self.detail = detail
     }
 
+    enum CodingKeys: String, CodingKey {
+        case type, releaseId, bundleId, status, reason, condition, bytes, packKind, fromReleaseId, toReleaseId, detail
+    }
+
+    /// The keys the wire's schema names for the event's type, and no other: a required one is always written, as `null` where it is
+    /// nullable and empty — a rollback to the embedded bundle carries `"toReleaseId": null` — and an optional one is left out when
+    /// empty, since the schema refuses a `null` there.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        switch type {
+        case "checked":
+            try container.encode(releaseId, forKey: .releaseId)
+            try container.encode(status, forKey: .status)
+            try container.encodeIfPresent(reason, forKey: .reason)
+            try container.encodeIfPresent(condition, forKey: .condition)
+        case "downloaded":
+            try container.encode(releaseId, forKey: .releaseId)
+            try container.encode(bundleId, forKey: .bundleId)
+            try container.encode(bytes, forKey: .bytes)
+            try container.encode(packKind, forKey: .packKind)
+        case "failed":
+            try container.encode(releaseId, forKey: .releaseId)
+            try container.encode(reason, forKey: .reason)
+            try container.encodeIfPresent(detail, forKey: .detail)
+        case "rolledBack":
+            try container.encode(fromReleaseId, forKey: .fromReleaseId)
+            try container.encode(toReleaseId, forKey: .toReleaseId)
+        default:
+            try container.encode(releaseId, forKey: .releaseId)
+        }
+    }
+
     public static func checked(releaseId: String, status: SyncStatus, reason: SkippedReason? = nil, condition: ConditionType? = nil) -> DeviceEvent {
         return DeviceEvent(type: "checked", releaseId: releaseId, status: status.rawValue, reason: reason?.rawValue, condition: condition)
     }

@@ -317,6 +317,26 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(status.nextRelease)
     }
 
+    func testShouldReportARollbackToTheEmbeddedBundleWithANullRelease() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        harness.acknowledgeEvents()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        harness.scheduler.fire()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let events = try harness.http.posts.flatMap { post in
+            try XCTUnwrap((try XCTUnwrap(JSONSerialization.jsonObject(with: post.body) as? [String: Any]))["events"] as? [[String: Any]])
+        }
+        let rolledBack = try XCTUnwrap(events.first { $0["type"] as? String == "rolledBack" })
+        XCTAssertEqual(rolledBack["fromReleaseId"] as? String, "r1")
+        XCTAssertTrue(rolledBack["toReleaseId"] is NSNull)
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
+    }
+
     func testShouldRollBackAtOnceWhileRestartsAreNotAllowed() async {
         let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
