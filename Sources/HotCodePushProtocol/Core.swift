@@ -38,6 +38,8 @@ public actor Core {
     private var resolvedChannelName: (name: String, id: String)?
     /// The rollback the next reload announces, once, before the gate.
     private var pendingRollbackEvent: RolledBackEvent?
+    /// This session's log, the newest last, behind the debug screen.
+    private var logEntries: [LogEntry] = []
 
     public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
         self.configuration = configuration
@@ -173,6 +175,7 @@ public actor Core {
             state.lastSyncAt = clock.now
             scheduleIntervalSync(after: configuration.checkInterval)
         }
+        record(LogEntry.ofCycle(result, trigger: trigger, at: clock.now))
         if result.status == .failed, let reason = result.reason.flatMap(FailedReason.init(rawValue:)) {
             listener.updateFailed(UpdateFailedEvent(release: result.release, reason: reason, message: result.message ?? "", trigger: trigger))
         }
@@ -375,6 +378,11 @@ public actor Core {
 
     public func deviceResult() -> DeviceResult {
         return DeviceResult(id: state.deviceId, platform: device.platform, binaryVersion: device.binaryVersion, binaryBuild: device.binaryBuild, osVersion: device.osVersion, sdkVersion: device.sdkVersion, fingerprint: configuration.fingerprint, channel: channel(), attributes: state.attributes)
+    }
+
+    /// Everything the debug screen shows: the device, the configuration, the state and this session's log.
+    public func debugSnapshot() -> DebugSnapshot {
+        return DebugSnapshot(takenAt: clock.now, device: deviceResult(), configuration: configuration, isDebugBuild: device.isDebugBuild, state: getState(), log: logEntries)
     }
 
     public func setAttributes(_ changes: [String: String?]) throws {
@@ -665,6 +673,13 @@ public actor Core {
 
     private func enqueueDeviceEvent(_ event: DeviceEvent) {
         state.unsentEvents = Array((state.unsentEvents + [event]).suffix(200))
+        if let entry = LogEntry.ofDeviceEvent(event, at: clock.now) {
+            record(entry)
+        }
+    }
+
+    private func record(_ entry: LogEntry) {
+        logEntries = Array((logEntries + [entry]).suffix(LogEntry.capacity))
     }
 
     /// One batch to the events endpoint, the outbox and the report when it changed: the 202 clears what was sent, anything else keeps it for the next sync.
@@ -677,7 +692,9 @@ public actor Core {
               let body = try? Json.encoder.encode(DeviceEventsRequest(deviceId: state.deviceId, events: events, platform: device.platform, report: report, sdkVersion: device.sdkVersion)) else { return }
         isSendingDeviceEvents = true
         defer { isSendingDeviceEvents = false }
-        guard let response = try? await http.post(url, headers: ["Content-Type": "application/json"], body: body), response.status == 202,
+        let response = try? await http.post(url, headers: ["Content-Type": "application/json"], body: body)
+        record(LogEntry.ofReport(eventCount: events.count, status: response?.status, at: clock.now))
+        guard let response = response, response.status == 202,
               let acknowledged = try? Json.decoder.decode(DeviceEventsResponse.self, from: response.body) else { return }
         state.unsentEvents = Array(state.unsentEvents.dropFirst(events.count))
         state.reportedAt = acknowledged.reportedAt
