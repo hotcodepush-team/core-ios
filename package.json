@@ -11,6 +11,6 @@
     "verify": "npm run lint && npm run test"
   },
   "devDependencies": {
-    "@hotcodepush/protocol": "https://pkg.pr.new/hotcodepush-team/protocol-js/@hotcodepush/protocol@ada56e8c8a86bc7a6fda7fa2442e5dc6cde85b44"
+    "@hotcodepush/protocol": "https://pkg.pr.new/hotcodepush-team/protocol-js/@hotcodepush/protocol@526bcbf959178c5c0022251cd8efac7f51fdddbd"
   }
 }

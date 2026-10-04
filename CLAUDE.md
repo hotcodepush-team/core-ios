@@ -39,6 +39,7 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - A value is checked before it names anything: ids are identifiers, hashes lowercase sha256, paths relative with no `.` or `..` segment — split on scalars, never on characters — timestamps UTC with a `Z`, URLs absolute, and the pack's ustar headers carry a checksum that must add up.
 - The evaluator is `@hotcodepush/protocol`'s, case for case: the outcome and the verdicts behind it come from the fixtures, never from a reading of the plan.
 - A downloaded release that has left the cached index — revoked, or gone from it — is discarded before it would install, never applied.
+- A build whose resource file carries `channelId: null` — built without a token or offline — answers `FAILED` with `UNKNOWN_CHANNEL` without a request and sends no report; a channel set at runtime makes it a device like any other, and clearing that choice returns it to the answer.
 - Safety is on by default and cannot be switched off: the readiness gate, the local blocklist, the automatic rollback.
 - Every key in the store is `hotcodepush.<name>`; three identity keys survive everything, the rest is a cache dropped on an unknown `stateVersion`.
 - Statuses and reasons are `SCREAMING_SNAKE_CASE` from the one catalog; a method throws a plain error only for a programming mistake.

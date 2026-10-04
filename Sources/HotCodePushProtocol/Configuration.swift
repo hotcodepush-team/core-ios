@@ -33,7 +33,8 @@ public struct Configuration: Codable, Equatable {
     public static let defaultUpdatesBaseUrl = "https://updates.hotcodepush.com"
 
     public var appId: String
-    public var channelId: String
+    /// The channel the build follows; `nil` in a build whose build step ran without a token or offline and never resolved the channel's name.
+    public var channelId: String?
     public var autoCheck: Bool
     public var checkInterval: Double
     public var downloadStrategy: DownloadStrategy
@@ -60,7 +61,7 @@ public struct Configuration: Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         appId = try container.decode(String.self, forKey: .appId)
-        channelId = try container.decode(String.self, forKey: .channelId)
+        channelId = try container.decodeNullable(.nonEmpty, forKey: .channelId)
         autoCheck = try container.decodeIfPresent(Bool.self, forKey: .autoCheck) ?? true
         checkInterval = try container.decodeIfPresent(Double.self, forKey: .checkInterval) ?? 900
         downloadStrategy = try container.decodeIfPresent(DownloadStrategy.self, forKey: .downloadStrategy) ?? .auto

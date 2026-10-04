@@ -7,13 +7,18 @@ public actor Core {
         case check, download, sync
     }
 
-    /// How a runtime channel name resolved.
+    /// How the channel in effect resolved: the runtime choice, a name through the channels index, else the build's own.
     enum ChannelResolution {
         case id(String)
         case offline
         case unknown
         case invalid(String)
+        /// The build carries no channel and the app set none at runtime.
+        case missing
     }
+
+    /// What a build without a channel answers, without a request: it can never update until the app sets a channel at runtime.
+    static let missingChannelMessage = "The build carries no channel: it was built without a token or offline, so the channel's name was never resolved. Build it with a token to receive updates."
 
     public let configuration: Configuration
     private let device: DeviceFacts
@@ -194,6 +199,7 @@ public actor Core {
         case .offline: return .failed(current, reason: .offline, message: "The channels index could not be fetched to resolve the channel name")
         case .unknown: return .failed(current, reason: .unknownChannel, message: "The channel set at runtime is not in the app's channels index")
         case .invalid(let message): return .failed(current, reason: .invalidIndex, message: message)
+        case .missing: return .failed(current, reason: .unknownChannel, message: Core.missingChannelMessage)
         }
         let index: ChannelIndex
         switch await fetchChannelIndex(channelId: channelId) {
@@ -201,6 +207,9 @@ public actor Core {
         case .offline: return .failed(current, reason: .offline, message: "The channel index could not be fetched and no cached copy exists")
         case .invalid(let message): return .failed(current, reason: .invalidIndex, message: message)
         case .absent: return .upToDate(current)
+        case .gone:
+            state.channel = nil
+            return await resolveCycle(trigger: trigger, stage: stage, options: options)
         }
         switch Evaluator.evaluate(index, device: deviceInfo()) {
         case .upToDate:
@@ -367,7 +376,7 @@ public actor Core {
         switch state.channel {
         case .id(let id): return ChannelResult(id: id, name: nil, source: .runtime)
         case .name(let name): return ChannelResult(id: resolvedChannelName?.name == name ? resolvedChannelName?.id ?? "" : "", name: name, source: .runtime)
-        case nil: return ChannelResult(id: configuration.channelId, name: nil, source: .config)
+        case nil: return ChannelResult(id: configuration.channelId ?? "", name: nil, source: .config)
         }
     }
 
@@ -584,12 +593,14 @@ public actor Core {
         case offline
         case invalid(String)
         case absent
+        /// The channel set at runtime serves no index: the choice is cleared and the cycle falls back to the build's own channel.
+        case gone
     }
 
     /// The runtime choice, then the configured id; a name resolves through the channels index, offline being offline and not an unknown name.
     private func resolveChannelId() async -> ChannelResolution {
         switch state.channel {
-        case nil: return .id(configuration.channelId)
+        case nil: return configuration.channelId.map { .id($0) } ?? .missing
         case .id(let id): return .id(id)
         case .name(let name):
             if let resolved = resolvedChannelName, resolved.name == name { return .id(resolved.id) }
@@ -640,10 +651,7 @@ public actor Core {
             state.cachedIndex = CachedIndex(etag: response.header("ETag"), fetchedAt: clock.now, body: index)
             return .index(index)
         case 404:
-            if case .some = state.channel {
-                state.channel = nil
-                return await fetchChannelIndex(channelId: configuration.channelId)
-            }
+            if case .some = state.channel { return .gone }
             return .absent
         default:
             return cached.map { .index($0.body) } ?? .offline
@@ -704,6 +712,7 @@ public actor Core {
     }
 
     /// The facts the server should hold: the report when they differ from the acknowledged ones or the month began, else nothing.
+    /// A device without a channel — a runtime name not yet resolved, a build that carries none — reports nothing: a row for it would mislead.
     private func buildDeviceReport() -> DeviceReport? {
         let channel = channel()
         guard !channel.id.isEmpty else { return nil }

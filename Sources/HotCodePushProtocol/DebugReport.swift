@@ -73,7 +73,7 @@ public enum DebugReport {
     private static func channelSection(_ snapshot: DebugSnapshot) -> DebugSection {
         let channel = snapshot.device.channel
         return DebugSection(title: "Channel", rows: [
-            DebugRow(label: "Channel id", value: channel.id.isEmpty ? "unresolved" : channel.id),
+            DebugRow(label: "Channel id", value: describeChannelId(channel)),
             DebugRow(label: "Name", value: channel.name ?? "none"),
             DebugRow(label: "Source", value: channel.source.rawValue)
         ])
@@ -117,7 +117,7 @@ public enum DebugReport {
         let configuration = snapshot.configuration
         return DebugSection(title: "Configuration", rows: [
             DebugRow(label: "App id", value: configuration.appId),
-            DebugRow(label: "Configured channel", value: configuration.channelId),
+            DebugRow(label: "Configured channel", value: configuration.channelId ?? "none"),
             DebugRow(label: "Built at", value: Iso8601.format(configuration.builtAt)),
             DebugRow(label: "Files host", value: configuration.filesBaseUrl),
             DebugRow(label: "Updates host", value: configuration.updatesBaseUrl),
@@ -132,6 +132,12 @@ public enum DebugReport {
     private static func logSection(_ snapshot: DebugSnapshot) -> DebugSection {
         let rows = snapshot.log.map { DebugRow(label: Iso8601.format($0.at), value: "\($0.code) — \($0.message)") }
         return DebugSection(title: "Log", rows: rows.isEmpty ? [DebugRow(label: "Entries", value: "none this session")] : rows)
+    }
+
+    /// The id in effect; without one, a runtime name waits for its first sync and a build without a channel says why it has none.
+    private static func describeChannelId(_ channel: ChannelResult) -> String {
+        guard channel.id.isEmpty else { return channel.id }
+        return channel.source == .runtime ? "unresolved" : "none: the build carries no channel, it was built without a token or offline"
     }
 
     private static func describe(_ release: Release?) -> String? {

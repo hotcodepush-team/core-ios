@@ -239,6 +239,9 @@ final class FixtureTests: XCTestCase {
         for testCase in cases {
             XCTAssertEqual(testCase.resourceFile.embeddedBundleManifest, testCase.embeddedBundleManifest, testCase.name)
         }
+        let withoutChannel = cases.filter { $0.resourceFile.channelId == nil }
+        XCTAssertEqual(withoutChannel.count, 1, "the suite carries one build without a channel")
+        XCTAssertTrue(withoutChannel.allSatisfy { $0.name.contains("without a channel") && $0.resourceFile.embeddedBundleId == nil })
     }
 
     /// Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form.
