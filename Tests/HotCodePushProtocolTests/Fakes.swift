@@ -216,8 +216,8 @@ struct Fixture {
         let sha256 = Hashing.sha256Hex(content)
         let js = Data("js-\(bundleId)".utf8)
         let pack = PackWriter.pack([
-            PackEntry(sha256: sha256, body: try! Gzip.compress(content)),
-            PackEntry(sha256: Hashing.sha256Hex(js), body: try! Gzip.compress(js))
+            PackEntry.file(sha256: sha256, body: try! Gzip.compress(content)),
+            PackEntry.file(sha256: Hashing.sha256Hex(js), body: try! Gzip.compress(js))
         ])
         let manifest = BundleManifest(appId: appId, bundleVersion: "1.\(number).0", files: [.init(path: "index.html", sha256: sha256, sizeBytes: content.count), .init(path: "assets/app.js", sha256: Hashing.sha256Hex(js), sizeBytes: js.count)], platforms: ["ios"])
         let manifestJson = String(bytes: try! Json.encoder.encode(manifest), encoding: .utf8) ?? ""

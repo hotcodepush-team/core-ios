@@ -4,10 +4,6 @@ import XCTest
 /// FreeBSD's bspatch on the patches `Tests/BspatchFixtures/make-patches.sh` writes: a patch arrives unsigned, so a hostile
 /// one must end in an error or in bytes the hash check refuses, never in a read or write outside a buffer.
 final class BspatchTests: XCTestCase {
-    private static let fixturesDirectory = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent().deletingLastPathComponent()
-        .appendingPathComponent("BspatchFixtures", isDirectory: true)
-
     private static let controlLengthOffset = 8
     private static let diffLengthOffset = 16
     private static let newSizeOffset = 24
@@ -91,7 +87,7 @@ final class BspatchTests: XCTestCase {
     }
 
     private func fixture(_ name: String) throws -> Data {
-        return try Data(contentsOf: Self.fixturesDirectory.appendingPathComponent(name))
+        return try BspatchFixture.data(name)
     }
 
     /// Applies the patch to `old.bin` and returns where the new file is.
@@ -99,7 +95,7 @@ final class BspatchTests: XCTestCase {
         let patchFile = directory.appendingPathComponent("patch")
         let new = directory.appendingPathComponent("new")
         try patch.write(to: patchFile)
-        try Bspatch.apply(patchFile, to: Self.fixturesDirectory.appendingPathComponent("old.bin"), writingTo: new, maximumBytes: maximumBytes)
+        try Bspatch.apply(patchFile, to: BspatchFixture.url("old.bin"), writingTo: new, maximumBytes: maximumBytes)
         return new
     }
 
@@ -116,5 +112,20 @@ final class BspatchTests: XCTestCase {
         var patched = patch
         patched.replaceSubrange(offset..<(offset + 8), with: bytes)
         return patched
+    }
+}
+
+/// The files `Tests/BspatchFixtures/make-patches.sh` writes.
+enum BspatchFixture {
+    private static let directory = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("BspatchFixtures", isDirectory: true)
+
+    static func url(_ name: String) -> URL {
+        return directory.appendingPathComponent(name)
+    }
+
+    static func data(_ name: String) throws -> Data {
+        return try Data(contentsOf: url(name))
     }
 }

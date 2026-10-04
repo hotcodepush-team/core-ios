@@ -253,8 +253,8 @@ public struct Signature: Codable, Equatable {
 }
 
 /// The document at `/apps/{appId}/bundles/{bundleId}/manifest.json`: the manifest as the signed string, its signature, the
-/// reserved encryption slot and, unsigned beside them, the server's facts — the bundle's id and creation time, and the pack,
-/// the deltas and the patches as stored.
+/// reserved encryption slot and, unsigned beside them, the server's facts — the bundle's id and creation time, and the pack
+/// and the deltas as stored. An envelope stored while bundles carried `patches` still parses; the key is not read.
 public struct ManifestEnvelope: Codable, Equatable {
     public struct Pack: Codable, Equatable {
         public let url: String
@@ -299,59 +299,24 @@ public struct ManifestEnvelope: Codable, Equatable {
         }
     }
 
-    /// A patch as stored: the manifest's entry with where its bytes are and how many.
-    public struct Patch: Codable, Equatable {
-        public let path: String
-        public let fromSha256: String
-        public let toSha256: String
-        public let format: String
-        public let url: String
-        public let sizeBytes: Int
-
-        enum CodingKeys: String, CodingKey {
-            case path, fromSha256, toSha256, format, url, sizeBytes
-        }
-
-        public init(path: String, fromSha256: String, toSha256: String, format: String, url: String, sizeBytes: Int) {
-            self.path = path
-            self.fromSha256 = fromSha256
-            self.toSha256 = toSha256
-            self.format = format
-            self.url = url
-            self.sizeBytes = sizeBytes
-        }
-
-        public init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            path = try container.decode(.relativePath, forKey: .path)
-            fromSha256 = try container.decode(.sha256, forKey: .fromSha256)
-            toSha256 = try container.decode(.sha256, forKey: .toSha256)
-            format = try container.decode(.nonEmpty, forKey: .format)
-            url = try container.decode(.url, forKey: .url)
-            sizeBytes = try container.decodeInt(forKey: .sizeBytes, minimum: 0)
-        }
-    }
-
     public let bundleId: String
     public let createdAt: Date
     public let manifest: String
     public let signature: Signature?
     public let pack: Pack
     public let deltas: [Delta]
-    public let patches: [Patch]
 
     enum CodingKeys: String, CodingKey {
-        case bundleId, createdAt, manifest, signature, encryption, pack, deltas, patches
+        case bundleId, createdAt, manifest, signature, encryption, pack, deltas
     }
 
-    public init(bundleId: String, createdAt: Date, manifest: String, signature: Signature? = nil, pack: Pack, deltas: [Delta] = [], patches: [Patch] = []) {
+    public init(bundleId: String, createdAt: Date, manifest: String, signature: Signature? = nil, pack: Pack, deltas: [Delta] = []) {
         self.bundleId = bundleId
         self.createdAt = createdAt
         self.manifest = manifest
         self.signature = signature
         self.pack = pack
         self.deltas = deltas
-        self.patches = patches
     }
 
     public init(from decoder: Decoder) throws {
@@ -365,7 +330,6 @@ public struct ManifestEnvelope: Codable, Equatable {
         }
         pack = try container.decode(Pack.self, forKey: .pack)
         deltas = try container.decode([Delta].self, forKey: .deltas)
-        patches = try container.decode([Patch].self, forKey: .patches)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -377,7 +341,6 @@ public struct ManifestEnvelope: Codable, Equatable {
         try container.encodeNil(forKey: .encryption)
         try container.encode(pack, forKey: .pack)
         try container.encode(deltas, forKey: .deltas)
-        try container.encode(patches, forKey: .patches)
     }
 
     public func decodeManifest() throws -> BundleManifest {
@@ -386,7 +349,8 @@ public struct ManifestEnvelope: Codable, Equatable {
 }
 
 /// The bundle manifest, the content the CLI knows before the upload and signs as canonical JSON: the files with their hashes
-/// and sizes, the patches it computed, the platforms, the bundle version, the fingerprint and the signing key's id.
+/// and sizes, the platforms, the bundle version, the fingerprint and the signing key's id. A manifest stored while bundles
+/// carried `patches` still parses; the key is not read.
 public struct BundleManifest: Codable, Equatable {
     public struct File: Codable, Equatable {
         public let path: String
@@ -411,53 +375,24 @@ public struct BundleManifest: Codable, Equatable {
         }
     }
 
-    /// A patch the bundle offers: the file at `path` from the bytes of `fromSha256` to those of `toSha256`; a format the reader does not know means the full file.
-    public struct Patch: Codable, Equatable {
-        public let path: String
-        public let fromSha256: String
-        public let toSha256: String
-        public let format: String
-
-        enum CodingKeys: String, CodingKey {
-            case path, fromSha256, toSha256, format
-        }
-
-        public init(path: String, fromSha256: String, toSha256: String, format: String) {
-            self.path = path
-            self.fromSha256 = fromSha256
-            self.toSha256 = toSha256
-            self.format = format
-        }
-
-        public init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            path = try container.decode(.relativePath, forKey: .path)
-            fromSha256 = try container.decode(.sha256, forKey: .fromSha256)
-            toSha256 = try container.decode(.sha256, forKey: .toSha256)
-            format = try container.decode(.nonEmpty, forKey: .format)
-        }
-    }
-
     public let appId: String
     public let bundleVersion: String
     public let files: [File]
     public let fingerprint: String?
     /// The fingerprint of the key that signed the manifest, `nil` when unsigned.
     public let keyId: String?
-    public let patches: [Patch]
     public let platforms: [String]
 
     enum CodingKeys: String, CodingKey {
-        case appId, bundleVersion, files, fingerprint, keyId, patches, platforms
+        case appId, bundleVersion, files, fingerprint, keyId, platforms
     }
 
-    public init(appId: String, bundleVersion: String, files: [File], fingerprint: String? = nil, keyId: String? = nil, patches: [Patch] = [], platforms: [String]) {
+    public init(appId: String, bundleVersion: String, files: [File], fingerprint: String? = nil, keyId: String? = nil, platforms: [String]) {
         self.appId = appId
         self.bundleVersion = bundleVersion
         self.files = files
         self.fingerprint = fingerprint
         self.keyId = keyId
-        self.patches = patches
         self.platforms = platforms
     }
 
@@ -468,55 +403,6 @@ public struct BundleManifest: Codable, Equatable {
         files = try container.decode([File].self, forKey: .files)
         fingerprint = try container.decodeNullable(.nonEmpty, forKey: .fingerprint)
         keyId = try container.decodeNullable(.nonEmpty, forKey: .keyId)
-        patches = try container.decode([Patch].self, forKey: .patches)
-        platforms = try container.decodePlatforms(forKey: .platforms)
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(appId, forKey: .appId)
-        try container.encode(bundleVersion, forKey: .bundleVersion)
-        try container.encode(files, forKey: .files)
-        try container.encode(fingerprint, forKey: .fingerprint)
-        try container.encode(keyId, forKey: .keyId)
-        try container.encode(patches, forKey: .patches)
-        try container.encode(platforms, forKey: .platforms)
-    }
-
-    public func sha256(forPath path: String) -> String? {
-        return files.first { $0.path == path }?.sha256
-    }
-}
-
-/// The embedded bundle's manifest in the resource file: the bundle manifest without patches, since nothing is ever patched into the embedded bundle.
-public struct EmbeddedBundleManifest: Codable, Equatable {
-    public let appId: String
-    public let bundleVersion: String
-    public let files: [BundleManifest.File]
-    public let fingerprint: String?
-    public let keyId: String?
-    public let platforms: [String]
-
-    enum CodingKeys: String, CodingKey {
-        case appId, bundleVersion, files, fingerprint, keyId, platforms
-    }
-
-    public init(appId: String, bundleVersion: String, files: [BundleManifest.File], fingerprint: String? = nil, keyId: String? = nil, platforms: [String]) {
-        self.appId = appId
-        self.bundleVersion = bundleVersion
-        self.files = files
-        self.fingerprint = fingerprint
-        self.keyId = keyId
-        self.platforms = platforms
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        appId = try container.decode(.nonEmpty, forKey: .appId)
-        bundleVersion = try container.decode(String.self, forKey: .bundleVersion)
-        files = try container.decode([BundleManifest.File].self, forKey: .files)
-        fingerprint = try container.decodeNullable(.nonEmpty, forKey: .fingerprint)
-        keyId = try container.decodeNullable(.nonEmpty, forKey: .keyId)
         platforms = try container.decodePlatforms(forKey: .platforms)
     }
 
@@ -534,6 +420,9 @@ public struct EmbeddedBundleManifest: Codable, Equatable {
         return files.first { $0.path == path }?.sha256
     }
 }
+
+/// The embedded bundle's manifest in the resource file, the bundle manifest itself.
+public typealias EmbeddedBundleManifest = BundleManifest
 
 /// What a value may hold before it names a file, a directory or a host: nothing that climbs out of its directory, nothing off the wire's format.
 enum WireRule {

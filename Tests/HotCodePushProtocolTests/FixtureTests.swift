@@ -157,6 +157,52 @@ final class FixtureTests: XCTestCase {
         let refusedPacks: [RefusedPack]
     }
 
+    private struct PackEntriesFile: Decodable {
+        struct File: Decodable {
+            let contentBase64: String
+            let sha256: String
+        }
+        struct Entry: Decodable {
+            let bodyBase64: String
+            let fromSha256: String?
+            let sha256: String?
+            let toSha256: String?
+            let type: String
+
+            func packEntry() throws -> PackEntry {
+                let body = try XCTUnwrap(Data(base64Encoded: bodyBase64))
+                if type == "file" {
+                    return .file(sha256: try XCTUnwrap(sha256), body: body)
+                }
+                return .patch(fromSha256: try XCTUnwrap(fromSha256), toSha256: try XCTUnwrap(toSha256), body: body)
+            }
+        }
+        struct Pack: Decodable {
+            let entries: [Entry]
+            let packBase64: String
+        }
+        struct PatchEntry: Decodable {
+            let bodyBase64: String
+            let fromSha256: String
+            let toSha256: String
+
+            func packEntry() throws -> PackEntry {
+                return .patch(fromSha256: fromSha256, toSha256: toSha256, body: try XCTUnwrap(Data(base64Encoded: bodyBase64)))
+            }
+        }
+        struct PatchCase: Decodable {
+            let name: String
+            let heldSha256s: [String]
+            let manifestFiles: [BundleManifest.File]
+            let patchEntry: PatchEntry
+            let outcome: String
+        }
+        let files: [File]
+        let deltaPack: Pack
+        let skippedEntryPack: Pack
+        let patchCases: [PatchCase]
+    }
+
     private func load<T: Decodable>(_ path: String, as type: T.Type) throws -> T {
         let url = FixtureTests.fixturesDirectory.appendingPathComponent(path)
         return try Json.decoder.decode(T.self, from: try Data(contentsOf: url))
@@ -289,12 +335,60 @@ final class FixtureTests: XCTestCase {
         let pack = try XCTUnwrap(Data(base64Encoded: fixture.packBase64))
         XCTAssertEqual(Hashing.sha256Hex(pack), fixture.packSha256)
         let entries = try PackReader.entries(in: pack)
-        XCTAssertEqual(entries.map { $0.sha256 }, fixture.entries.map { $0.sha256 })
-        for (entry, expected) in zip(entries, fixture.entries) {
-            XCTAssertEqual(entry.body, Data(expected.content.utf8))
-            XCTAssertEqual(Hashing.sha256Hex(entry.body), expected.sha256)
+        XCTAssertEqual(entries, fixture.entries.map { .file(sha256: $0.sha256, body: Data($0.content.utf8)) })
+        for expected in fixture.entries {
+            XCTAssertEqual(Hashing.sha256Hex(expected.content), expected.sha256)
         }
         XCTAssertEqual(PackWriter.pack(entries), pack)
+    }
+
+    func testShouldReadAndWriteTheDeltaPackOfThePackEntriesFixture() throws {
+        let fixture = try load("pack-entries.json", as: PackEntriesFile.self).deltaPack
+        let pack = try XCTUnwrap(Data(base64Encoded: fixture.packBase64))
+        let entries = try PackReader.entries(in: pack)
+        XCTAssertEqual(entries, try fixture.entries.map { try $0.packEntry() })
+        XCTAssertEqual(PackWriter.pack(entries), pack)
+    }
+
+    func testShouldSkipTheUnknownEntryOfThePackEntriesFixture() throws {
+        let fixture = try load("pack-entries.json", as: PackEntriesFile.self).skippedEntryPack
+        let pack = try XCTUnwrap(Data(base64Encoded: fixture.packBase64))
+        XCTAssertEqual(try PackReader.entries(in: pack), try fixture.entries.map { try $0.packEntry() })
+    }
+
+    /// Each case's patch entry in a delta pack against the running bundle, the held files in the store and every file of the
+    /// manifest on the files host: applied writes the file without fetching it, fallback fetches it, ignored does neither.
+    func testShouldMatchEveryPatchCaseOfThePackEntriesFixture() async throws {
+        let fixture = try load("pack-entries.json", as: PackEntriesFile.self)
+        let contents = try Dictionary(uniqueKeysWithValues: fixture.files.map { ($0.sha256, try XCTUnwrap(Data(base64Encoded: $0.contentBase64))) })
+        for patchCase in fixture.patchCases {
+            let harness = DownloaderHarness()
+            for sha256 in patchCase.heldSha256s {
+                try harness.files.writeFile(try XCTUnwrap(contents[sha256]), sha256: sha256)
+            }
+            for file in patchCase.manifestFiles {
+                harness.http.stub(DownloaderHarness.fileUrl(sha256: file.sha256), body: try XCTUnwrap(contents[file.sha256]))
+            }
+            let delta = PackWriter.pack([try patchCase.patchEntry.packEntry()])
+            let release = harness.publish(DownloaderHarness.manifest(files: patchCase.manifestFiles), deltas: ["b1": delta])
+            _ = try await harness.download(release, currentBundleId: "b1")
+            let toSha256 = patchCase.patchEntry.toSha256
+            let isFetched = harness.http.requests.contains { $0.url.absoluteString == DownloaderHarness.fileUrl(sha256: toSha256) }
+            switch patchCase.outcome {
+            case "applied":
+                XCTAssertTrue(harness.files.hasFile(sha256: toSha256), patchCase.name)
+                XCTAssertFalse(isFetched, patchCase.name)
+            case "fallback":
+                XCTAssertTrue(harness.files.hasFile(sha256: toSha256), patchCase.name)
+                XCTAssertTrue(isFetched, patchCase.name)
+            case "ignored":
+                XCTAssertFalse(harness.files.hasFile(sha256: toSha256), patchCase.name)
+                XCTAssertFalse(isFetched, patchCase.name)
+            default:
+                XCTFail("\(patchCase.name): the outcome \(patchCase.outcome) is unknown")
+            }
+            XCTAssertTrue(harness.files.isComplete(try XCTUnwrap(harness.files.readManifest(bundleId: DownloaderHarness.bundleId)), embedded: harness.embedded), patchCase.name)
+        }
     }
 
     func testShouldRefuseEveryRefusedPackFixture() throws {

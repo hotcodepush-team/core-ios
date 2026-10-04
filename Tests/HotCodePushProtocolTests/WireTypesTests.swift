@@ -22,6 +22,12 @@ final class WireTypesTests: XCTestCase {
         }
     }
 
+    func testShouldReadAManifestStoredWhileBundlesCarriedPatches() throws {
+        let stored = "{\"appId\":\"a1\",\"bundleVersion\":\"1.0.0\",\"files\":[{\"path\":\"index.html\",\"sha256\":\"\(sha256)\",\"sizeBytes\":7}],\"fingerprint\":null,\"keyId\":null,\"patches\":[],\"platforms\":[\"ios\"]}"
+        let manifest = try Json.decoder.decode(BundleManifest.self, from: Data(stored.utf8))
+        XCTAssertEqual(manifest, BundleManifest(appId: "a1", bundleVersion: "1.0.0", files: [.init(path: "index.html", sha256: sha256, sizeBytes: 7)], platforms: ["ios"]))
+    }
+
     func testShouldRefuseAnIndexReleaseWhoseIdsAreNotIdentifiers() {
         XCTAssertThrowsError(try decodeIndexRelease(id: "../r1", bundleId: "b1"))
         XCTAssertThrowsError(try decodeIndexRelease(id: "r1", bundleId: "../.."))

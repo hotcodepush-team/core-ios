@@ -2,30 +2,65 @@ import XCTest
 @testable import HotCodePushProtocol
 
 final class PackTests: XCTestCase {
+    private let fromSha256 = Hashing.sha256Hex("from")
+    private let toSha256 = Hashing.sha256Hex("to")
+
     func testShouldRoundTripEntriesThroughTheUstarFormat() throws {
         let content = Data("hello".utf8)
-        let entries = [PackEntry(sha256: Hashing.sha256Hex(content), body: try Gzip.compress(content)), PackEntry(sha256: Hashing.sha256Hex("x"), body: Data())]
+        let entries: [PackEntry] = [.file(sha256: Hashing.sha256Hex(content), body: try Gzip.compress(content)), .file(sha256: Hashing.sha256Hex("x"), body: Data())]
         let pack = PackWriter.pack(entries)
         XCTAssertEqual(pack.count % 512, 0)
         let read = try PackReader.entries(in: pack)
-        XCTAssertEqual(read.map { $0.sha256 }, entries.map { $0.sha256 })
-        XCTAssertEqual(try Gzip.decompress(read[0].body, maximumBytes: content.count), content)
+        XCTAssertEqual(read, entries)
+        guard case .file(_, let body) = read[0] else { return XCTFail("not a file entry") }
+        XCTAssertEqual(try Gzip.decompress(body, maximumBytes: content.count), content)
+    }
+
+    func testShouldReadAPatchEntryNamedThroughThePrefix() throws {
+        let entry = PackEntry.patch(fromSha256: fromSha256, toSha256: toSha256, body: Data("BSDIFF40".utf8))
+        XCTAssertEqual(try PackReader.entries(in: PackWriter.pack([entry])), [entry])
+    }
+
+    func testShouldSkipAnEntryOfAnotherNameWithItsBody() throws {
+        var pack = Data()
+        PackWriter.append(prefix: "", name: "notes.txt", body: Data(count: 700), to: &pack)
+        PackWriter.append(prefix: "future/\(fromSha256)", name: toSha256, body: Data(count: 10), to: &pack)
+        PackWriter.append(prefix: "patches/\(fromSha256)", name: "\(toSha256)/extra", body: Data(count: 10), to: &pack)
+        let kept = PackEntry.file(sha256: toSha256, body: Data("x".utf8))
+        pack.append(PackWriter.pack([kept]))
+        XCTAssertEqual(try PackReader.entries(in: pack), [kept])
+    }
+
+    func testShouldSkipAnEntryNamedByAnUppercaseHash() throws {
+        var pack = Data()
+        PackWriter.append(prefix: "", name: toSha256.uppercased(), body: Data("x".utf8), to: &pack)
+        pack.append(Data(count: 1024))
+        XCTAssertEqual(try PackReader.entries(in: pack), [])
     }
 
     func testShouldRejectATruncatedPack() {
-        let pack = PackWriter.pack([PackEntry(sha256: "abc", body: Data(count: 700))])
+        let pack = PackWriter.pack([.file(sha256: toSha256, body: Data(count: 700))])
+        XCTAssertThrowsError(try PackReader.entries(in: pack.prefix(600))) { error in
+            XCTAssertEqual(error as? PackReader.Failure, .truncated)
+        }
+    }
+
+    func testShouldRejectATruncatedPackWhenTheCutEntryIsSkipped() {
+        var pack = Data()
+        PackWriter.append(prefix: "", name: "notes.txt", body: Data(count: 700), to: &pack)
         XCTAssertThrowsError(try PackReader.entries(in: pack.prefix(600))) { error in
             XCTAssertEqual(error as? PackReader.Failure, .truncated)
         }
     }
 
     func testShouldIgnoreBytesAfterTheEndOfArchiveBlocks() throws {
-        let pack = PackWriter.pack([PackEntry(sha256: "abc", body: Data("x".utf8))]) + Data("trailing".utf8)
-        XCTAssertEqual(try PackReader.entries(in: pack).map { $0.sha256 }, ["abc"])
+        let entry = PackEntry.file(sha256: toSha256, body: Data("x".utf8))
+        let pack = PackWriter.pack([entry]) + Data("trailing".utf8)
+        XCTAssertEqual(try PackReader.entries(in: pack), [entry])
     }
 
     func testShouldRefuseAnEntryWithANegativeSize() {
-        var pack = PackWriter.pack([PackEntry(sha256: "abc", body: Data(count: 700))])
+        var pack = PackWriter.pack([.file(sha256: toSha256, body: Data(count: 700))])
         pack.replaceSubrange(124..<135, with: Data("-0000001000".utf8))
         XCTAssertThrowsError(try PackReader.entries(in: pack))
     }

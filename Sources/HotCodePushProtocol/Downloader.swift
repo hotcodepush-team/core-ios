@@ -151,7 +151,8 @@ public final class Downloader {
     }
 
     /// Streams the pack to disk, resuming what an earlier attempt left and never past its bound, then inflates each
-    /// wanted entry up to its file's size: an entry is always the gzip bytes the bucket serves.
+    /// wanted file entry up to its file's size, an entry always the gzip bytes the bucket serves, and applies each patch
+    /// entry to a wanted file. A patch that does not apply leaves its file missing, fetched whole after the pack.
     func downloadPackEntries(_ source: PackSource, bundleId: String, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> Int {
         let url = try resolvePinnedUrl(source.url)
         let file = temporaryDirectory.appendingPathComponent("\(bundleId)-\(Hashing.sha256Hex(source.url).prefix(16)).pack")
@@ -171,8 +172,14 @@ public final class Downloader {
         }
         do {
             try PackReader.forEachEntry(in: data) { entry in
-                guard let sizeBytes = wanted[entry.sha256] else { return }
-                try files.writeFile(try Gzip.decompress(entry.body, maximumBytes: sizeBytes), sha256: entry.sha256)
+                switch entry {
+                case .file(let sha256, let body):
+                    guard let sizeBytes = wanted[sha256] else { return }
+                    try files.writeFile(try Gzip.decompress(body, maximumBytes: sizeBytes), sha256: sha256)
+                case .patch(let fromSha256, let toSha256, let body):
+                    guard let sizeBytes = wanted[toSha256] else { return }
+                    try? applyPatch(body, from: fromSha256, to: toSha256, maximumBytes: sizeBytes)
+                }
             }
         } catch let failure as DownloadFailure {
             throw failure
@@ -180,6 +187,29 @@ public final class Downloader {
             throw DownloadFailure.verificationFailed("The pack did not verify: \(error)")
         }
         return data.count
+    }
+
+    /// Writes the file `toSha256` from the patch and the held file `fromSha256`; the store refuses bytes of another hash.
+    func applyPatch(_ patch: Data, from fromSha256: String, to toSha256: String, maximumBytes: Int) throws {
+        let directory = temporaryDirectory.appendingPathComponent("\(toSha256).patching", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let patchFile = directory.appendingPathComponent("patch")
+        let patchedFile = directory.appendingPathComponent("patched")
+        try patch.write(to: patchFile)
+        try Bspatch.apply(patchFile, to: try preparePatchBase(fromSha256, in: directory), writingTo: patchedFile, maximumBytes: maximumBytes)
+        try files.writeFile(try Data(contentsOf: patchedFile, options: .mappedIfSafe), sha256: toSha256)
+    }
+
+    /// The held file a patch starts from: the store's in place, the embedded bundle's copied beside the patch.
+    private func preparePatchBase(_ sha256: String, in directory: URL) throws -> URL {
+        if files.hasFile(sha256: sha256) {
+            return files.fileURL(sha256: sha256)
+        }
+        guard embedded.has(sha256: sha256) else { throw CocoaError(.fileNoSuchFile) }
+        let base = directory.appendingPathComponent("base")
+        try embedded.copyFile(sha256: sha256, to: base)
+        return base
     }
 
     /// The URL of a manifest, pack or delta only when it is on a configured host: the SDK fetches from our hosts and nowhere else.
