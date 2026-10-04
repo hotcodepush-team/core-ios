@@ -12,8 +12,13 @@ let package = Package(
     targets: [
         .target(
             name: "HotCodePushProtocol",
+            dependencies: ["HotCodePushBspatch"],
             path: "Sources/HotCodePushProtocol",
             resources: [.copy("PrivacyInfo.xcprivacy")]),
+        .target(
+            name: "HotCodePushBspatch",
+            path: "Sources/HotCodePushBspatch",
+            linkerSettings: [.linkedLibrary("bz2")]),
         .testTarget(
             name: "HotCodePushProtocolTests",
             dependencies: ["HotCodePushProtocol"],
