@@ -48,6 +48,11 @@
  * - The old file's bound is `oldpos + i >= 0 && oldpos + i < oldsize` again:
  *   FreeBSD's overflow checks (20bd59416dca, 2019) dropped the lower half, so a
  *   control triple that seeks before the old file read outside it.
+ * - OFF_MAX is defined from off_t's width where the C library lacks it, as
+ *   Android's does.
+ * - offtin() decodes each 8-byte field in 64 bits, and a value outside off_t's
+ *   range is a corrupt patch: off_t is 32 bits on Android's 32-bit ABIs, whose
+ *   64-bit file offsets need API 24.
  */
 
 #include <sys/types.h>
@@ -68,13 +73,16 @@
 #ifndef O_BINARY
 #define O_BINARY 0
 #endif
+#ifndef OFF_MAX
+#define OFF_MAX ((off_t)((UINT64_C(1) << (sizeof(off_t) * CHAR_BIT - 1)) - 1))
+#endif
 #define HEADER_SIZE 32
 
 #define FAIL(s) do { status = (s); goto cleanup; } while (0)
 
-static off_t offtin(u_char *buf)
+static int offtin(u_char *buf, off_t *off)
 {
-	off_t y;
+	int64_t y;
 
 	y = buf[7] & 0x7F;
 	y = y * 256; y += buf[6];
@@ -88,7 +96,10 @@ static off_t offtin(u_char *buf)
 	if (buf[7] & 0x80)
 		y = -y;
 
-	return (y);
+	if (y > OFF_MAX || y < -OFF_MAX - 1)
+		return (-1);
+	*off = (off_t)y;
+	return (0);
 }
 
 int hotcodepush_bspatch(const char *old_path, const char *new_path,
@@ -155,9 +166,10 @@ int hotcodepush_bspatch(const char *old_path, const char *new_path,
 		FAIL(HOTCODEPUSH_BSPATCH_CORRUPT_PATCH);
 
 	/* Read lengths from header */
-	bzctrllen = offtin(header + 8);
-	bzdatalen = offtin(header + 16);
-	newsize = offtin(header + 24);
+	if (offtin(header + 8, &bzctrllen) ||
+	    offtin(header + 16, &bzdatalen) ||
+	    offtin(header + 24, &newsize))
+		FAIL(HOTCODEPUSH_BSPATCH_CORRUPT_PATCH);
 	if (bzctrllen < 0 || bzctrllen > OFF_MAX - HEADER_SIZE ||
 	    bzdatalen < 0 || bzctrllen + HEADER_SIZE > OFF_MAX - bzdatalen ||
 	    newsize < 0 || newsize > SSIZE_MAX || newsize > max_new_size)
@@ -212,7 +224,8 @@ int hotcodepush_bspatch(const char *old_path, const char *new_path,
 			if ((lenread < 8) || ((cbz2err != BZ_OK) &&
 			    (cbz2err != BZ_STREAM_END)))
 				FAIL(HOTCODEPUSH_BSPATCH_CORRUPT_PATCH);
-			ctrl[i] = offtin(buf);
+			if (offtin(buf, &ctrl[i]))
+				FAIL(HOTCODEPUSH_BSPATCH_CORRUPT_PATCH);
 		}
 
 		/* Sanity-check */

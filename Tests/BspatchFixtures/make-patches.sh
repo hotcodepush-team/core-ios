@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
-# Writes the patches BspatchTests reads. valid.patch comes from bsdiff 4.3, the reference, taken from the PATH: macOS
-# ships no /usr/bin/bsdiff, and `brew install bsdiff` puts Homebrew's at /opt/homebrew/bin/bsdiff. The hostile patches
-# carry hand-made control blocks.
+# Writes the hostile patches BspatchTests reads, each with a hand-made control block; protocol-android's
+# make-bspatch-fixtures.sh writes the same bytes. old.bin, new.bin and valid.patch beside them are committed inputs:
+# valid.patch was written once by Colin Percival's bsdiff 4.3 from old.bin to new.bin, and nothing here regenerates it.
 set -euo pipefail
 cd "$(dirname "$0")"
-
-if ! command -v bsdiff > /dev/null; then
-  echo "bsdiff is not on the PATH: install bsdiff 4.3 with 'brew install bsdiff'" >&2
-  exit 1
-fi
 
 # One bsdiff offset: eight bytes little-endian, the sign in the top bit of the last.
 write_offset() {
@@ -42,17 +37,8 @@ write_patch() {
   }
 }
 
-for line in $(seq 1 200); do
-  printf 'export const value%d = "release one, line %d";\n' "$line" "$line"
-done > old.bin
-for line in $(seq 1 200); do
-  if [ $((line % 17)) -eq 0 ]; then release=two; else release=one; fi
-  printf 'export const value%d = "release %s, line %d";\n' "$line" "$release" "$line"
-done > new.bin
-printf 'export const isAdded = true;\n' >> new.bin
-bsdiff old.bin new.bin valid.patch
-
 write_patch 16 32 0 32 0 0 > diff-past-new-file.patch
 write_patch 16 0 32 0 32 0 > extra-past-new-file.patch
+write_patch 16 16 0 $(((1 << 32) + 16)) 0 0 > length-past-32-bits.patch
 write_patch 32 32 0 0 0 -1000000000 32 0 0 > seek-before-old-file.patch
 write_patch 32 32 0 0 0 1000000000 32 0 0 > seek-past-old-file.patch

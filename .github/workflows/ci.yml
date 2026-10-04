@@ -23,6 +23,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Compare the bspatch sources with protocol-android's
+        run: for file in bspatch.c include/HotCodePushBspatch.h; do curl -fsSL "https://raw.githubusercontent.com/hotcodepush-team/protocol-android/main/src/main/cpp/bspatch/$file" | cmp - "Sources/HotCodePushBspatch/$file"; done
       - run: brew install swiftlint
       - run: swiftlint lint --quiet --strict
       - run: swift test

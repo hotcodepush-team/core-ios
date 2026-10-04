@@ -1,7 +1,7 @@
 import XCTest
 @testable import HotCodePushProtocol
 
-/// FreeBSD's bspatch on the patches `Tests/BspatchFixtures/make-patches.sh` writes: a patch arrives unsigned, so a hostile
+/// FreeBSD's bspatch on the patches in `Tests/BspatchFixtures`: a patch arrives unsigned, so a hostile
 /// one must end in an error or in bytes the hash check refuses, never in a read or write outside a buffer.
 final class BspatchTests: XCTestCase {
     private static let controlLengthOffset = 8
@@ -62,6 +62,10 @@ final class BspatchTests: XCTestCase {
         assertRefused(try settingOffset(Int64.max / 4, at: Self.newSizeOffset, in: fixture("valid.patch")), maximumBytes: Int.max, as: .outOfMemory)
     }
 
+    func testShouldRefuseThePatchWhenAControlTripleCarriesALengthPast32Bits() throws {
+        assertRefused(try fixture("length-past-32-bits.patch"), as: .corruptPatch)
+    }
+
     func testShouldRefuseThePatchWhenAControlTripleWritesTheDiffPastTheNewFile() throws {
         assertRefused(try fixture("diff-past-new-file.patch"), as: .corruptPatch)
     }
@@ -115,7 +119,7 @@ final class BspatchTests: XCTestCase {
     }
 }
 
-/// The files `Tests/BspatchFixtures/make-patches.sh` writes.
+/// The committed bsdiff 4.3 patch with its old and new file, and the hostile patches `make-patches.sh` writes beside them.
 enum BspatchFixture {
     private static let directory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent()
