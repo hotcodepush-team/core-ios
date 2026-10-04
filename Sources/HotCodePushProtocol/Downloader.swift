@@ -92,9 +92,22 @@ public final class Downloader {
         let actual = Hashing.sha256Hex(envelope.manifest)
         guard actual == expectedSha256 else { throw DownloadFailure.verificationFailed("The manifest's hash does not match the index") }
         guard !configuration.publicKeys.isEmpty else { return }
-        guard envelope.signature != nil else { throw DownloadFailure.invalidSignature("The manifest is unsigned and the app accepts only signed bundles") }
-        guard Signatures.verifyManifestSignature(envelope, publicKeys: configuration.publicKeys) else {
-            throw DownloadFailure.invalidSignature("The manifest's signature does not verify against the app's public keys")
+        do {
+            try Signatures.verifyManifestSignature(envelope, publicKeys: configuration.publicKeys)
+        } catch let refusal as SignatureRefusal {
+            throw DownloadFailure.invalidSignature(Downloader.describe(refusal, keyId: envelope.signature?.keyId ?? ""))
+        }
+    }
+
+    /// The sentence behind a refused signature; an unimportable key is the app's configuration, and the sentence says so.
+    static func describe(_ refusal: SignatureRefusal, keyId: String) -> String {
+        switch refusal {
+        case .unsigned: return "The manifest is unsigned and the app accepts only signed bundles"
+        case .unknownScheme: return "The manifest's signature is not of the scheme \(Signatures.scheme)"
+        case .unlistedKey: return "The manifest is signed by a key the app does not list: \(keyId)"
+        case .unimportableKey: return "The app's configuration is wrong: the system cannot import the public key \(keyId) of the resource file as an RSA key"
+        case .weakKey: return "The public key \(keyId) is smaller than \(Signatures.minimumKeyBits) bits"
+        case .mismatch: return "The manifest's signature does not verify under the public key \(keyId)"
         }
     }
 

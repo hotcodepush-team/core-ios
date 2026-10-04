@@ -36,7 +36,7 @@ An SDK opens the debug screen over its own view controller. The screen shows the
 DebugScreenViewController.present(core: core, from: viewController)
 ```
 
-Once the resource file lists `publicKeys`, the downloader refuses a manifest that is unsigned or whose Ed25519 signature does not verify against them, before it fetches a byte of the bundle.
+Once the resource file lists `publicKeys`, the downloader refuses a manifest that is unsigned or whose signature does not verify against them, before it fetches a byte of the bundle. The scheme is `rsa-v1_5-sha256`, verified by the system's Security framework with the keys as the resource file carries them for iOS, PKCS #1 DER beside their key ids.
 
 The package is the foundation of the HotCodePush SDKs, not their supported API: an app uses the SDK for its framework.
 

@@ -117,11 +117,6 @@ final class FixtureTests: XCTestCase {
     }
 
     private struct SignaturesFile: Decodable {
-        struct Key: Decodable {
-            let fingerprint: String
-            let publicKey: String
-            let scheme: String
-        }
         struct SignedManifest: Decodable {
             let manifest: String
             let signature: Signature?
@@ -130,13 +125,15 @@ final class FixtureTests: XCTestCase {
                 return ManifestEnvelope(bundleId: "b1", createdAt: Fixture.builtAt, manifest: manifest, signature: signature, pack: .init(url: "\(Fixture.filesBaseUrl)/pack", sizeBytes: 0))
             }
         }
+        struct DevicePublicKeys: Decodable {
+            let ios: [DevicePublicKey]
+        }
         struct Case: Decodable {
             let name: String
             let envelope: SignedManifest
-            let publicKeys: [String]
+            let devicePublicKeys: DevicePublicKeys
             let isValid: Bool
         }
-        let keys: [Key]
         let manifests: [Case]
     }
 
@@ -253,25 +250,28 @@ final class FixtureTests: XCTestCase {
         }
     }
 
-    /// The suite's verdicts, case for case, within this core's allow-list: a signature of the Expo bridge's RSA scheme is outside it and verifies nothing here, whatever the suite says of a verifier that holds both schemes.
-    func testShouldMatchEverySignatureFixtureWithinTheAllowList() throws {
-        let file = try load("signatures.json", as: SignaturesFile.self)
-        for key in file.keys {
-            let parsed = SigningKeys.parsePublicKey(key.publicKey)
-            if SigningScheme(rawValue: key.scheme) == nil {
-                XCTAssertNil(parsed, key.publicKey)
-            } else {
-                XCTAssertEqual(parsed.map(SigningKeys.fingerprint), key.fingerprint, key.publicKey)
-            }
-        }
+    /// The suite's verdicts, case for case, against the keys as an iOS resource file carries them.
+    func testShouldMatchEverySignatureFixture() throws {
+        let cases = try load("signatures.json", as: SignaturesFile.self).manifests
         var verified = 0
-        for testCase in file.manifests {
-            let isWithinAllowList = testCase.envelope.signature.map { SelfDescribingBytes.parse($0.value) != nil } ?? false
-            let isValid = Signatures.verifyManifestSignature(testCase.envelope.envelope, publicKeys: testCase.publicKeys)
-            XCTAssertEqual(isValid, testCase.isValid && isWithinAllowList, testCase.name)
+        for testCase in cases {
+            let isValid = (try? Signatures.verifyManifestSignature(testCase.envelope.envelope, publicKeys: testCase.devicePublicKeys.ios)) != nil
+            XCTAssertEqual(isValid, testCase.isValid, testCase.name)
             verified += isValid ? 1 : 0
         }
-        XCTAssertGreaterThanOrEqual(verified, 2)
+        XCTAssertGreaterThanOrEqual(verified, 3)
+        XCTAssertGreaterThan(cases.count - verified, 5)
+    }
+
+    /// The public keys of the iOS resource file are PKCS #1 DER the system imports as they stand.
+    func testShouldImportThePublicKeysOfTheIosResourceFileFixture() throws {
+        let cases = try load("resource-files.json", as: ResourceFilesFile.self).cases
+        let iosBuild = try XCTUnwrap(cases.first { $0.name.contains("iOS build") })
+        XCTAssertEqual(iosBuild.resourceFile.publicKeys.count, 2)
+        for publicKey in iosBuild.resourceFile.publicKeys {
+            let key = try XCTUnwrap(Signatures.importPublicKey(publicKey), publicKey.keyId)
+            XCTAssertEqual(SecKeyGetBlockSize(key) * 8, 4096, publicKey.keyId)
+        }
     }
 
     /// The bounds are the writer's: a reader takes a release with more conditions, and a device condition with more ids, than the API accepts.

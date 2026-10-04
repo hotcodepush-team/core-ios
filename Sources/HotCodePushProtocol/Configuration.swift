@@ -44,7 +44,7 @@ public struct Configuration: Codable, Equatable {
     public var readySignal: ReadySignal
     public var readyTimeout: Double
     public var enabledInDebugBuilds: Bool
-    public var publicKeys: [String]
+    public var publicKeys: [DevicePublicKey]
     public var builtAt: Date
     public var fingerprint: String?
     public var embeddedBundleManifest: EmbeddedBundleManifest
@@ -71,7 +71,7 @@ public struct Configuration: Codable, Equatable {
         readySignal = try container.decodeIfPresent(ReadySignal.self, forKey: .readySignal) ?? .render
         readyTimeout = max(1, try container.decodeIfPresent(Double.self, forKey: .readyTimeout) ?? 10)
         enabledInDebugBuilds = try container.decodeIfPresent(Bool.self, forKey: .enabledInDebugBuilds) ?? true
-        publicKeys = try container.decodeIfPresent([String].self, forKey: .publicKeys) ?? []
+        publicKeys = try container.decodeIfPresent([DevicePublicKey].self, forKey: .publicKeys) ?? []
         builtAt = try container.decode(Date.self, forKey: .builtAt)
         fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint)
         embeddedBundleManifest = try container.decode(EmbeddedBundleManifest.self, forKey: .embeddedBundleManifest)

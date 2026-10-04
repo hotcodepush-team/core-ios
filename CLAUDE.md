@@ -43,8 +43,9 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - Safety is on by default and cannot be switched off: the readiness gate, the local blocklist, the automatic rollback.
 - Every key in the store is `hotcodepush.<name>`; three identity keys survive everything, the rest is a cache dropped on an unknown `stateVersion`.
 - Statuses and reasons are `SCREAMING_SNAKE_CASE` from the one catalog; a method throws a plain error only for a programming mistake.
-- Nothing here writes a cryptographic primitive or parses a standard format by hand beyond ustar and gzip: the platform's CryptoKit, zlib and Foundation do that.
-- The signature allow-list is pinned and has one entry, `ed25519`: the manifest string is verified as received under the key its `keyId` names, and a key or signature of the Expo bridge's `rsa-v1_5-sha256` verifies nothing here, so the suite's RSA cases are asserted as refused.
+- Nothing here writes a cryptographic primitive or parses a standard format by hand beyond ustar and gzip: CryptoKit hashes, Security verifies, zlib and Foundation do the rest.
+- The signature allow-list is pinned and has one entry, `rsa-v1_5-sha256`: the manifest string is verified as received with `SecKeyVerifySignature` under the key its `keyId` names; a value under any other prefix, `ed25519` included, is an unknown scheme.
+- A public key is the resource file's `{ der, keyId }`: the PKCS #1 DER goes to `SecKeyCreateWithData` as it stands, the key id is taken as given, and no ASN.1 is handled and no key format converted here. A key the system refuses is the app's configuration and the message says so; a key under 2048 bits is refused, its size read from the imported key.
 - A download stays on the URL the core pinned and never follows a redirect; a streamed delta the updates host does not serve gives way to the envelope's full pack.
 - The debug screen shows what `DebugReport` renders, and the share text is the same sections: a fact joins both through `DebugReport`, never the screen alone. The session log lives in memory, the newest two hundred lines, never on disk and never on the wire.
 

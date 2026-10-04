@@ -1,74 +1,91 @@
-import CryptoKit
+import Security
 import XCTest
 @testable import HotCodePushProtocol
 
 final class SigningTests: XCTestCase {
-    private let privateKey = Curve25519.Signing.PrivateKey()
+    private let key = SigningFixture.keyA
+    private let other = SigningFixture.keyB
 
-    func testShouldParseACanonicalSelfDescribingValue() throws {
-        let bytes = Data([1, 2, 3, 250])
-        let parsed = try XCTUnwrap(SelfDescribingBytes.parse("ed25519:\(bytes.base64EncodedString())"))
-        XCTAssertEqual(parsed.scheme, .ed25519)
-        XCTAssertEqual(parsed.bytes, bytes)
+    private func refusal(of envelope: ManifestEnvelope, publicKeys: [DevicePublicKey]) -> SignatureRefusal? {
+        do {
+            try Signatures.verifyManifestSignature(envelope, publicKeys: publicKeys)
+            return nil
+        } catch {
+            return error as? SignatureRefusal
+        }
     }
 
-    func testShouldRefuseAValueOutsideTheAllowListOrOffCanonicalBase64() {
-        XCTAssertNil(SelfDescribingBytes.parse("ecdsa-p256-sha256:AQID"))
-        XCTAssertNil(SelfDescribingBytes.parse("rsa-v1_5-sha256:AQID"))
-        XCTAssertNil(SelfDescribingBytes.parse("ed25519"))
-        XCTAssertNil(SelfDescribingBytes.parse("ed25519:AQI"), "padding is missing")
-        XCTAssertNil(SelfDescribingBytes.parse("ed25519:AB=="), "the unused bits are not zero")
-        XCTAssertNil(SelfDescribingBytes.parse("ed25519:AQ ID"))
-    }
-
-    func testShouldAcceptAPublicKeyOnlyWhenItsBytesHaveTheSchemesLength() {
-        XCTAssertNotNil(SigningKeys.parsePublicKey(SigningFixture.publicKey(of: privateKey)))
-        XCTAssertNil(SigningKeys.parsePublicKey("ed25519:\(Data(repeating: 1, count: 31).base64EncodedString())"))
-    }
-
-    func testShouldFingerprintAKeyAsTheSha256OfItsBytes() throws {
-        let key = try XCTUnwrap(SigningKeys.parsePublicKey(SigningFixture.publicKey(of: privateKey)))
-        XCTAssertEqual(SigningKeys.fingerprint(of: key), "sha256:\(Hashing.sha256Hex(privateKey.publicKey.rawRepresentation))")
-    }
-
-    func testShouldVerifyASignatureOverTheManifestStringAsReceived() throws {
-        let envelope = SigningFixture.envelope(manifest: "{\"a\":1}", signedBy: privateKey)
-        XCTAssertTrue(Signatures.verifyManifestSignature(envelope, publicKeys: [SigningFixture.publicKey(of: privateKey)]))
+    func testShouldVerifyASignatureOverTheManifestStringAsReceived() {
+        let envelope = SigningFixture.envelope(manifest: "{\"a\":1}", signedBy: key)
+        XCTAssertNil(refusal(of: envelope, publicKeys: [SigningFixture.publicKey(of: key)]))
         let reserialized = ManifestEnvelope(bundleId: envelope.bundleId, createdAt: envelope.createdAt, manifest: "{ \"a\": 1 }", signature: envelope.signature, pack: envelope.pack)
-        XCTAssertFalse(Signatures.verifyManifestSignature(reserialized, publicKeys: [SigningFixture.publicKey(of: privateKey)]))
+        XCTAssertEqual(refusal(of: reserialized, publicKeys: [SigningFixture.publicKey(of: key)]), .mismatch)
     }
 
-    func testShouldVerifyAgainstNoKeyWhenTheEnvelopeIsUnsigned() {
+    func testShouldRefuseAnUnsignedEnvelope() {
         let envelope = ManifestEnvelope(bundleId: "b1", createdAt: Fixture.builtAt, manifest: "{}", pack: .init(url: "\(Fixture.filesBaseUrl)/pack", sizeBytes: 0))
-        XCTAssertFalse(Signatures.verifyManifestSignature(envelope, publicKeys: [SigningFixture.publicKey(of: privateKey)]))
+        XCTAssertEqual(refusal(of: envelope, publicKeys: [SigningFixture.publicKey(of: key)]), .unsigned)
     }
 
     func testShouldSelectTheKeyTheKeyIdNamesAndNoOther() {
-        let other = Curve25519.Signing.PrivateKey()
-        let envelope = SigningFixture.envelope(manifest: "{}", signedBy: privateKey)
-        XCTAssertTrue(Signatures.verifyManifestSignature(envelope, publicKeys: ["not a key", SigningFixture.publicKey(of: other), SigningFixture.publicKey(of: privateKey)]))
-        XCTAssertFalse(Signatures.verifyManifestSignature(envelope, publicKeys: [SigningFixture.publicKey(of: other)]))
+        let envelope = SigningFixture.envelope(manifest: "{}", signedBy: key)
+        XCTAssertNil(refusal(of: envelope, publicKeys: [SigningFixture.publicKey(of: other), SigningFixture.publicKey(of: key)]))
+        XCTAssertEqual(refusal(of: envelope, publicKeys: [SigningFixture.publicKey(of: other)]), .unlistedKey)
         let misattributed = ManifestEnvelope(bundleId: envelope.bundleId, createdAt: envelope.createdAt, manifest: envelope.manifest, signature: Signature(keyId: SigningFixture.keyId(of: other), value: envelope.signature!.value), pack: envelope.pack)
-        XCTAssertFalse(Signatures.verifyManifestSignature(misattributed, publicKeys: [SigningFixture.publicKey(of: other), SigningFixture.publicKey(of: privateKey)]))
+        XCTAssertEqual(refusal(of: misattributed, publicKeys: [SigningFixture.publicKey(of: other), SigningFixture.publicKey(of: key)]), .mismatch)
+    }
+
+    func testShouldRefuseAValueUnderAnotherSchemeAsUnknown() {
+        let envelope = SigningFixture.envelope(manifest: "{}", signedBy: key)
+        let value = envelope.signature!.value.replacingOccurrences(of: "\(Signatures.scheme):", with: "ed25519:")
+        let relabelled = ManifestEnvelope(bundleId: envelope.bundleId, createdAt: envelope.createdAt, manifest: envelope.manifest, signature: Signature(keyId: envelope.signature!.keyId, value: value), pack: envelope.pack)
+        XCTAssertEqual(refusal(of: relabelled, publicKeys: [SigningFixture.publicKey(of: key)]), .unknownScheme)
+    }
+
+    func testShouldRefuseAKeyTheSystemCannotImportAsAConfigurationError() {
+        let envelope = SigningFixture.envelope(manifest: "{}", signedBy: key)
+        let keyId = SigningFixture.keyId(of: key)
+        XCTAssertEqual(refusal(of: envelope, publicKeys: [DevicePublicKey(der: "AQID", keyId: keyId)]), .unimportableKey)
+        XCTAssertEqual(refusal(of: envelope, publicKeys: [DevicePublicKey(der: "not base64", keyId: keyId)]), .unimportableKey)
+    }
+
+    func testShouldRefuseAKeyUnderTheMinimumSize() {
+        let weak = SigningFixture.privateKey(bits: 1024)
+        let envelope = SigningFixture.envelope(manifest: "{}", signedBy: weak)
+        XCTAssertEqual(refusal(of: envelope, publicKeys: [SigningFixture.publicKey(of: weak)]), .weakKey)
     }
 }
 
-/// Keys and signatures for the tests: a CryptoKit pair, its public key and fingerprint as the wire carries them.
+/// Keys and signatures for the tests, made by the system: an RSA pair, its public key as an iOS resource file carries it and a key id the signature names.
 enum SigningFixture {
-    static func publicKey(of privateKey: Curve25519.Signing.PrivateKey) -> String {
-        return "ed25519:\(privateKey.publicKey.rawRepresentation.base64EncodedString())"
+    static let keyA = privateKey(bits: 2048)
+    static let keyB = privateKey(bits: 2048)
+
+    static func privateKey(bits: Int) -> SecKey {
+        let attributes: [CFString: Any] = [kSecAttrKeyType: kSecAttrKeyTypeRSA, kSecAttrKeySizeInBits: bits]
+        return SecKeyCreateRandomKey(attributes as CFDictionary, nil)!
     }
 
-    static func keyId(of privateKey: Curve25519.Signing.PrivateKey) -> String {
-        return "sha256:\(Hashing.sha256Hex(privateKey.publicKey.rawRepresentation))"
+    /// The public half's PKCS #1 DER, as `SecKeyCopyExternalRepresentation` exports an RSA public key.
+    private static func publicKeyDer(of privateKey: SecKey) -> Data {
+        return SecKeyCopyExternalRepresentation(SecKeyCopyPublicKey(privateKey)!, nil)! as Data
     }
 
-    static func sign(_ manifest: String, with privateKey: Curve25519.Signing.PrivateKey) -> Signature {
-        let value = try! privateKey.signature(for: Data(manifest.utf8))
-        return Signature(keyId: keyId(of: privateKey), value: "ed25519:\(value.base64EncodedString())")
+    /// An id the tests assign; a device takes the id from its resource file and never recomputes it.
+    static func keyId(of privateKey: SecKey) -> String {
+        return "sha256:\(Hashing.sha256Hex(publicKeyDer(of: privateKey)))"
     }
 
-    static func envelope(manifest: String, signedBy privateKey: Curve25519.Signing.PrivateKey) -> ManifestEnvelope {
+    static func publicKey(of privateKey: SecKey) -> DevicePublicKey {
+        return DevicePublicKey(der: publicKeyDer(of: privateKey).base64EncodedString(), keyId: keyId(of: privateKey))
+    }
+
+    static func sign(_ manifest: String, with privateKey: SecKey) -> Signature {
+        let value = SecKeyCreateSignature(privateKey, .rsaSignatureMessagePKCS1v15SHA256, Data(manifest.utf8) as CFData, nil)! as Data
+        return Signature(keyId: keyId(of: privateKey), value: "\(Signatures.scheme):\(value.base64EncodedString())")
+    }
+
+    static func envelope(manifest: String, signedBy privateKey: SecKey) -> ManifestEnvelope {
         return ManifestEnvelope(bundleId: "b1", createdAt: Fixture.builtAt, manifest: manifest, signature: sign(manifest, with: privateKey), pack: .init(url: "\(Fixture.filesBaseUrl)/pack", sizeBytes: 0))
     }
 }

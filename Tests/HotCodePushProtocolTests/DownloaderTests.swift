@@ -1,4 +1,4 @@
-import CryptoKit
+import Security
 import XCTest
 @testable import HotCodePushProtocol
 
@@ -84,8 +84,8 @@ final class DownloaderTests: XCTestCase {
     }
 
     func testShouldApplyAManifestSignedByAListedKey() async throws {
-        let key = Curve25519.Signing.PrivateKey()
-        let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [SigningFixture.publicKey(of: Curve25519.Signing.PrivateKey()), SigningFixture.publicKey(of: key)]))
+        let key = SigningFixture.keyA
+        let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [SigningFixture.publicKey(of: SigningFixture.keyB), SigningFixture.publicKey(of: key)]))
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, signingKey: key))
         XCTAssertNil(failure)
@@ -93,19 +93,28 @@ final class DownloaderTests: XCTestCase {
     }
 
     func testShouldRefuseAnUnsignedManifestWhenTheAppCarriesAPublicKey() async {
-        let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [SigningFixture.publicKey(of: Curve25519.Signing.PrivateKey())]))
+        let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [SigningFixture.publicKey(of: SigningFixture.keyA)]))
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack))
-        XCTAssertEqual(failure?.reason, .invalidSignature)
+        XCTAssertEqual(failure, .invalidSignature("The manifest is unsigned and the app accepts only signed bundles"))
         XCTAssertEqual(harness.http.requests.map { $0.url.lastPathComponent }, ["manifest.json"])
     }
 
     func testShouldRefuseAManifestSignedByAKeyTheAppDoesNotList() async {
-        let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [SigningFixture.publicKey(of: Curve25519.Signing.PrivateKey())]))
+        let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [SigningFixture.publicKey(of: SigningFixture.keyA)]))
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
-        let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, signingKey: Curve25519.Signing.PrivateKey()))
-        XCTAssertEqual(failure?.reason, .invalidSignature)
+        let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, signingKey: SigningFixture.keyB))
+        XCTAssertEqual(failure, .invalidSignature("The manifest is signed by a key the app does not list: \(SigningFixture.keyId(of: SigningFixture.keyB))"))
         XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
+    }
+
+    func testShouldNameTheConfigurationWhenTheSystemCannotImportTheListedKey() async {
+        let keyId = SigningFixture.keyId(of: SigningFixture.keyA)
+        let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [DevicePublicKey(der: "AQID", keyId: keyId)]))
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, signingKey: SigningFixture.keyA))
+        XCTAssertEqual(failure, .invalidSignature("The app's configuration is wrong: the system cannot import the public key \(keyId) of the resource file as an RSA key"))
+        XCTAssertEqual(harness.http.requests.map { $0.url.lastPathComponent }, ["manifest.json"])
     }
 
     func testShouldApplyAnUnsignedManifestWhenTheAppCarriesNoPublicKey() async {
@@ -211,7 +220,7 @@ final class DownloaderHarness {
     }
 
     /// Serves the envelope, and its pack when given, where the index entry says they are and returns that entry; a signing key signs the manifest under its fingerprint.
-    func publish(_ manifest: BundleManifest, pack: Data? = nil, packUrl: String = packUrl, packSizeBytes: Int? = nil, bundleId: String = bundleId, manifestUrl: String = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/manifest.json", signingKey: Curve25519.Signing.PrivateKey? = nil) -> IndexRelease {
+    func publish(_ manifest: BundleManifest, pack: Data? = nil, packUrl: String = packUrl, packSizeBytes: Int? = nil, bundleId: String = bundleId, manifestUrl: String = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/manifest.json", signingKey: SecKey? = nil) -> IndexRelease {
         let signed = signingKey.map { key in BundleManifest(appId: manifest.appId, bundleVersion: manifest.bundleVersion, files: manifest.files, fingerprint: manifest.fingerprint, keyId: SigningFixture.keyId(of: key), patches: manifest.patches, platforms: manifest.platforms) } ?? manifest
         let json = String(bytes: try! Json.encoder.encode(signed), encoding: .utf8) ?? ""
         http.stubJson(manifestUrl, ManifestEnvelope(bundleId: bundleId, createdAt: Fixture.builtAt, manifest: json, signature: signingKey.map { SigningFixture.sign(json, with: $0) }, pack: .init(url: packUrl, sizeBytes: packSizeBytes ?? pack?.count ?? 0)))

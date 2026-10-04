@@ -180,7 +180,7 @@ struct Fixture {
         return EmbeddedBundleManifest(appId: appId, bundleVersion: "1.0.0", files: [.init(path: "index.html", sha256: Hashing.sha256Hex(embeddedIndexHtml), sizeBytes: embeddedIndexHtml.count)], platforms: ["ios"])
     }
 
-    static func configuration(installStrategy: InstallStrategy = .nextStart, mandatoryInstallStrategy: MandatoryInstallStrategy = .immediate, downloadStrategy: DownloadStrategy = .auto, autoCheck: Bool = false, readySignal: ReadySignal = .render, publicKeys: [String] = [], fingerprint: String? = "fp1:abc", builtAt: Date = Fixture.builtAt, enabledInDebugBuilds: Bool = true, channelId: String? = Fixture.channelId) -> Configuration {
+    static func configuration(installStrategy: InstallStrategy = .nextStart, mandatoryInstallStrategy: MandatoryInstallStrategy = .immediate, downloadStrategy: DownloadStrategy = .auto, autoCheck: Bool = false, readySignal: ReadySignal = .render, publicKeys: [DevicePublicKey] = [], fingerprint: String? = "fp1:abc", builtAt: Date = Fixture.builtAt, enabledInDebugBuilds: Bool = true, channelId: String? = Fixture.channelId) -> Configuration {
         let json: [String: Any] = [
             "appId": appId,
             "channelId": channelId as Any,
@@ -193,7 +193,7 @@ struct Fixture {
             "readySignal": readySignal.rawValue,
             "readyTimeout": 10,
             "enabledInDebugBuilds": enabledInDebugBuilds,
-            "publicKeys": publicKeys,
+            "publicKeys": publicKeys.map { ["der": $0.der, "keyId": $0.keyId] },
             "builtAt": Iso8601.format(builtAt),
             "fingerprint": fingerprint as Any,
             "embeddedBundleManifest": try! JSONSerialization.jsonObject(with: try! Json.encoder.encode(embeddedManifest())),
