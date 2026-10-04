@@ -1,6 +1,6 @@
 # HotCodePushProtocol
 
-`HotCodePushProtocol` is the HotCodePush update-protocol client for iOS: the wire types, the evaluator, the downloader with its signature check, the state machine and the debug screen behind every HotCodePush SDK on Apple platforms, held to the same fixture suite as the JavaScript and Android clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
+`HotCodePushProtocol` is the HotCodePush update-protocol client for iOS: the wire types, the evaluator, the downloader with its signature check and the byte-level patches it applies from delta packs, the state machine and the debug screen behind every HotCodePush SDK on Apple platforms, held to the same fixture suite as the JavaScript and Android clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
 
 ## Installation
 
@@ -55,6 +55,8 @@ swift test
 
 `npm run verify` runs the lint and the tests; `xcodebuild -scheme HotCodePushProtocol -destination 'generic/platform=iOS Simulator' build` is the iOS build CI adds.
 
+`Tests/BspatchFixtures/make-patches.sh` rewrites the hostile patches `BspatchTests` reads; `valid.patch` beside them is a committed input, written once by bsdiff 4.3, and the script never regenerates it.
+
 ## License
 
-See [LICENSE](./LICENSE).
+See [LICENSE](./LICENSE). The package includes FreeBSD's bspatch under the BSD 2-clause licence; [THIRD-PARTY-NOTICES](./THIRD-PARTY-NOTICES) carries its notice, which an app's distribution must reproduce.
