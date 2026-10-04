@@ -31,7 +31,7 @@ package.json                       private, only the pinned @hotcodepush/protoco
 | `npm test`       | `swift test`                                                                    |
 | `npm run verify` | the lint and the tests                                                          |
 
-`ci.yml` compares the bspatch sources with protocol-android's, then runs the lint, the tests and an iOS simulator build, on every push and pull request.
+`ci.yml` compares the bspatch sources with protocol-android's, then runs the lint, the tests and an iOS simulator build, on every push to `main` and every pull request.
 No releases yet: the version stays `0.0.0`, and release-please and the tag arrive with the publish decision.
 The fixtures move with `package.json`'s pin: a protocol change is a bump of that sha, and the cases the new build adds fail here until the Swift follows.
 
