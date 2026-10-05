@@ -456,9 +456,10 @@ public actor Core {
         }
     }
 
-    /// The restart of the web layer: the bundle loads, a rollback this start follows is announced once, then the gate runs; the reloaded app starts again.
+    /// The restart of the web layer: the bundle loads, a rollback this start follows is announced once, then the gate runs; the reloaded app starts again and runs what the state says, so a held restart is moot.
     private func reloadApp() {
         hasStartSettled = false
+        queuedRestart = nil
         loader.loadServedBundle(bundleId: state.currentRelease?.bundleId)
         if let event = pendingRollbackEvent {
             pendingRollbackEvent = nil

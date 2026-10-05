@@ -1019,6 +1019,35 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.loader.loaded, ["b2", "b3"])
     }
 
+    func testShouldReloadOnceWhenTheAppAppliesAnUpdateWhileTheAppHoldsARestart() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        await harness.core.setRestartAllowed(false)
+        _ = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(harness.loader.loaded, [])
+        _ = await harness.core.applyUpdate()
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        await harness.core.handleRendered()
+        await harness.core.setRestartAllowed(true)
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+    }
+
+    func testShouldReloadOnceWhenTheAppClearsUpdatesWhileTheStartHoldsARestart() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(harness.loader.loaded, [])
+        await harness.core.clearUpdates()
+        XCTAssertEqual(harness.loader.loaded, [nil])
+        await harness.core.handleRendered()
+        XCTAssertEqual(harness.loader.loaded, [nil])
+    }
+
     /// A first run that installs v2 and confirms it, then the next start's core over the same store and files.
     private func restartOnAConfirmedRelease(_ harness: Harness, configuration: Configuration) async {
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
