@@ -341,7 +341,7 @@ public actor Core {
     }
 
     /// Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event.
-    public func rollback(detail: String?) throws {
+    public func rollbackUpdate(detail: String?) throws {
         if let detail = detail {
             try AttributeRules.validate(value: detail)
         }

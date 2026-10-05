@@ -173,7 +173,7 @@ final class CoreTests: XCTestCase {
         let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
         harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
         _ = await harness.core.sync(trigger: .manual)
-        try? await harness.core.rollback(detail: "fatal")
+        try? await harness.core.rollbackUpdate(detail: "fatal")
         let status = await harness.core.getState()
         XCTAssertEqual(status.currentRelease, v2.release.release)
         XCTAssertEqual(status.failedBundleIds, ["b3"])
@@ -355,7 +355,7 @@ final class CoreTests: XCTestCase {
         _ = await harness.core.sync(trigger: .manual)
         _ = await harness.core.notifyReady()
         await harness.core.setRestartAllowed(false)
-        try? await harness.core.rollback(detail: "fatal")
+        try? await harness.core.rollbackUpdate(detail: "fatal")
         XCTAssertEqual(harness.loader.loaded, ["b2", nil])
         let status = await harness.core.getState()
         XCTAssertNil(status.currentRelease)
@@ -721,12 +721,12 @@ final class CoreTests: XCTestCase {
         await harness.core.handleRendered()
         _ = await harness.core.sync(trigger: .manual)
         _ = await harness.core.notifyReady()
-        try await harness.core.rollback(detail: "checkout crashed")
+        try await harness.core.rollbackUpdate(detail: "checkout crashed")
         let failed = StateStore(store: harness.store).unsentEvents.last { $0.type == "failed" }
         XCTAssertEqual(failed?.reason, RollbackReason.reportedByApp.rawValue)
         XCTAssertEqual(failed?.detail, "checkout crashed")
         do {
-            try await harness.core.rollback(detail: "a\nb")
+            try await harness.core.rollbackUpdate(detail: "a\nb")
             XCTFail("expected a plain error")
         } catch is PlainError {}
     }
@@ -983,7 +983,7 @@ final class CoreTests: XCTestCase {
         harness.loader.served = "b2"
         harness.restart()
         await harness.core.handleAppStart()
-        try await harness.core.rollback(detail: nil)
+        try await harness.core.rollbackUpdate(detail: nil)
         XCTAssertEqual(harness.loader.loaded, [nil])
         XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.reportedByApp])
         let status = await harness.core.getState()
@@ -1085,7 +1085,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         _ = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(harness.loader.loaded, ["b2"])
-        try await harness.core.rollback(detail: nil)
+        try await harness.core.rollbackUpdate(detail: nil)
         XCTAssertEqual(harness.loader.loaded, ["b2", nil])
         await harness.core.handleRendered()
         XCTAssertEqual(harness.loader.loaded, ["b2", nil])
