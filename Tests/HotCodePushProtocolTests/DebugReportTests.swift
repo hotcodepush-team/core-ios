@@ -25,6 +25,7 @@ final class DebugReportTests: XCTestCase {
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
+        await harness.core.handleRendered()
         _ = await harness.core.sync(trigger: .manual)
         _ = await harness.core.notifyReady()
         await Task.yield()
