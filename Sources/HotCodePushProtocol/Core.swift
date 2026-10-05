@@ -7,6 +7,12 @@ public actor Core {
         case check, download, sync
     }
 
+    /// A restart held at the gate and who asked for it: the app's own is never held by `setRestartAllowed(false)`.
+    private struct QueuedRestart {
+        let isAskedByApp: Bool
+        let restart: () -> Void
+    }
+
     /// How the channel in effect resolved: the runtime choice, a name through the channels index, else the build's own.
     enum ChannelResolution {
         case id(String)
@@ -36,7 +42,7 @@ public actor Core {
     private var intervalTimer: ScheduledTask?
     private var runningSync: Task<SyncResult, Never>?
     private var isRestartAllowed = true
-    private var queuedRestart: (() -> Void)?
+    private var queuedRestart: QueuedRestart?
     /// The app is up in this run: its first render, `notifyReady()` or the readiness timeout settles the start, and every reload the core performs unsettles it.
     private var hasStartSettled = false
     private var isStartSyncPending = false
@@ -64,7 +70,7 @@ public actor Core {
 
     // MARK: Lifecycle
 
-    /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, the gate, then the cleanup; the start sync waits until the app is up.
+    /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, the gate, then the cleanup.
     public func handleAppStart() {
         state.lastRollback = nil
         if state.lastBuiltAt != configuration.builtAt || hasReleaseWithoutManifest() {
@@ -80,8 +86,10 @@ public actor Core {
         loadBundle()
         if isCurrentReleaseUnconfirmed() {
             startReadyTimer()
+            isStartSyncPending = true
+        } else if configuration.autoCheck {
+            Task { await self.sync(trigger: .start) }
         }
-        isStartSyncPending = configuration.autoCheck
         deleteUnusedFiles()
     }
 
@@ -164,14 +172,16 @@ public actor Core {
         return await performCycle(trigger: .manual, stage: .download, options: SyncOptions())
     }
 
-    /// The third stage: apply the downloaded update now and reload the app.
+    /// The third stage: apply the downloaded update and reload the app, now or, before the app is up in this run, once it is.
     public func applyUpdate() -> ApplyResult {
         discardNextReleaseThatLeftTheIndex()
         guard let next = state.nextRelease else {
             return ApplyResult(status: .nothingToApply, release: state.currentRelease)
         }
-        switchToNextRelease()
-        reloadApp()
+        restartThroughGate(isAskedByApp: true) { [self] in
+            switchToNextRelease()
+            reloadApp()
+        }
         return ApplyResult(status: .applied, release: next)
     }
 
@@ -330,7 +340,7 @@ public actor Core {
         return .updated(release, notes: notes, installAt: strategy)
     }
 
-    /// Rolls the running release back now; `detail` is the app's own cause, carried on the failure event.
+    /// Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event.
     public func rollback(detail: String?) throws {
         if let detail = detail {
             try AttributeRules.validate(value: detail)
@@ -339,20 +349,22 @@ public actor Core {
         rollbackCurrentRelease(reason: .reportedByApp, detail: detail)
     }
 
-    /// Back to the embedded bundle: every downloaded update and the failed list go, the identity stays.
+    /// Back to the embedded bundle, now or, before the app is up in this run, once it is: every downloaded update and the failed list go, the identity stays.
     public func clearUpdates() {
-        stopReadyTimer()
-        state.currentRelease = nil
-        state.nextRelease = nil
-        state.fallbackRelease = nil
-        state.failedBundleIds = []
-        state.lastRollback = nil
-        for bundleId in files.bundleIds() {
-            loader.deleteProjection(bundleId: bundleId)
+        restartThroughGate(isAskedByApp: true) { [self] in
+            stopReadyTimer()
+            state.currentRelease = nil
+            state.nextRelease = nil
+            state.fallbackRelease = nil
+            state.failedBundleIds = []
+            state.lastRollback = nil
+            for bundleId in files.bundleIds() {
+                loader.deleteProjection(bundleId: bundleId)
+            }
+            files.deleteEverything()
+            loader.persistServedBundle(bundleId: nil)
+            reloadApp()
         }
-        files.deleteEverything()
-        loader.persistServedBundle(bundleId: nil)
-        reloadApp()
     }
 
     public func setRestartAllowed(_ allowed: Bool) {
@@ -470,40 +482,35 @@ public actor Core {
         }
     }
 
-    /// The install the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs.
+    /// The install the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does.
     private func installNextRelease() {
-        restartThroughGate { [self] in
+        if let next = state.nextRelease {
+            loader.persistServedBundle(bundleId: next.bundleId)
+        }
+        restartThroughGate(isAskedByApp: false) { [self] in
             switchToNextRelease()
             reloadApp()
         }
     }
 
-    /// A restart the SDK performs on its own waits until the start has settled and while the app holds restarts; the first one held runs when both let go.
-    private func restartThroughGate(_ restart: @escaping () -> Void) {
-        if queuedRestart == nil {
-            queuedRestart = restart
+    /// A restart waits until the app is up in this run, and the SDK's own also while the app holds restarts. One is held at most: the app's replaces a held one, the SDK's yields to it.
+    private func restartThroughGate(isAskedByApp: Bool, _ restart: @escaping () -> Void) {
+        if isAskedByApp || queuedRestart == nil {
+            queuedRestart = QueuedRestart(isAskedByApp: isAskedByApp, restart: restart)
         }
         runQueuedRestart()
     }
 
     private func runQueuedRestart() {
-        guard isRestartAllowed, hasStartSettled, let restart = queuedRestart else { return }
+        guard let queued = queuedRestart, hasStartSettled, isRestartAllowed || queued.isAskedByApp else { return }
         queuedRestart = nil
-        restart()
+        queued.restart()
     }
 
-    /// The app is up in this run: a held restart runs unless the app holds restarts, then the start sync once the running release is confirmed.
+    /// The app is up in this run: the restart held for it runs.
     private func settleStart() {
         hasStartSettled = true
         runQueuedRestart()
-        runPendingStartSync()
-    }
-
-    /// The automatic check at start runs once the app is up in this run and the running release is confirmed; a held restart that reloaded unsettles the start again.
-    private func runPendingStartSync() {
-        guard isStartSyncPending, hasStartSettled, !isCurrentReleaseUnconfirmed() else { return }
-        isStartSyncPending = false
-        Task { await self.sync(trigger: .start) }
     }
 
     private func adoptInPlace(_ release: Release) {
@@ -526,9 +533,15 @@ public actor Core {
             state.fallbackRelease = current
             enqueueDeviceEvent(.confirmed(releaseId: current.id))
         }
+        if isStartSyncPending {
+            isStartSyncPending = false
+            if configuration.autoCheck {
+                Task { await self.sync(trigger: .start) }
+            }
+        }
     }
 
-    /// The app's rollback and the crash found at start, which is part of the start, reload at once; the readiness timeout's goes through the gate.
+    /// A rollback never waits for the app to be up: the app's own and the crash a start finds reload at once, the timer's, which settles the start, waits only while the app holds restarts.
     private func rollbackCurrentRelease(reason: RollbackReason, detail: String?) {
         guard let current = state.currentRelease else { return }
         stopReadyTimer()
@@ -545,7 +558,7 @@ public actor Core {
         case .crashed, .reportedByApp:
             reloadApp()
         case .readyTimeout:
-            restartThroughGate { [self] in reloadApp() }
+            restartThroughGate(isAskedByApp: false) { [self] in reloadApp() }
         }
     }
 
@@ -566,7 +579,7 @@ public actor Core {
         state.currentRelease = nil
         state.nextRelease = nil
         loader.persistServedBundle(bundleId: nil)
-        restartThroughGate { [self] in reloadApp() }
+        restartThroughGate(isAskedByApp: false) { [self] in reloadApp() }
     }
 
     private func startReadyTimer() {
