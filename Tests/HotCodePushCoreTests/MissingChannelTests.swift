@@ -1,11 +1,11 @@
 import XCTest
 @testable import HotCodePushCore
 
-/// A build whose build step ran without a token or offline carries no channel: it answers `UNKNOWN_CHANNEL` without a request
-/// and reports nothing, until the app sets a channel at runtime.
+/// A build whose build step ran without a token or offline carries no channel: it checks nothing on its own, answers an explicit
+/// call `UNKNOWN_CHANNEL` without a request and reports nothing, until the app sets a channel at runtime.
 final class MissingChannelTests: XCTestCase {
     private func harnessWithoutChannel() -> Harness {
-        let harness = Harness(configuration: Fixture.configuration(channelId: nil))
+        let harness = Harness(configuration: Fixture.configuration(autoCheck: true, channelId: nil))
         harness.acknowledgeEvents()
         return harness
     }
@@ -36,6 +36,7 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertTrue(harness.http.posts.isEmpty)
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
         XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.unknownChannel])
+        XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.manual])
         let channel = await harness.core.channel()
         XCTAssertEqual(channel, ChannelResult(id: nil, name: nil, source: .config))
     }
@@ -48,6 +49,97 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(result, .failed(nil, reason: .unknownChannel, message: Core.missingChannelMessage))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
+        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.unknownChannel])
+        XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.manual])
+    }
+
+    func testShouldSkipAnExplicitSyncWithDebugBuildWhenTheBuildIsDisabledAndTheDeviceHasNoChannel() async {
+        let harness = Harness(configuration: Fixture.configuration(enabledInDebugBuilds: false, channelId: nil), isDebugBuild: true)
+        await harness.core.handleAppStart()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .skipped(nil, reason: .debugBuild))
+        XCTAssertTrue(harness.listener.failed.isEmpty)
+    }
+
+    func testShouldStartNoCheckAtStartWhenTheDeviceHasNoChannel() async throws {
+        let harness = harnessWithoutChannel()
+        await harness.core.handleAppStart()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        try await assertNoCheckStarted(harness)
+    }
+
+    func testShouldStartNoCheckAtTheConfirmationOfANewReleaseWhenTheDeviceHasNoChannel() async throws {
+        let harness = harnessWithoutChannel()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.setChannel(.id(Fixture.channelId))
+        _ = await harness.core.sync(trigger: .manual)
+        await harness.core.setChannel(nil)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let requestCount = harness.http.requests.count
+        harness.loader.served = "b2"
+        harness.restart(configuration: Fixture.configuration(autoCheck: true, channelId: nil))
+        await harness.core.handleAppStart()
+        let started = await harness.core.getState()
+        XCTAssertEqual(started.currentRelease, v2.release.release)
+        _ = await harness.core.notifyReady()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .manual)
+        XCTAssertEqual(harness.http.requests.count, requestCount)
+        XCTAssertTrue(harness.listener.failed.isEmpty)
+    }
+
+    func testShouldStartNoCheckOnResumeWhenTheDeviceHasNoChannel() async throws {
+        let harness = harnessWithoutChannel()
+        await harness.core.handleAppStart()
+        await harness.core.handleAppPause()
+        harness.clock.now = harness.clock.now.addingTimeInterval(1000)
+        await harness.core.handleAppResume()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        try await assertNoCheckStarted(harness)
+    }
+
+    func testShouldStartNoCheckAndArmNoTimerWhenTheIntervalFiresAndTheDeviceHasNoChannel() async throws {
+        let harness = harnessWithoutChannel()
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [900])
+        harness.scheduler.fire()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .manual)
+        XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.manual])
+        XCTAssertTrue(harness.scheduler.tasks.isEmpty)
+        XCTAssertTrue(harness.http.requests.isEmpty)
+    }
+
+    func testShouldCheckOnItsOwnAgainAtTheNextResumeWhenAChannelWasSetAtRuntime() async throws {
+        let harness = harnessWithoutChannel()
+        harness.publish([], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.setChannel(.id(Fixture.channelId))
+        await harness.core.handleAppResume()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let lastCheck = try XCTUnwrap(StateStore(store: harness.store).lastCheck)
+        XCTAssertEqual(lastCheck.trigger, .resume)
+        XCTAssertEqual(lastCheck.result, .upToDate(nil))
+    }
+
+    func testShouldFireUpdateFailedOnceWhenAnAutomaticCheckFindsItsRuntimeChannelGoneAndTheBuildCarriesNoneAndStartNoCheckAfterIt() async throws {
+        let harness = harnessWithoutChannel()
+        await harness.core.setChannel(.id("c-gone"))
+        await harness.core.handleAppStart()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.unknownChannel])
+        XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.start])
+        harness.scheduler.fire()
+        await harness.core.handleAppPause()
+        harness.clock.now = harness.clock.now.addingTimeInterval(1000)
+        await harness.core.handleAppResume()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.listener.failed.count, 1)
+        XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
+        XCTAssertEqual(harness.http.requests.count, 1)
     }
 
     func testShouldUpdateAndReportOnceAChannelIsSetAtRuntimeOnABuildWithoutOne() async throws {
@@ -97,6 +189,18 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(result.status, .updated)
         let channel = await harness.core.channel()
         XCTAssertEqual(channel, ChannelResult(id: Fixture.channelId, name: nil, source: .config))
+    }
+
+    /// A cycle that is not started leaves no trace: no check, no log entry, no event, no request and no interval timer.
+    private func assertNoCheckStarted(_ harness: Harness, file: StaticString = #filePath, line: UInt = #line) async throws {
+        XCTAssertNil(StateStore(store: harness.store).lastCheck, file: file, line: line)
+        XCTAssertNil(StateStore(store: harness.store).lastSyncAt, file: file, line: line)
+        let log = await harness.core.debugSnapshot().log
+        XCTAssertEqual(log, [], file: file, line: line)
+        XCTAssertTrue(harness.listener.failed.isEmpty, file: file, line: line)
+        XCTAssertTrue(harness.http.requests.isEmpty, file: file, line: line)
+        XCTAssertTrue(harness.http.posts.isEmpty, file: file, line: line)
+        XCTAssertTrue(harness.scheduler.tasks.isEmpty, file: file, line: line)
     }
 
     func testShouldSayOnTheDebugScreenThatTheBuildHasNoChannelAndWhy() async {

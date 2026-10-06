@@ -88,7 +88,7 @@ public actor Core {
             startReadyTimer()
             isStartSyncPending = true
         } else if configuration.autoCheck {
-            Task { await self.sync(trigger: .start) }
+            startAutomaticCycle(trigger: .start)
         }
         deleteUnusedFiles()
     }
@@ -138,8 +138,14 @@ public actor Core {
         if let elapsed = state.lastSyncAt.map({ clock.now.timeIntervalSince($0) }), elapsed < configuration.checkInterval {
             scheduleIntervalSync(after: configuration.checkInterval - elapsed)
         } else {
-            Task { await self.sync(trigger: .resume) }
+            startAutomaticCycle(trigger: .resume)
         }
+    }
+
+    /// The start's, the resume's and the interval's cycle; a device without a channel starts none, since it could only fail.
+    private func startAutomaticCycle(trigger: SyncTrigger) {
+        guard hasChannel else { return }
+        Task { await self.sync(trigger: trigger) }
     }
 
     // MARK: The three stages
@@ -536,7 +542,7 @@ public actor Core {
         if isStartSyncPending {
             isStartSyncPending = false
             if configuration.autoCheck {
-                Task { await self.sync(trigger: .start) }
+                startAutomaticCycle(trigger: .start)
             }
         }
     }
@@ -607,7 +613,7 @@ public actor Core {
         guard configuration.autoCheck else { return }
         intervalTimer = scheduler.schedule(after: seconds) { [weak self] in
             guard let self = self else { return }
-            Task { await self.sync(trigger: .interval) }
+            Task { await self.startAutomaticCycle(trigger: .interval) }
         }
     }
 
@@ -656,6 +662,11 @@ public actor Core {
                 return .offline
             }
         }
+    }
+
+    /// A device has a channel when the app set one at runtime or the build carries one.
+    private var hasChannel: Bool {
+        return state.channel != nil || configuration.channelId != nil
     }
 
     private func fetchChannelIndex(channelId: String) async -> IndexFetch {
