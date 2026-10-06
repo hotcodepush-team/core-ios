@@ -1,6 +1,6 @@
 import Security
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 final class SigningTests: XCTestCase {
     private let key = SigningFixture.keyA

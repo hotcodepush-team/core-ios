@@ -2,26 +2,26 @@
 import PackageDescription
 
 let package = Package(
-    name: "HotCodePushProtocol",
+    name: "HotCodePushCore",
     platforms: [.iOS(.v13), .macOS(.v12)],
     products: [
         .library(
-            name: "HotCodePushProtocol",
-            targets: ["HotCodePushProtocol"])
+            name: "HotCodePushCore",
+            targets: ["HotCodePushCore"])
     ],
     targets: [
         .target(
-            name: "HotCodePushProtocol",
+            name: "HotCodePushCore",
             dependencies: ["HotCodePushBspatch"],
-            path: "Sources/HotCodePushProtocol",
+            path: "Sources/HotCodePushCore",
             resources: [.copy("PrivacyInfo.xcprivacy")]),
         .target(
             name: "HotCodePushBspatch",
             path: "Sources/HotCodePushBspatch",
             linkerSettings: [.linkedLibrary("bz2")]),
         .testTarget(
-            name: "HotCodePushProtocolTests",
-            dependencies: ["HotCodePushProtocol"],
-            path: "Tests/HotCodePushProtocolTests")
+            name: "HotCodePushCoreTests",
+            dependencies: ["HotCodePushCore"],
+            path: "Tests/HotCodePushCoreTests")
     ]
 )

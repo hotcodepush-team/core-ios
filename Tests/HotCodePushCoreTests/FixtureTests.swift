@@ -1,5 +1,5 @@
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 /// The protocol's fixture suite, read from the installed `@hotcodepush/protocol` package: the same cases every core runs.
 final class FixtureTests: XCTestCase {

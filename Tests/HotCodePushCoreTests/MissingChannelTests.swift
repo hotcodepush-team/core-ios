@@ -1,5 +1,5 @@
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 /// A build whose build step ran without a token or offline carries no channel: it answers `UNKNOWN_CHANNEL` without a request
 /// and reports nothing, until the app sets a channel at runtime.

@@ -1,5 +1,5 @@
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 /// Every result carries every key of the typed contract, `null` when empty, never an absent key.
 final class ContractTests: XCTestCase {

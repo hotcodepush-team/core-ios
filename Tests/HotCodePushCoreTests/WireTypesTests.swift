@@ -1,5 +1,5 @@
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 final class WireTypesTests: XCTestCase {
     private let sha256 = Hashing.sha256Hex("content")

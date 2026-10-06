@@ -1,4 +1,4 @@
-HotCodePushProtocol includes the following third-party code.
+HotCodePushCore includes the following third-party code.
 
 bspatch, BSD-2-Clause
 Sources/HotCodePushBspatch/bspatch.c, from FreeBSD's usr.bin/bsdiff/bspatch/bspatch.c

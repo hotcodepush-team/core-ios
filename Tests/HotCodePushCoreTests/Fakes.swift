@@ -1,5 +1,5 @@
 import Foundation
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 final class FakeHttpClient: HttpClient {
     struct Stub {

@@ -1,5 +1,5 @@
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 final class StoreTests: XCTestCase {
     func testShouldKeepTheIdentityKeysAndDropTheCacheOnAnUnknownStateVersion() {

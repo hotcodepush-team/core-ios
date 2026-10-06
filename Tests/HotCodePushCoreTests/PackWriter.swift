@@ -1,5 +1,5 @@
 import Foundation
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 import zlib
 
 /// Writes the pack format the SDK reads, as the CLI and the edge Worker do: a patch entry's `patches/{from}` in the ustar prefix.

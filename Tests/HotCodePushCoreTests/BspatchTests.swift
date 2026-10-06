@@ -1,5 +1,5 @@
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 /// FreeBSD's bspatch on the patches in `Tests/BspatchFixtures`: a patch arrives unsigned, so a hostile
 /// one must end in an error or in bytes the hash check refuses, never in a read or write outside a buffer.

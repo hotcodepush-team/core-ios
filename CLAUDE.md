@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-`HotCodePushProtocol`, the HotCodePush update-protocol client for Apple platforms: the wire types, the evaluator, the downloader, the signature check, the patch application, the file store, the state machine and the debug screen every HotCodePush SDK on iOS runs, held to the fixture suite of `@hotcodepush/protocol`.
-`@hotcodepush/protocol` (`protocol-js`) and the Android library `com.hotcodepush:protocol-android` (`protocol-android`) implement the same functions and types; a change to one is a change to the other two.
+`HotCodePushCore`, the HotCodePush update-protocol client for Apple platforms: the wire types, the evaluator, the downloader, the signature check, the patch application, the file store, the state machine and the debug screen every HotCodePush SDK on iOS runs, held to the fixture suite of `@hotcodepush/protocol`.
+`@hotcodepush/protocol` (`protocol`) and the Android library `com.hotcodepush:core-android` (`core-android`) implement the same functions and types; a change to one is a change to the other two.
 The Capacitor SDK consumes it at a pinned git revision until its publish decision — SPM by `revision`, the pod by `:git` and `:commit` — never a branch; it is not the supported API, apps use the SDK for their framework.
 Stack: Swift 5.9, C for FreeBSD's `bspatch.c` over the system's libbz2, iOS 13 and the macOS host for the tests, XCTest, SwiftLint, CocoaPods for the podspec, Node 24 for the fixtures.
 
@@ -12,11 +12,11 @@ When code and plan disagree, stop and surface it; never improvise.
 ## Layout
 
 ```
-Sources/HotCodePushProtocol        the package: no framework import, UIKit in DebugScreen.swift alone and behind canImport; PrivacyInfo.xcprivacy is its resource
-Sources/HotCodePushBspatch         the C target linking libbz2: bspatch.c and its header, byte for byte protocol-android's, which a CI step compares
-Tests/HotCodePushProtocolTests     XCTest on the host; FixtureTests reads node_modules/@hotcodepush/protocol/fixtures after npm ci
+Sources/HotCodePushCore            the package: no framework import, UIKit in DebugScreen.swift alone and behind canImport; PrivacyInfo.xcprivacy is its resource
+Sources/HotCodePushBspatch         the C target linking libbz2: bspatch.c and its header, byte for byte core-android's, which a CI step compares
+Tests/HotCodePushCoreTests         XCTest on the host; FixtureTests reads node_modules/@hotcodepush/protocol/fixtures after npm ci
 Tests/BspatchFixtures              what BspatchTests reads: the committed inputs old.bin, new.bin and valid.patch, the patch written once by bsdiff 4.3, and the hostile patches make-patches.sh writes with bash, xxd and bzip2
-Package.swift                      the manifest; HotCodePushProtocol.podspec mirrors it for CocoaPods, where the pod compiles the C sources into its one module
+Package.swift                      the manifest; HotCodePushCore.podspec mirrors it for CocoaPods, where the pod compiles the C sources into its one module
 THIRD-PARTY-NOTICES                bspatch's BSD 2-clause notice
 package.json                       private, only the pinned @hotcodepush/protocol the fixtures come from
 ```
@@ -31,7 +31,7 @@ package.json                       private, only the pinned @hotcodepush/protoco
 | `npm test`       | `swift test`                                                                    |
 | `npm run verify` | the lint and the tests                                                          |
 
-`ci.yml` compares the bspatch sources with protocol-android's, then runs the lint, the tests and an iOS simulator build, on every push to `main` and every pull request.
+`ci.yml` compares the bspatch sources with core-android's, then runs the lint, the tests and an iOS simulator build, on every push to `main` and every pull request.
 No releases yet: the version stays `0.0.0`, and release-please and the tag arrive with the publish decision.
 The fixtures move with `package.json`'s pin: a protocol change is a bump of that sha, and the cases the new build adds fail here until the Swift follows.
 
@@ -48,7 +48,7 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - Every key in the store is `hotcodepush.<name>`; three identity keys survive everything, the rest is a cache dropped on an unknown `stateVersion`.
 - Statuses and reasons are `SCREAMING_SNAKE_CASE` from the one catalog; a method throws a plain error only for a programming mistake.
 - Nothing here writes a cryptographic primitive or parses a standard format by hand beyond ustar and gzip: CryptoKit hashes, Security verifies, FreeBSD's `bspatch.c` applies BSDIFF40 over the system's libbz2, zlib and Foundation do the rest.
-- `bspatch.c` is FreeBSD's with the lower bound on the old file's offset that FreeBSD dropped in 2019 restored, every change listed under its licence header, and byte for byte protocol-android's: a change lands in both cores at once, and `ci.yml` fails on a difference.
+- `bspatch.c` is FreeBSD's with the lower bound on the old file's offset that FreeBSD dropped in 2019 restored, every change listed under its licence header, and byte for byte core-android's: a change lands in both cores at once, and `ci.yml` fails on a difference.
 - The signature allow-list is pinned and has one entry, `rsa-v1_5-sha256`: the manifest string is verified as received with `SecKeyVerifySignature` under the key its `keyId` names; a value under any other prefix, `ed25519` included, is an unknown scheme.
 - A public key is the resource file's `{ der, keyId }`: the PKCS #1 DER goes to `SecKeyCreateWithData` as it stands, the key id is taken as given, and no ASN.1 is handled and no key format converted here. A key the system refuses is the app's configuration and the message says so; a key under 2048 bits is refused, its size read from the imported key.
 - A download stays on the URL the core pinned and never follows a redirect; a streamed delta the updates host does not serve gives way to the envelope's full pack.

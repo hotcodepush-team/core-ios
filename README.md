@@ -1,6 +1,6 @@
-# HotCodePushProtocol
+# HotCodePushCore
 
-`HotCodePushProtocol` is the HotCodePush update-protocol client for iOS: the wire types, the evaluator, the downloader with its signature check and the byte-level patches it applies from delta packs, the state machine and the debug screen behind every HotCodePush SDK on Apple platforms, held to the same fixture suite as the JavaScript and Android clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
+`HotCodePushCore` is the HotCodePush update-protocol client for iOS: the wire types, the evaluator, the downloader with its signature check and the byte-level patches it applies from delta packs, the state machine and the debug screen behind every HotCodePush SDK on Apple platforms, held to the same fixture suite as the JavaScript and Android clients. Learn more at [hotcodepush.com](https://hotcodepush.com).
 
 ## Installation
 
@@ -9,13 +9,13 @@ The package is not tagged yet; a consumer pins one commit and bumps it deliberat
 Swift Package Manager:
 
 ```swift
-.package(url: "https://github.com/hotcodepush-team/protocol-ios.git", revision: "<sha>")
+.package(url: "https://github.com/hotcodepush-team/core-ios.git", revision: "<sha>")
 ```
 
 CocoaPods:
 
 ```ruby
-pod 'HotCodePushProtocol', :git => 'https://github.com/hotcodepush-team/protocol-ios.git', :commit => '<sha>'
+pod 'HotCodePushCore', :git => 'https://github.com/hotcodepush-team/core-ios.git', :commit => '<sha>'
 ```
 
 The package supports iOS 13 and later.
@@ -23,7 +23,7 @@ The package supports iOS 13 and later.
 ## Usage
 
 ```swift
-import HotCodePushProtocol
+import HotCodePushCore
 
 let index = try Json.decoder.decode(ChannelIndex.self, from: data)
 let evaluation = Evaluator.evaluation(of: index, device: deviceInfo)
@@ -53,7 +53,7 @@ swiftlint lint --strict
 swift test
 ```
 
-`npm run verify` runs the lint and the tests; `xcodebuild -scheme HotCodePushProtocol -destination 'generic/platform=iOS Simulator' build` is the iOS build CI adds.
+`npm run verify` runs the lint and the tests; `xcodebuild -scheme HotCodePushCore -destination 'generic/platform=iOS Simulator' build` is the iOS build CI adds.
 
 `Tests/BspatchFixtures/make-patches.sh` rewrites the hostile patches `BspatchTests` reads; `valid.patch` beside them is a committed input, written once by bsdiff 4.3, and the script never regenerates it.
 

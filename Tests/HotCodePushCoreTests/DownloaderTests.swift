@@ -1,6 +1,6 @@
 import Security
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 final class DownloaderTests: XCTestCase {
     private let indexHtml = Data("<html>v2</html>".utf8)

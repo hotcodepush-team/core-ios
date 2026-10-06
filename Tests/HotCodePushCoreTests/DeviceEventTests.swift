@@ -1,5 +1,5 @@
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 final class DeviceEventTests: XCTestCase {
     /// One batch with every event kind and a report whose nullable facts are empty: the batch of `@hotcodepush/protocol`'s own schema

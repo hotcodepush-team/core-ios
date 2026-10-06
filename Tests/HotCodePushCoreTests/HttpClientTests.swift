@@ -1,5 +1,5 @@
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 final class HttpClientTests: XCTestCase {
     private let url = URL(string: "https://files.test/apps/a/bundles/b2/pack")!

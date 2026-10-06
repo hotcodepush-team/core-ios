@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Writes the hostile patches BspatchTests reads, each with a hand-made control block; protocol-android's
+# Writes the hostile patches BspatchTests reads, each with a hand-made control block; core-android's
 # make-bspatch-fixtures.sh writes the same bytes. old.bin, new.bin and valid.patch beside them are committed inputs:
 # valid.patch was written once by Colin Percival's bsdiff 4.3 from old.bin to new.bin, and nothing here regenerates it.
 set -euo pipefail

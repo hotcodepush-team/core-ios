@@ -1,5 +1,5 @@
 import XCTest
-@testable import HotCodePushProtocol
+@testable import HotCodePushCore
 
 final class PackTests: XCTestCase {
     private let fromSha256 = Hashing.sha256Hex("from")
