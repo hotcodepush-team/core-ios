@@ -39,10 +39,18 @@ public struct LogEntry: Equatable {
         }
     }
 
-    static func ofReport(eventCount: Int, status: Int?, at: Date) -> LogEntry {
-        guard let status = status else { return LogEntry(at: at, code: "REPORT_FAILED", message: "\(eventCount) events kept for the next sync: the events endpoint could not be reached") }
-        guard status == 202 else { return LogEntry(at: at, code: "REPORT_FAILED", message: "\(eventCount) events kept for the next sync: HTTP \(status)") }
-        return LogEntry(at: at, code: "REPORTED", message: "\(eventCount) events acknowledged")
+    /// A batch's answer: acknowledged, refused and its events dropped, or failed and its events kept for the next sync.
+    static func ofBatch(_ answer: BatchAnswer, eventCount: Int, at: Date) -> LogEntry {
+        switch answer {
+        case .acknowledged:
+            return LogEntry(at: at, code: "REPORTED", message: "\(eventCount) events acknowledged")
+        case .refused(let status):
+            return LogEntry(at: at, code: "REPORT_REFUSED", message: "\(eventCount) events dropped: HTTP \(status)")
+        case .failed(let status?):
+            return LogEntry(at: at, code: "REPORT_FAILED", message: "\(eventCount) events kept for the next sync: HTTP \(status)")
+        case .failed(nil):
+            return LogEntry(at: at, code: "REPORT_FAILED", message: "\(eventCount) events kept for the next sync: the events endpoint could not be reached")
+        }
     }
 
     private static func resolveCycleSentence(_ result: SyncResult) -> String {

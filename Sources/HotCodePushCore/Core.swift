@@ -47,6 +47,8 @@ public actor Core {
     private var hasStartSettled = false
     private var isStartSyncPending = false
     private var isSendingDeviceEvents = false
+    /// The events enqueued while a batch is on its way: never part of it, so they stay in the outbox whatever the answer.
+    private var eventCountEnqueuedInFlight = 0
     private var backgroundedAt: Date?
     private var resolvedChannelName: (name: String, id: String)?
     /// The rollback the next reload announces, once, before the gate.
@@ -727,6 +729,9 @@ public actor Core {
 
     private func enqueueDeviceEvent(_ event: DeviceEvent) {
         state.unsentEvents = Array((state.unsentEvents + [event]).suffix(200))
+        if isSendingDeviceEvents {
+            eventCountEnqueuedInFlight += 1
+        }
         if let entry = LogEntry.ofDeviceEvent(event, at: clock.now) {
             record(entry)
         }
@@ -736,7 +741,8 @@ public actor Core {
         logEntries = Array((logEntries + [entry]).suffix(LogEntry.capacity))
     }
 
-    /// One batch to the events endpoint, the outbox and the report when it changed: the 202 clears what was sent, anything else keeps it for the next sync.
+    /// One batch to the events endpoint, the outbox as it stands and the report when it changed: a readable 202 takes both,
+    /// a refusal drops the events and leaves the report unacknowledged, anything else keeps both for the next sync.
     private func sendDeviceEvents() async {
         guard !isSendingDeviceEvents, !isDisabledInThisBuild else { return }
         let events = state.unsentEvents
@@ -745,16 +751,28 @@ public actor Core {
               let url = URL(string: "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/events"),
               let body = try? Json.encoder.encode(DeviceEventsRequest(deviceId: state.deviceId, events: events, platform: device.platform, report: report, sdkVersion: device.sdkVersion)) else { return }
         isSendingDeviceEvents = true
+        eventCountEnqueuedInFlight = 0
         defer { isSendingDeviceEvents = false }
-        let response = try? await http.post(url, headers: ["Content-Type": "application/json"], body: body)
-        record(LogEntry.ofReport(eventCount: events.count, status: response?.status, at: clock.now))
-        guard let response = response, response.status == 202,
-              let acknowledged = try? Json.decoder.decode(DeviceEventsResponse.self, from: response.body) else { return }
-        state.unsentEvents = Array(state.unsentEvents.dropFirst(events.count))
-        state.reportedAt = acknowledged.reportedAt
-        if let report = report {
-            state.acknowledgedReport = report
+        let answer = BatchAnswer(try? await http.post(url, headers: ["Content-Type": "application/json"], body: body))
+        record(LogEntry.ofBatch(answer, eventCount: events.count, at: clock.now))
+        switch answer {
+        case .acknowledged(let reportedAt):
+            dropBatchEvents()
+            state.reportedAt = reportedAt
+            if let report = report {
+                state.acknowledgedReport = report
+            }
+        case .refused:
+            dropBatchEvents()
+        case .failed:
+            break
         }
+    }
+
+    /// The batch's events leave the outbox: what stays is exactly what was enqueued while the batch was on its way, the newest 200 of it,
+    /// also when the outbox's cap dropped events of the batch meanwhile.
+    private func dropBatchEvents() {
+        state.unsentEvents = Array(state.unsentEvents.suffix(eventCountEnqueuedInFlight))
     }
 
     /// The facts the server should hold: the report when they differ from the acknowledged ones or the month began, else nothing.

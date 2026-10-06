@@ -151,3 +151,33 @@ public struct DeviceEventsRequest: Encodable {
 public struct DeviceEventsResponse: Decodable {
     public let reportedAt: Date
 }
+
+/// What the events endpoint's answer means for a batch: taken, refused for good, or kept for the next sync.
+enum BatchAnswer: Equatable {
+    case acknowledged(reportedAt: Date)
+    case refused(status: Int)
+    /// No response, or one that asks for the batch again: `nil` when the endpoint could not be reached.
+    case failed(status: Int?)
+
+    /// A readable `202` takes the batch; a 4xx other than 408 and 429 refuses it for good; anything else asks for it again.
+    init(_ response: HttpResponse?) {
+        guard let response = response else {
+            self = .failed(status: nil)
+            return
+        }
+        switch response.status {
+        case 202:
+            if let acknowledged = try? Json.decoder.decode(DeviceEventsResponse.self, from: response.body) {
+                self = .acknowledged(reportedAt: acknowledged.reportedAt)
+            } else {
+                self = .failed(status: response.status)
+            }
+        case 408, 429:
+            self = .failed(status: response.status)
+        case 400...499:
+            self = .refused(status: response.status)
+        default:
+            self = .failed(status: response.status)
+        }
+    }
+}

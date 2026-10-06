@@ -37,7 +37,7 @@ final class DebugReportTests: XCTestCase {
         XCTAssertTrue(log.contains { $0.code == "REPORTED" }, log.map { $0.code }.joined(separator: ", "))
     }
 
-    func testShouldLogARefusedReportAndKeepTheOutbox() async {
+    func testShouldLogARateLimitedReportAndKeepTheOutbox() async {
         let harness = Harness()
         harness.http.stubJson(Fixture.eventsUrl(), ["error": "E_RATE_LIMITED"], status: 429)
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
@@ -48,6 +48,35 @@ final class DebugReportTests: XCTestCase {
         let log = await harness.core.debugSnapshot().log
         XCTAssertEqual(log.last?.code, "REPORT_FAILED")
         XCTAssertEqual(log.last?.message, "2 events kept for the next sync: HTTP 429")
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.count, 2)
+    }
+
+    func testShouldLogARefusedBatchWithTheCountAndTheStatus() async throws {
+        let harness = Harness()
+        harness.http.stubJson(Fixture.eventsUrl(), ["error": "E_VALIDATION"], status: 422)
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let log = await harness.core.debugSnapshot().log
+        XCTAssertEqual(log.last?.code, "REPORT_REFUSED")
+        XCTAssertEqual(log.last?.message, "2 events dropped: HTTP 422")
+    }
+
+    func testShouldLogAnUnreadableAcknowledgementAsAFailedReport() async throws {
+        let harness = Harness()
+        harness.http.stub(Fixture.eventsUrl(), status: 202, body: Data("accepted".utf8))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let log = await harness.core.debugSnapshot().log
+        XCTAssertEqual(log.last?.code, "REPORT_FAILED")
+        XCTAssertEqual(log.last?.message, "2 events kept for the next sync: HTTP 202")
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.count, 2)
+        XCTAssertNil(StateStore(store: harness.store).reportedAt)
     }
 
     func testShouldKeepTheNewestTwoHundredEntries() async {

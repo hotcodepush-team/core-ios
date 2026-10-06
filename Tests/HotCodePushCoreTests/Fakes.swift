@@ -12,6 +12,8 @@ final class FakeHttpClient: HttpClient {
     var requests: [(url: URL, headers: [String: String])] = []
     var posts: [(url: URL, headers: [String: String], body: Data)] = []
     var isOffline = false
+    /// Runs once inside the next post, before it answers: what the app does while a batch is on its way.
+    var whilePosting: (() async -> Void)?
 
     func stub(_ url: String, status: Int = 200, headers: [String: String] = [:], body: Data) {
         stubs[url] = Stub(status: status, headers: headers, body: body)
@@ -30,8 +32,13 @@ final class FakeHttpClient: HttpClient {
 
     func post(_ url: URL, headers: [String: String], body: Data) async throws -> HttpResponse {
         posts.append((url, headers, body))
+        if let whilePosting = whilePosting {
+            self.whilePosting = nil
+            await whilePosting()
+        }
         if isOffline { throw URLError(.notConnectedToInternet) }
-        guard let stub = stubs[url.absoluteString] else { return HttpResponse(status: 404, headers: [:], body: Data()) }
+        // A post no test stubbed gets no answer, which keeps the outbox: a 404 would refuse the batch and drop its events.
+        guard let stub = stubs[url.absoluteString] else { throw URLError(.cannotConnectToHost) }
         return HttpResponse(status: stub.status, headers: stub.headers, body: stub.body)
     }
 

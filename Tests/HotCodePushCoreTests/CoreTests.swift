@@ -526,6 +526,79 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
     }
 
+    func testShouldDropTheBatchsEventsAndKeepTheReportUnacknowledgedWhenTheEndpointAnswers400() async throws {
+        try await assertBatchRefused(status: 400)
+    }
+
+    func testShouldDropTheBatchsEventsAndKeepTheReportUnacknowledgedWhenTheEndpointAnswers404() async throws {
+        try await assertBatchRefused(status: 404)
+    }
+
+    func testShouldDropTheBatchsEventsAndKeepTheReportUnacknowledgedWhenTheEndpointAnswers422() async throws {
+        try await assertBatchRefused(status: 422)
+    }
+
+    func testShouldKeepTheOutboxWhenTheEndpointAnswers408() async throws {
+        let harness = Harness()
+        harness.http.stub(Fixture.eventsUrl(), status: 408, body: Data())
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.http.posts.count, 1)
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.count, 2)
+        XCTAssertNil(StateStore(store: harness.store).reportedAt)
+    }
+
+    func testShouldKeepTheOutboxWhenTheEndpointDoesNotAnswer() async throws {
+        let harness = Harness()
+        harness.http.stub(Fixture.eventsUrl(), status: 500, body: Data())
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        harness.http.isOffline = true
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.http.posts.count, 2)
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.count, 2)
+        let log = await harness.core.debugSnapshot().log
+        XCTAssertEqual(log.last?.message, "2 events kept for the next sync: the events endpoint could not be reached")
+    }
+
+    func testShouldKeepAnEventEnqueuedWhileARefusedBatchWasInFlight() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        harness.http.stub(Fixture.eventsUrl(), status: 400, body: Data())
+        harness.http.whilePosting = { _ = await harness.core.notifyReady() }
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(harness.http.posts.first).body) as? [String: Any])
+        XCTAssertEqual((sent["events"] as? [[String: Any]])?.map { $0["type"] as? String }, ["checked", "downloaded", "applied"])
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [.confirmed(releaseId: "r1")])
+    }
+
+    func testShouldKeepAnEventEnqueuedWhileAnAcknowledgedBatchWasInFlightWhenTheOutboxWasAtItsCap() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        harness.acknowledgeEvents()
+        harness.http.whilePosting = { _ = await harness.core.notifyReady() }
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        StateStore(store: harness.store).unsentEvents = (0..<200).map { DeviceEvent.applied(releaseId: "r-old-\($0)") }
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(harness.http.posts.first).body) as? [String: Any])
+        XCTAssertEqual((sent["events"] as? [Any])?.count, 200)
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [.confirmed(releaseId: "r1")])
+    }
+
     func testShouldSendTheReportOncePerChangeAndAgainWhenTheMonthBegan() async throws {
         let harness = Harness()
         harness.acknowledgeEvents()
@@ -1176,6 +1249,27 @@ final class CoreTests: XCTestCase {
         let started = await harness.core.getState()
         XCTAssertEqual(started.currentRelease?.id, "r1")
         XCTAssertNil(started.nextRelease)
+    }
+
+    /// A batch the endpoint refuses loses its events and leaves the report unacknowledged, so the next sync sends the report alone.
+    private func assertBatchRefused(status: Int, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let harness = Harness()
+        harness.http.stub(Fixture.eventsUrl(), status: status, body: Data())
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let state = StateStore(store: harness.store)
+        XCTAssertEqual(state.unsentEvents, [], file: file, line: line)
+        XCTAssertNil(state.reportedAt, file: file, line: line)
+        XCTAssertNil(state.acknowledgedReport, file: file, line: line)
+        _ = await harness.core.sync(trigger: .manual)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.http.posts.count, 2, file: file, line: line)
+        let next = try XCTUnwrap(JSONSerialization.jsonObject(with: harness.http.posts[1].body) as? [String: Any], file: file, line: line)
+        XCTAssertEqual((next["events"] as? [Any])?.count, 0, file: file, line: line)
+        XCTAssertNotNil(next["report"] as? [String: Any], file: file, line: line)
     }
 
     /// A first run that installs v2 and confirms it, then the next start's core over the same store and files.
