@@ -850,6 +850,107 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
     }
 
+    func testShouldAnnounceARollbackAtTheNextStartWhenTheProcessEndedWhileItsReloadWasHeld() async throws {
+        let harness = try await harnessOnAnUnconfirmedRelease()
+        await harness.core.setRestartAllowed(false)
+        harness.scheduler.fire()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(harness.listener.rolledBack.isEmpty)
+        await restartOnTheServedBundle(harness)
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
+        let ready = await harness.core.notifyReady()
+        XCTAssertTrue(ready.isRolledBack)
+        XCTAssertEqual(ready.rollbackReason, .readyTimeout)
+        XCTAssertEqual(ready.previousRelease?.id, "r1")
+    }
+
+    func testShouldAnnounceARollbackAgainAtTheNextStartWhenTheAppNeverCameUpAfterTheReload() async throws {
+        let harness = try await harnessOnAnUnconfirmedRelease()
+        try await harness.core.rollbackUpdate(detail: nil)
+        XCTAssertEqual(harness.listener.rolledBack.count, 1)
+        await restartOnTheServedBundle(harness)
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.reportedByApp, .reportedByApp])
+    }
+
+    func testShouldNotAnnounceARollbackAgainAtTheNextStartWhenTheAppRenderedAfterTheReload() async throws {
+        let harness = try await harnessOnAnUnconfirmedRelease()
+        try await harness.core.rollbackUpdate(detail: nil)
+        await harness.core.handleRendered()
+        await restartOnTheServedBundle(harness)
+        XCTAssertEqual(harness.listener.rolledBack.count, 1)
+        XCTAssertNil(StateStore(store: harness.store).pendingRollbackEvent)
+    }
+
+    func testShouldNotAnnounceARollbackAgainAtTheNextStartWhenTheAppNotifiedReadyAfterTheReload() async throws {
+        let harness = try await harnessOnAnUnconfirmedRelease()
+        try await harness.core.rollbackUpdate(detail: nil)
+        _ = await harness.core.notifyReady()
+        await restartOnTheServedBundle(harness)
+        XCTAssertEqual(harness.listener.rolledBack.count, 1)
+        XCTAssertNil(StateStore(store: harness.store).pendingRollbackEvent)
+    }
+
+    func testShouldAnnounceOnceAtAStartThatRollsBackACrashItself() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        harness.restart()
+        await harness.core.handleAppStart()
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.crashed])
+    }
+
+    func testShouldKeepTheNoticeWhenTheReadinessTimerRanOutAndNothingRendered() async throws {
+        let harness = try await harnessOnAnUnconfirmedRelease()
+        harness.scheduler.fire()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
+        XCTAssertEqual(StateStore(store: harness.store).pendingRollbackEvent?.reason, .readyTimeout)
+        await restartOnTheServedBundle(harness)
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout, .readyTimeout])
+    }
+
+    func testShouldKeepTheNoticeWhenTheAppRendersWhileTheRollbacksReloadIsHeld() async throws {
+        let harness = try await harnessOnAnUnconfirmedRelease()
+        await harness.core.setRestartAllowed(false)
+        harness.scheduler.fire()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await harness.core.handleRendered()
+        XCTAssertEqual(StateStore(store: harness.store).pendingRollbackEvent?.reason, .readyTimeout)
+        await harness.core.setRestartAllowed(true)
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
+        XCTAssertEqual(StateStore(store: harness.store).pendingRollbackEvent?.reason, .readyTimeout)
+    }
+
+    func testShouldRemoveTheNoticeAtTheStartOfANewBinary() async throws {
+        let harness = try await harnessOnAnUnconfirmedRelease()
+        try await harness.core.rollbackUpdate(detail: nil)
+        harness.loader.served = nil
+        harness.restart(configuration: Fixture.configuration(builtAt: Fixture.builtAt.addingTimeInterval(86_400)))
+        await harness.core.handleAppStart()
+        XCTAssertEqual(harness.listener.rolledBack.count, 1)
+        XCTAssertNil(StateStore(store: harness.store).pendingRollbackEvent)
+        let ready = await harness.core.notifyReady()
+        XCTAssertFalse(ready.isRolledBack)
+    }
+
+    func testShouldRemoveTheNoticeWhenTheAppClearsUpdates() async throws {
+        let harness = try await harnessOnAnUnconfirmedRelease()
+        await harness.core.setRestartAllowed(false)
+        harness.scheduler.fire()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await harness.core.clearUpdates()
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+        XCTAssertNil(StateStore(store: harness.store).pendingRollbackEvent)
+        XCTAssertNil(StateStore(store: harness.store).lastRollback)
+        await restartOnTheServedBundle(harness)
+        XCTAssertTrue(harness.listener.rolledBack.isEmpty)
+    }
+
     func testShouldFailOfflineNotUnknownWhenAChannelNameCannotBeResolved() async {
         let harness = Harness()
         await harness.core.setChannel(.name("staging"))
@@ -1270,6 +1371,26 @@ final class CoreTests: XCTestCase {
         let next = try XCTUnwrap(JSONSerialization.jsonObject(with: harness.http.posts[1].body) as? [String: Any], file: file, line: line)
         XCTAssertEqual((next["events"] as? [Any])?.count, 0, file: file, line: line)
         XCTAssertNotNil(next["report"] as? [String: Any], file: file, line: line)
+    }
+
+    /// A run that installs v2 at once after the first render and has not confirmed it: its readiness timer is the one scheduled.
+    private func harnessOnAnUnconfirmedRelease() async throws -> Harness {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        _ = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        XCTAssertEqual(harness.scheduler.tasks.count, 1)
+        return harness
+    }
+
+    /// The process ends, and the next one starts on the bundle the core persisted.
+    private func restartOnTheServedBundle(_ harness: Harness) async {
+        harness.loader.served = harness.loader.persisted ?? nil
+        harness.restart(configuration: Fixture.configuration(installStrategy: .immediate))
+        await harness.core.handleAppStart()
     }
 
     /// A first run that installs v2 and confirms it, then the next start's core over the same store and files.

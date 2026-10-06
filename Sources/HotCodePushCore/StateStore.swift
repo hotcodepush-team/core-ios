@@ -147,6 +147,12 @@ public final class StateStore {
         set { write("lastRollback", newValue) }
     }
 
+    /// The `rolledBack` event the app has not come up after yet: announced at every start until it does.
+    public var pendingRollbackEvent: RolledBackEvent? {
+        get { return read("pendingRollbackEvent") }
+        set { write("pendingRollbackEvent", newValue) }
+    }
+
     public var lastSyncAt: Date? {
         get { return string("lastSyncAt").flatMap(Iso8601.parse) }
         set { set("lastSyncAt", newValue.map(Iso8601.format)) }
@@ -154,7 +160,7 @@ public final class StateStore {
 
     /// Drops every cache key; the identity keys survive. Called at start on an unknown version, never by the app.
     public func deleteCacheKeys() {
-        for key in ["currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport", "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "lastSyncAt"] {
+        for key in ["currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport", "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "pendingRollbackEvent", "lastSyncAt"] {
             set(key, nil)
         }
         store.set(StateStore.stateVersion, forKey: StateStore.prefix + "stateVersion")

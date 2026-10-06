@@ -313,7 +313,7 @@ public struct UpdateFailedEvent: Codable, Equatable {
     }
 }
 
-/// At the start that follows a rollback, once, before the readiness gate; `to` is `null` for the embedded bundle.
+/// At each start that follows a rollback until the app is up after one, before the readiness gate; `to` is `null` for the embedded bundle.
 public struct RolledBackEvent: Codable, Equatable {
     public let from: Release
     public let to: Release?
