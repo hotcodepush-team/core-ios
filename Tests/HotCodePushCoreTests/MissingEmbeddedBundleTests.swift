@@ -126,12 +126,13 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         XCTAssertTrue(harness.listener.rolledBack.isEmpty)
     }
 
-    func testShouldSayOnTheDebugReportThatTheBuildEmbedsNoBundle() async {
+    func testShouldSayOnTheDebugReportThatTheBuildEmbedsNoBundleAndThatSuchABuildResolvesNoChannelName() async {
         let harness = Harness(configuration: configurationWithoutEmbeddedBundle(channelId: nil), isDebugBuild: true)
         await harness.core.handleAppStart()
         _ = await harness.core.sync(trigger: .manual)
         let text = DebugReport.text(of: await harness.core.debugSnapshot())
         XCTAssertTrue(text.contains("Embedded bundle: none: the build embeds no bundle, live updates are off in it"), text)
+        XCTAssertTrue(text.contains("Channel id: none: a build without an embedded bundle resolves no channel name"), text)
         XCTAssertTrue(text.contains("Result: SKIPPED DEBUG_BUILD"), text)
     }
 }

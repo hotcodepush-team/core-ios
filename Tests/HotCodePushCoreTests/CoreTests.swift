@@ -436,6 +436,18 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(unknown.reason, FailedReason.unknownChannel.rawValue)
     }
 
+    func testShouldAnswerNoIdForARuntimeNameBeforeASyncResolvedItAndTheIdAfter() async {
+        let harness = Harness()
+        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: "c-staging", name: "staging")]))
+        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/c-staging/ios/v1/index.json", ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: "c-staging", platform: "ios", releases: []))
+        await harness.core.setChannel(.name("staging"))
+        let unresolved = await harness.core.channel()
+        XCTAssertEqual(unresolved, ChannelResult(id: nil, name: "staging", source: .runtime))
+        _ = await harness.core.sync(trigger: .manual)
+        let resolved = await harness.core.channel()
+        XCTAssertEqual(resolved, ChannelResult(id: "c-staging", name: "staging", source: .runtime))
+    }
+
     func testShouldMergeAttributesAndRefuseInvalidOnes() async throws {
         let harness = Harness()
         try await harness.core.setAttributes(["plan": "beta", "userId": "42"])

@@ -73,7 +73,7 @@ public enum DebugReport {
     private static func channelSection(_ snapshot: DebugSnapshot) -> DebugSection {
         let channel = snapshot.device.channel
         return DebugSection(title: "Channel", rows: [
-            DebugRow(label: "Channel id", value: describeChannelId(channel)),
+            DebugRow(label: "Channel id", value: describeChannelId(channel, configuration: snapshot.configuration)),
             DebugRow(label: "Name", value: channel.name ?? "none"),
             DebugRow(label: "Source", value: channel.source.rawValue)
         ])
@@ -135,9 +135,11 @@ public enum DebugReport {
     }
 
     /// The id in effect; without one, a runtime name waits for its first sync and a build without a channel says why it has none.
-    private static func describeChannelId(_ channel: ChannelResult) -> String {
-        guard channel.id.isEmpty else { return channel.id }
-        return channel.source == .runtime ? "unresolved" : "none: the build carries no channel, it was built without a token or offline"
+    private static func describeChannelId(_ channel: ChannelResult, configuration: Configuration) -> String {
+        if let id = channel.id { return id }
+        if channel.source == .runtime { return "unresolved" }
+        if configuration.embeddedBundleManifest == nil { return "none: a build without an embedded bundle resolves no channel name" }
+        return "none: the build carries no channel, it was built without a token or offline"
     }
 
     /// The registered bundle's id; a build without an embedded bundle says that live updates are off in it.

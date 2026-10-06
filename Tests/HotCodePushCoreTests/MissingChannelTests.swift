@@ -37,7 +37,7 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
         XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.unknownChannel])
         let channel = await harness.core.channel()
-        XCTAssertEqual(channel, ChannelResult(id: "", name: nil, source: .config))
+        XCTAssertEqual(channel, ChannelResult(id: nil, name: nil, source: .config))
     }
 
     func testShouldFailACheckWithUnknownChannelAndRequestNothingWhenTheBuildCarriesNoChannel() async throws {

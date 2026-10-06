@@ -218,7 +218,8 @@ public enum ChannelSource: String, Codable {
 }
 
 public struct ChannelResult: Codable, Equatable {
-    public let id: String
+    /// `nil` while no id is known: a build without a channel, or a runtime name no sync has resolved yet.
+    public let id: String?
     public let name: String?
     public let source: ChannelSource
 

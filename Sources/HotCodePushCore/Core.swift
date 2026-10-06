@@ -389,8 +389,8 @@ public actor Core {
     public func channel() -> ChannelResult {
         switch state.channel {
         case .id(let id): return ChannelResult(id: id, name: nil, source: .runtime)
-        case .name(let name): return ChannelResult(id: resolvedChannelName?.name == name ? resolvedChannelName?.id ?? "" : "", name: name, source: .runtime)
-        case nil: return ChannelResult(id: configuration.channelId ?? "", name: nil, source: .config)
+        case .name(let name): return ChannelResult(id: resolvedChannelName?.name == name ? resolvedChannelName?.id : nil, name: name, source: .runtime)
+        case nil: return ChannelResult(id: configuration.channelId, name: nil, source: .config)
         }
     }
 
@@ -750,8 +750,8 @@ public actor Core {
     /// A device without a channel — a runtime name not yet resolved, a build that carries none — reports nothing: a row for it would mislead.
     private func buildDeviceReport() -> DeviceReport? {
         let channel = channel()
-        guard !channel.id.isEmpty else { return nil }
-        let report = DeviceReport(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, channelId: channel.id, channelSource: channel.source, embeddedBundleId: configuration.embeddedBundleId, fingerprint: configuration.fingerprint, osVersion: device.osVersion, releaseId: state.currentRelease?.id, runtimeVersion: nil)
+        guard let channelId = channel.id else { return nil }
+        let report = DeviceReport(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, channelId: channelId, channelSource: channel.source, embeddedBundleId: configuration.embeddedBundleId, fingerprint: configuration.fingerprint, osVersion: device.osVersion, releaseId: state.currentRelease?.id, runtimeVersion: nil)
         if report == state.acknowledgedReport, let reportedAt = state.reportedAt, resolveMonth(of: reportedAt) == resolveMonth(of: clock.now) {
             return nil
         }
