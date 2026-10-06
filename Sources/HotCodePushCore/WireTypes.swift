@@ -139,13 +139,12 @@ public struct IndexRelease: Codable, Equatable {
 }
 
 public enum ConditionType: String, Codable {
-    case binary, runtime, fingerprint, os, attribute, device
+    case binary, fingerprint, os, attribute, device
 }
 
 /// A condition of an index entry; a type this SDK does not know is kept and fails closed.
 public enum Condition: Codable, Equatable {
     case binary(range: String)
-    case runtime(version: String)
     case fingerprint(hash: String)
     case os(range: String)
     case device(hashedIds: [String])
@@ -153,7 +152,7 @@ public enum Condition: Codable, Equatable {
     case unknown(type: String)
 
     enum CodingKeys: String, CodingKey {
-        case type, range, version, hash, hashedIds, key, valueSha256
+        case type, range, hash, hashedIds, key, valueSha256
     }
 
     public init(from decoder: Decoder) throws {
@@ -161,7 +160,6 @@ public enum Condition: Codable, Equatable {
         let type = try container.decode(String.self, forKey: .type)
         switch type {
         case "binary": self = .binary(range: try container.decode(.nonEmpty, forKey: .range))
-        case "runtime": self = .runtime(version: try container.decode(.nonEmpty, forKey: .version))
         case "fingerprint": self = .fingerprint(hash: try container.decode(.nonEmpty, forKey: .hash))
         case "os": self = .os(range: try container.decode(.nonEmpty, forKey: .range))
         case "device": self = .device(hashedIds: try container.decode([String].self, forKey: .hashedIds))
@@ -176,9 +174,6 @@ public enum Condition: Codable, Equatable {
         case .binary(let range):
             try container.encode("binary", forKey: .type)
             try container.encode(range, forKey: .range)
-        case .runtime(let version):
-            try container.encode("runtime", forKey: .type)
-            try container.encode(version, forKey: .version)
         case .fingerprint(let hash):
             try container.encode("fingerprint", forKey: .type)
             try container.encode(hash, forKey: .hash)
@@ -200,7 +195,6 @@ public enum Condition: Codable, Equatable {
     public var type: ConditionType? {
         switch self {
         case .binary: return .binary
-        case .runtime: return .runtime
         case .fingerprint: return .fingerprint
         case .os: return .os
         case .device: return .device

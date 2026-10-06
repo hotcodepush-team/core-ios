@@ -17,9 +17,8 @@ public struct DeviceInfo: Equatable {
     public let osVersion: String
     /// The server time of the last acknowledged report, for the spending cap.
     public let reportedAt: Date?
-    public let runtimeVersion: String?
 
-    public init(appliedIndexSequence: Int?, attributes: [String: String], binaryBuild: String, binaryVersion: String, builtAt: Date, currentRelease: Release?, deviceId: String, failedBundleIds: [String], fingerprint: String?, osVersion: String, reportedAt: Date?, runtimeVersion: String?) {
+    public init(appliedIndexSequence: Int?, attributes: [String: String], binaryBuild: String, binaryVersion: String, builtAt: Date, currentRelease: Release?, deviceId: String, failedBundleIds: [String], fingerprint: String?, osVersion: String, reportedAt: Date?) {
         self.appliedIndexSequence = appliedIndexSequence
         self.attributes = attributes
         self.binaryBuild = binaryBuild
@@ -31,7 +30,6 @@ public struct DeviceInfo: Equatable {
         self.fingerprint = fingerprint
         self.osVersion = osVersion
         self.reportedAt = reportedAt
-        self.runtimeVersion = runtimeVersion
     }
 }
 
@@ -152,8 +150,6 @@ public enum Evaluator {
         case .os(let range):
             guard let version = VersionRange.parseVersion(device.osVersion) else { return false }
             return VersionRange.isVersionInRange(version, range) == true
-        case .runtime(let version):
-            return device.runtimeVersion == version
         case .unknown:
             return false
         }

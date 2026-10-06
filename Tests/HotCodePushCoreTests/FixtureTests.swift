@@ -37,10 +37,9 @@ final class FixtureTests: XCTestCase {
         let fingerprint: String?
         let osVersion: String
         let reportedAt: Date?
-        let runtimeVersion: String?
 
         var deviceInfo: DeviceInfo {
-            return DeviceInfo(appliedIndexSequence: appliedIndexSequence, attributes: attributes, binaryBuild: binaryBuild, binaryVersion: binaryVersion, builtAt: builtAt, currentRelease: currentRelease.map { Release(id: $0.id, number: $0.number, bundleId: "", bundleVersion: "", isMandatory: false) }, deviceId: deviceId, failedBundleIds: failedBundleIds, fingerprint: fingerprint, osVersion: osVersion, reportedAt: reportedAt, runtimeVersion: runtimeVersion)
+            return DeviceInfo(appliedIndexSequence: appliedIndexSequence, attributes: attributes, binaryBuild: binaryBuild, binaryVersion: binaryVersion, builtAt: builtAt, currentRelease: currentRelease.map { Release(id: $0.id, number: $0.number, bundleId: "", bundleVersion: "", isMandatory: false) }, deviceId: deviceId, failedBundleIds: failedBundleIds, fingerprint: fingerprint, osVersion: osVersion, reportedAt: reportedAt)
         }
     }
 

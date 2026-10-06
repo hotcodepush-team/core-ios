@@ -729,7 +729,7 @@ public actor Core {
     }
 
     private func deviceInfo() -> DeviceInfo {
-        return DeviceInfo(appliedIndexSequence: nil, attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, builtAt: configuration.builtAt, currentRelease: state.currentRelease, deviceId: state.deviceId, failedBundleIds: state.failedBundleIds, fingerprint: configuration.fingerprint, osVersion: device.osVersion, reportedAt: state.reportedAt, runtimeVersion: nil)
+        return DeviceInfo(appliedIndexSequence: nil, attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, builtAt: configuration.builtAt, currentRelease: state.currentRelease, deviceId: state.deviceId, failedBundleIds: state.failedBundleIds, fingerprint: configuration.fingerprint, osVersion: device.osVersion, reportedAt: state.reportedAt)
     }
 
     // MARK: Events
@@ -798,7 +798,7 @@ public actor Core {
     private func buildDeviceReport() -> DeviceReport? {
         let channel = channel()
         guard let channelId = channel.id else { return nil }
-        let report = DeviceReport(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, channelId: channelId, channelSource: channel.source, embeddedBundleId: configuration.embeddedBundleId, fingerprint: configuration.fingerprint, osVersion: device.osVersion, releaseId: state.currentRelease?.id, runtimeVersion: nil)
+        let report = DeviceReport(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, channelId: channelId, channelSource: channel.source, embeddedBundleId: configuration.embeddedBundleId, fingerprint: configuration.fingerprint, osVersion: device.osVersion, releaseId: state.currentRelease?.id)
         if report == state.acknowledgedReport, let reportedAt = state.reportedAt, resolveMonth(of: reportedAt) == resolveMonth(of: clock.now) {
             return nil
         }

@@ -30,8 +30,7 @@ final class DeviceEventTests: XCTestCase {
         "embeddedBundleId": null,
         "fingerprint": null,
         "osVersion": "17.4",
-        "releaseId": null,
-        "runtimeVersion": null
+        "releaseId": null
       },
       "sdkVersion": "0.0.0"
     }
@@ -50,7 +49,7 @@ final class DeviceEventTests: XCTestCase {
         .rolledBack(fromReleaseId: "r1", toReleaseId: nil)
     ]
 
-    private static let report = DeviceReport(attributes: [:], binaryBuild: "57", binaryVersion: "2.4.1", channelId: "c1", channelSource: .config, embeddedBundleId: nil, fingerprint: nil, osVersion: "17.4", releaseId: nil, runtimeVersion: nil)
+    private static let report = DeviceReport(attributes: [:], binaryBuild: "57", binaryVersion: "2.4.1", channelId: "c1", channelSource: .config, embeddedBundleId: nil, fingerprint: nil, osVersion: "17.4", releaseId: nil)
 
     private func jsonObject<T: Encodable>(_ value: T) throws -> NSObject {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: try Json.encoder.encode(value)) as? NSObject)
@@ -93,7 +92,7 @@ final class DeviceEventTests: XCTestCase {
 
     func testShouldWriteEveryNullableFactOfTheReportAndAnAbsentReportAsNull() throws {
         let report = try XCTUnwrap(try jsonObject(DeviceEventTests.report) as? [String: Any])
-        for key in ["embeddedBundleId", "fingerprint", "releaseId", "runtimeVersion"] {
+        for key in ["embeddedBundleId", "fingerprint", "releaseId"] {
             XCTAssertTrue(report[key] is NSNull, key)
         }
         let request = try XCTUnwrap(try jsonObject(DeviceEventsRequest(deviceId: "d1", events: [], platform: "ios", report: nil, sdkVersion: "0.0.0")) as? [String: Any])
