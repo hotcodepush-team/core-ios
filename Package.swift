@@ -14,7 +14,9 @@ let package = Package(
             name: "HotCodePushCore",
             dependencies: ["HotCodePushBspatch"],
             path: "Sources/HotCodePushCore",
-            resources: [.copy("PrivacyInfo.xcprivacy")]),
+            // The pod's bundle directory: the package's own resource bundle takes the manifest alone.
+            exclude: ["HotCodePushCorePrivacy.bundle/Info.plist"],
+            resources: [.copy("HotCodePushCorePrivacy.bundle/PrivacyInfo.xcprivacy")]),
         .target(
             name: "HotCodePushBspatch",
             path: "Sources/HotCodePushBspatch",
