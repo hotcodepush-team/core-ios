@@ -692,8 +692,9 @@ public actor Core {
         }
     }
 
+    /// Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `DEBUG_BUILD`.
     private var isDisabledInThisBuild: Bool {
-        return device.isDebugBuild && !configuration.enabledInDebugBuilds
+        return configuration.embeddedBundleManifest == nil || (device.isDebugBuild && !configuration.enabledInDebugBuilds)
     }
 
     private func deviceInfo() -> DeviceInfo {

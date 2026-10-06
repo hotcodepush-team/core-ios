@@ -111,7 +111,7 @@ final class FixtureTests: XCTestCase {
         struct Case: Decodable {
             let name: String
             let resourceFile: Configuration
-            let embeddedBundleManifest: EmbeddedBundleManifest
+            let embeddedBundleManifest: EmbeddedBundleManifest?
         }
         let cases: [Case]
     }
@@ -282,9 +282,12 @@ final class FixtureTests: XCTestCase {
         for testCase in cases {
             XCTAssertEqual(testCase.resourceFile.embeddedBundleManifest, testCase.embeddedBundleManifest, testCase.name)
         }
-        let withoutChannel = cases.filter { $0.resourceFile.channelId == nil }
+        let withoutChannel = cases.filter { $0.resourceFile.channelId == nil && $0.resourceFile.embeddedBundleManifest != nil }
         XCTAssertEqual(withoutChannel.count, 1, "the suite carries one build without a channel")
         XCTAssertTrue(withoutChannel.allSatisfy { $0.name.contains("without a channel") && $0.resourceFile.embeddedBundleId == nil })
+        let withoutEmbeddedBundle = cases.filter { $0.resourceFile.embeddedBundleManifest == nil }
+        XCTAssertEqual(withoutEmbeddedBundle.count, 1, "the suite carries one build without an embedded bundle")
+        XCTAssertTrue(withoutEmbeddedBundle.allSatisfy { $0.name.contains("without an embedded bundle") && $0.resourceFile.embeddedBundleId == nil })
     }
 
     /// Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form.

@@ -85,7 +85,7 @@ public enum DebugReport {
             DebugRow(label: "Running", value: describe(state.currentRelease) ?? "the embedded bundle"),
             DebugRow(label: "Downloaded", value: describe(state.nextRelease) ?? "none"),
             DebugRow(label: "Fallback", value: describe(state.fallbackRelease) ?? "the embedded bundle"),
-            DebugRow(label: "Embedded bundle", value: state.embeddedBundleId ?? "not registered"),
+            DebugRow(label: "Embedded bundle", value: describeEmbeddedBundle(snapshot)),
             DebugRow(label: "Failed bundles", value: state.failedBundleIds.isEmpty ? "none" : state.failedBundleIds.joined(separator: ", "))
         ])
     }
@@ -138,6 +138,12 @@ public enum DebugReport {
     private static func describeChannelId(_ channel: ChannelResult) -> String {
         guard channel.id.isEmpty else { return channel.id }
         return channel.source == .runtime ? "unresolved" : "none: the build carries no channel, it was built without a token or offline"
+    }
+
+    /// The registered bundle's id; a build without an embedded bundle says that live updates are off in it.
+    private static func describeEmbeddedBundle(_ snapshot: DebugSnapshot) -> String {
+        guard snapshot.configuration.embeddedBundleManifest != nil else { return "none: the build embeds no bundle, live updates are off in it" }
+        return snapshot.state.embeddedBundleId ?? "not registered"
     }
 
     private static func describe(_ release: Release?) -> String? {
