@@ -44,7 +44,7 @@ public enum PackReader {
             let start = offset + blockSize
             let end = start + size
             guard end <= data.count else { throw Failure.truncated }
-            if let entry = resolveEntry(named: resolveName(of: header), body: { data.subdata(in: start..<end) }) {
+            if let entry = resolveEntry(named: resolveName(of: header), body: { data[(data.startIndex + start)..<(data.startIndex + end)] }) {
                 try body(entry)
             }
             offset = start + ((size + blockSize - 1) / blockSize) * blockSize
@@ -58,7 +58,8 @@ public enum PackReader {
         return prefix.isEmpty ? name : "\(prefix)/\(name)"
     }
 
-    /// The kind a full name gives an entry, `nil` for a name of neither kind; the body is copied only for an entry kept.
+    /// The kind a full name gives an entry, `nil` for a name of neither kind; the body is a slice of the pack, never a copy, so a
+    /// pack mapped from disk is read without holding its entries in memory.
     private static func resolveEntry(named name: String, body: () -> Data) -> PackEntry? {
         if WireRule.sha256.accepts(name) {
             return .file(sha256: name, body: body())
@@ -80,7 +81,7 @@ public enum PackReader {
 
     private static func block(at offset: Int, in data: Data) throws -> Data {
         guard offset + blockSize <= data.count else { throw Failure.unterminated }
-        return data.subdata(in: offset..<(offset + blockSize))
+        return data.subdata(in: (data.startIndex + offset)..<(data.startIndex + offset + blockSize))
     }
 
     private static func isZero(_ block: Data) -> Bool {

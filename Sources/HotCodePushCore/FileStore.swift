@@ -32,6 +32,20 @@ public final class FileStore {
         try content.write(to: fileURL(sha256: sha256), options: .atomic)
     }
 
+    /// Verifies the file at `source` against its hash, read in chunks, then moves it into the store: a large file is never read
+    /// whole. A file that exists is the file, and the source goes.
+    public func writeFile(at source: URL, sha256: String) throws {
+        let actual = try Hashing.sha256Hex(fileAt: source)
+        guard actual == sha256 else { throw Failure.hashMismatch(expected: sha256, actual: actual) }
+        try createDirectory(filesDirectory)
+        let destination = fileURL(sha256: sha256)
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: source)
+        } else {
+            try fileManager.moveItem(at: source, to: destination)
+        }
+    }
+
     public func manifestURL(bundleId: String) -> URL {
         return bundlesDirectory.appendingPathComponent(bundleId, isDirectory: true).appendingPathComponent("manifest.json")
     }

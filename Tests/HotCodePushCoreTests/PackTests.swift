@@ -13,7 +13,7 @@ final class PackTests: XCTestCase {
         let read = try PackReader.entries(in: pack)
         XCTAssertEqual(read, entries)
         guard case .file(_, let body) = read[0] else { return XCTFail("not a file entry") }
-        XCTAssertEqual(try Gzip.decompress(body, maximumBytes: content.count), content)
+        XCTAssertEqual(try inflate(body, maximumBytes: content.count), content)
     }
 
     func testShouldReadAPatchEntryNamedThroughThePrefix() throws {
@@ -67,15 +67,31 @@ final class PackTests: XCTestCase {
 
     func testShouldDecompressGzipAndRejectGarbage() throws {
         let content = Data((0..<10_000).map { UInt8($0 % 251) })
-        XCTAssertEqual(try Gzip.decompress(try Gzip.compress(content), maximumBytes: content.count), content)
-        XCTAssertThrowsError(try Gzip.decompress(Data("not gzip".utf8), maximumBytes: 100))
+        XCTAssertEqual(try inflate(try Gzip.compress(content), maximumBytes: content.count), content)
+        XCTAssertThrowsError(try inflate(Data("not gzip".utf8), maximumBytes: 100))
     }
 
     func testShouldRefuseToInflatePastTheMaximum() throws {
         let content = Data(count: 1_000_000)
-        XCTAssertEqual(try Gzip.decompress(try Gzip.compress(content), maximumBytes: content.count), content)
-        XCTAssertThrowsError(try Gzip.decompress(try Gzip.compress(content), maximumBytes: content.count - 1)) { error in
+        XCTAssertEqual(try inflate(try Gzip.compress(content), maximumBytes: content.count), content)
+        XCTAssertThrowsError(try inflate(try Gzip.compress(content), maximumBytes: content.count - 1)) { error in
             XCTAssertEqual(error as? Gzip.Failure, .tooLarge(maximumBytes: content.count - 1))
         }
+    }
+
+    func testShouldInflateASliceOfAPackWithoutCopyingItFirst() throws {
+        let content = Data((0..<300_000).map { UInt8($0 % 7) })
+        let pack = PackWriter.pack([.file(sha256: Hashing.sha256Hex(content), body: try Gzip.compress(content))])
+        guard case .file(_, let body) = try XCTUnwrap(try PackReader.entries(in: pack).first) else { return XCTFail("expected a file entry") }
+        XCTAssertNotEqual(body.startIndex, 0)
+        XCTAssertEqual(try inflate(body, maximumBytes: content.count), content)
+    }
+
+    /// The content the inflation writes, read back from its file.
+    private func inflate(_ data: Data, maximumBytes: Int) throws -> Data {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("hotcodepush-tests-\(UUID().uuidString).inflated")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Gzip.decompress(data, to: file, maximumBytes: maximumBytes)
+        return try Data(contentsOf: file)
     }
 }

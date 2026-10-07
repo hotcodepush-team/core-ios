@@ -48,6 +48,30 @@ final class DownloaderTests: XCTestCase {
         XCTAssertTrue(harness.files.bundleIds().isEmpty)
     }
 
+    func testShouldInflateAFileOfManyChunksFromThePackStraightIntoTheStore() async throws {
+        let harness = DownloaderHarness()
+        let large = Data((0..<3_000_000).map { UInt8($0 % 13) })
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "large.bin": large])
+        _ = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack))
+        XCTAssertEqual(try Data(contentsOf: harness.files.fileURL(sha256: Hashing.sha256Hex(large))), large)
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: harness.root.appendingPathComponent("tmp").path)
+        XCTAssertTrue(leftovers.isEmpty, "\(leftovers)")
+    }
+
+    func testShouldMoveASingleFileIntoTheStoreOnlyWhenItMatchesItsHash() async throws {
+        let harness = DownloaderHarness()
+        let large = Data((0..<1_000_000).map { UInt8($0 % 11) })
+        let manifest = DownloaderHarness.bundle(["large.bin": large]).manifest
+        harness.http.stub(DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(large)), body: large.dropLast() + Data([0xFF]))
+        let failure = await harness.downloadFailure(harness.publish(manifest))
+        XCTAssertEqual(failure?.reason, .contentMismatched)
+        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(large)))
+        harness.http.stub(DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(large)), body: large)
+        let outcome = try await harness.download(harness.publish(manifest))
+        XCTAssertEqual(outcome.bytes, large.count)
+        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(large)))
+    }
+
     func testShouldRefuseAnEnvelopeNamingAnotherBundle() async {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])

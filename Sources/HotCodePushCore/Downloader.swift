@@ -175,7 +175,7 @@ public final class Downloader {
             throw DownloadFailure.downloadFailed("The pack could not be downloaded: \(error.localizedDescription)")
         }
         defer { try? FileManager.default.removeItem(at: file) }
-        guard let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { throw DownloadFailure.downloadFailed("The pack could not be read") }
+        guard let data = try? Data(contentsOf: file, options: .alwaysMapped) else { throw DownloadFailure.downloadFailed("The pack could not be read") }
         if let sizeBytes = source.sizeBytes, data.count != sizeBytes {
             throw DownloadFailure.contentMismatched("The pack holds \(data.count) of its \(sizeBytes) bytes")
         }
@@ -184,7 +184,7 @@ public final class Downloader {
                 switch entry {
                 case .file(let sha256, let body):
                     guard let sizeBytes = wanted[sha256] else { return }
-                    try files.writeFile(try Gzip.decompress(body, maximumBytes: sizeBytes), sha256: sha256)
+                    try writeInflatedFile(body, sha256: sha256, maximumBytes: sizeBytes)
                 case .patch(let fromSha256, let toSha256, let body):
                     guard let sizeBytes = wanted[toSha256] else { return }
                     try? applyPatch(body, from: fromSha256, to: toSha256, maximumBytes: sizeBytes)
@@ -198,6 +198,15 @@ public final class Downloader {
         return data.count
     }
 
+    /// One file entry inflated straight to disk, then verified into the store: the pack is mapped, the entry a slice of it, and the
+    /// inflation holds one chunk, so a large file never lies in memory whole.
+    private func writeInflatedFile(_ body: Data, sha256: String, maximumBytes: Int) throws {
+        let inflated = temporaryDirectory.appendingPathComponent("\(UUID().uuidString).inflating")
+        defer { try? FileManager.default.removeItem(at: inflated) }
+        try Gzip.decompress(body, to: inflated, maximumBytes: maximumBytes)
+        try files.writeFile(at: inflated, sha256: sha256)
+    }
+
     /// Writes the file `toSha256` from the patch and the held file `fromSha256`; the store refuses bytes of another hash.
     func applyPatch(_ patch: Data, from fromSha256: String, to toSha256: String, maximumBytes: Int) throws {
         let directory = temporaryDirectory.appendingPathComponent("\(UUID().uuidString).patching", isDirectory: true)
@@ -207,7 +216,7 @@ public final class Downloader {
         let patchedFile = directory.appendingPathComponent("patched")
         try patch.write(to: patchFile)
         try Bspatch.apply(patchFile, to: try preparePatchBase(fromSha256, in: directory), writingTo: patchedFile, maximumBytes: maximumBytes)
-        try files.writeFile(try Data(contentsOf: patchedFile, options: .mappedIfSafe), sha256: toSha256)
+        try files.writeFile(at: patchedFile, sha256: toSha256)
     }
 
     /// The held file a patch starts from: the store's in place, the embedded bundle's copied beside the patch.
@@ -242,12 +251,14 @@ public final class Downloader {
         } catch {
             throw DownloadFailure.downloadFailed("The file \(file.path) could not be downloaded: \(error.localizedDescription)")
         }
-        guard let content = try? Data(contentsOf: temporary) else { throw DownloadFailure.downloadFailed("The file \(file.path) could not be read") }
+        guard let bytes = (try? FileManager.default.attributesOfItem(atPath: temporary.path))?[.size] as? Int else {
+            throw DownloadFailure.downloadFailed("The file \(file.path) could not be read")
+        }
         do {
-            try files.writeFile(content, sha256: file.sha256)
+            try files.writeFile(at: temporary, sha256: file.sha256)
         } catch {
             throw DownloadFailure.contentMismatched("The file \(file.path) did not match its hash")
         }
-        return content.count
+        return bytes
     }
 }
