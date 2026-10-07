@@ -214,6 +214,8 @@ final class InMemoryEmbeddedBundle: EmbeddedBundle {
 struct Fixture {
     static let appId = "a0000000-0000-4000-8000-000000000001"
     static let channelId = "c0000000-0000-4000-8000-000000000001"
+    static let goneChannelId = "c0000000-0000-4000-8000-0000000000ff"
+    static let stagingChannelId = "c0000000-0000-4000-8000-000000000002"
     static let filesBaseUrl = "https://files.test"
     static let updatesBaseUrl = "https://updates.test"
     static let builtAt = Date(timeIntervalSince1970: 1_700_000_000)
@@ -294,12 +296,18 @@ final class Harness {
         files = FileStore(rootDirectory: root.appendingPathComponent("store"))
         device = DeviceFacts(platform: "ios", binaryVersion: "2.4.1", binaryBuild: "57", osVersion: "17.4", sdkVersion: "0.0.0", isDebugBuild: isDebugBuild)
         embedded.files[Hashing.sha256Hex(Fixture.embeddedIndexHtml)] = Fixture.embeddedIndexHtml
-        core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
+        core = try! Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
+    }
+
+    /// A core over fresh fakes, for a test of what the core refuses to start with.
+    static func makeCore(configuration: Configuration) throws -> Core {
+        let harness = Harness()
+        return try Core(configuration: configuration, device: harness.device, store: harness.store, files: harness.files, embedded: harness.embedded, http: harness.http, loader: harness.loader, listener: harness.listener)
     }
 
     /// A second core over the same store and files: the next start of the app.
     func restart(configuration: Configuration = Fixture.configuration()) {
-        core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
+        core = try! Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
     /// The events endpoint answering every batch with the same server time.

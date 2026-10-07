@@ -30,6 +30,24 @@ final class DownloaderTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: harness.root.appendingPathComponent("escape.html").path))
     }
 
+    func testShouldRefuseAManifestOfAnotherAppBeforeItFetchesItsPack() async {
+        let harness = DownloaderHarness()
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let foreign = BundleManifest(appId: "a0000000-0000-4000-8000-0000000000ff", bundleVersion: bundle.manifest.bundleVersion, files: bundle.manifest.files, platforms: ["ios"])
+        let failure = await harness.downloadFailure(harness.publish(foreign, pack: bundle.pack))
+        XCTAssertEqual(failure?.reason, .manifestInvalid)
+        XCTAssertEqual(harness.http.requests.map { $0.url.lastPathComponent }, ["manifest.json"])
+    }
+
+    func testShouldRefuseAManifestThatLeavesOutTheDevicesPlatform() async {
+        let harness = DownloaderHarness()
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let android = BundleManifest(appId: Fixture.appId, bundleVersion: bundle.manifest.bundleVersion, files: bundle.manifest.files, platforms: ["android"])
+        let failure = await harness.downloadFailure(harness.publish(android, pack: bundle.pack))
+        XCTAssertEqual(failure?.reason, .manifestInvalid)
+        XCTAssertTrue(harness.files.bundleIds().isEmpty)
+    }
+
     func testShouldRefuseAnEnvelopeNamingAnotherBundle() async {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
@@ -228,7 +246,7 @@ final class DownloaderHarness {
 
     init(configuration: Configuration = Fixture.configuration()) {
         files = FileStore(rootDirectory: root.appendingPathComponent("store"))
-        downloader = Downloader(configuration: configuration, files: files, embedded: embedded, http: http, temporaryDirectory: root.appendingPathComponent("tmp"))
+        downloader = Downloader(configuration: configuration, platform: "ios", files: files, embedded: embedded, http: http, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
     /// The manifest of these files and the pack that carries them, each entry the gzip bytes the bucket serves.

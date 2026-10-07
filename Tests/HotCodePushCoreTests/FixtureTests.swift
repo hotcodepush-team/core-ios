@@ -144,6 +144,17 @@ final class FixtureTests: XCTestCase {
         let cases: [Case]
     }
 
+    private struct ManifestIdentityFile: Decodable {
+        struct Case: Decodable {
+            let name: String
+            let appId: String
+            let platform: String
+            let manifest: BundleManifest
+            let isForDevice: Bool
+        }
+        let cases: [Case]
+    }
+
     private struct ConfiguredHostsFile: Decodable {
         struct Case: Decodable {
             let name: String
@@ -286,6 +297,14 @@ final class FixtureTests: XCTestCase {
         XCTAssertFalse(cases.isEmpty)
         for testCase in cases {
             XCTAssertEqual((try? AttributeRules.validate(value: testCase.value)) != nil, testCase.isValid, testCase.name)
+        }
+    }
+
+    func testShouldMatchEveryManifestIdentityFixture() throws {
+        let cases = try load("manifest-identity.json", as: ManifestIdentityFile.self).cases
+        XCTAssertFalse(cases.isEmpty)
+        for testCase in cases {
+            XCTAssertEqual(testCase.manifest.isForDevice(appId: testCase.appId, platform: testCase.platform), testCase.isForDevice, testCase.name)
         }
     }
 

@@ -219,9 +219,23 @@ public struct ChannelsIndex: Codable, Equatable {
     public let schema: Int
     public let channels: [Entry]
 
+    enum CodingKeys: String, CodingKey {
+        case schema, channels
+    }
+
     public init(schema: Int = ChannelIndex.schema, channels: [Entry]) {
         self.schema = schema
         self.channels = channels
+    }
+
+    /// Another schema major fails the whole index, as the channel's index does.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schema = try container.decode(Int.self, forKey: .schema)
+        guard schema == ChannelIndex.schema else {
+            throw DecodingError.dataCorruptedError(forKey: .schema, in: container, debugDescription: "The channels index has schema \(schema), this reader reads \(ChannelIndex.schema)")
+        }
+        channels = try container.decode([Entry].self, forKey: .channels)
     }
 }
 
@@ -413,6 +427,12 @@ public struct BundleManifest: Codable, Equatable {
     public func sha256(forPath path: String) -> String? {
         return files.first { $0.path == path }?.sha256
     }
+
+    /// Whether the manifest names the device's app and lists its platform, signed or not: neither an index pointing at another
+    /// app's bundle nor a cache serving one installs it.
+    public func isForDevice(appId: String, platform: String) -> Bool {
+        return self.appId == appId && platforms.contains(platform)
+    }
 }
 
 /// The embedded bundle's manifest in the resource file, the bundle manifest itself.
@@ -424,6 +444,8 @@ enum WireRule {
     case identifier
     /// 64 lowercase hexadecimal characters: a file hash names a file.
     case sha256
+    /// A UUID in its canonical spelling, lowercase hexadecimal in groups of 8, 4, 4, 4 and 12: a channel id names a path on the files host.
+    case uuid
     /// Relative and `/`-separated, with no empty, `.` or `..` segment, no backslash and no NUL.
     case relativePath
     /// At least one character.
@@ -445,6 +467,9 @@ enum WireRule {
             return (1...64).contains(value.unicodeScalars.count) && value.unicodeScalars.allSatisfy(WireRule.identifierScalars.contains)
         case .sha256:
             return value.unicodeScalars.count == 64 && value.unicodeScalars.allSatisfy(WireRule.sha256Scalars.contains)
+        case .uuid:
+            let groups = value.unicodeScalars.split(separator: "-", omittingEmptySubsequences: false)
+            return groups.map(\.count) == [8, 4, 4, 4, 12] && groups.allSatisfy { $0.allSatisfy(WireRule.sha256Scalars.contains) }
         case .relativePath:
             return WireRule.isRelativePath(value)
         case .nonEmpty:

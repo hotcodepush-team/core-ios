@@ -42,10 +42,12 @@ public final class Downloader {
     private let embedded: EmbeddedBundle
     private let files: FileStore
     private let http: HttpClient
+    private let platform: String
     private let temporaryDirectory: URL
 
-    public init(configuration: Configuration, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, temporaryDirectory: URL) {
+    public init(configuration: Configuration, platform: String, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, temporaryDirectory: URL) {
         self.configuration = configuration
+        self.platform = platform
         self.files = files
         self.embedded = embedded
         self.http = http
@@ -70,7 +72,8 @@ public final class Downloader {
         return DownloadOutcome(manifest: manifest, bytes: bytes, packKind: packKind)
     }
 
-    /// The envelope with its manifest decoded, once the manifest's bytes match the index and the envelope names the release's bundle.
+    /// The envelope with its manifest decoded, once the manifest's bytes match the index, the envelope names the release's bundle
+    /// and the manifest the device's app and platform.
     func fetchBundleManifest(_ target: IndexRelease) async throws -> (envelope: ManifestEnvelope, manifest: BundleManifest) {
         let url = try resolvePinnedUrl(target.manifestUrl)
         let response: HttpResponse
@@ -85,6 +88,9 @@ public final class Downloader {
         }
         try verifyManifestSignature(envelope, expectedSha256: target.manifestSha256)
         guard envelope.bundleId == target.bundleId else { throw DownloadFailure.manifestInvalid("The manifest names another bundle") }
+        guard manifest.isForDevice(appId: configuration.appId, platform: platform) else {
+            throw DownloadFailure.manifestInvalid("The manifest is for another app or platform")
+        }
         return (envelope, manifest)
     }
 

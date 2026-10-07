@@ -422,30 +422,78 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(result, .skipped(v2.release.release, reason: .connectionMetered))
     }
 
-    func testShouldResolveAChannelNameThroughTheChannelsIndex() async {
+    func testShouldResolveAChannelNameThroughTheChannelsIndex() async throws {
         let harness = Harness()
-        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: "c-staging", name: "staging")]))
-        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/c-staging/ios/v1/index.json", ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: "c-staging", platform: "ios", releases: []))
-        await harness.core.setChannel(.name("staging"))
+        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: Fixture.stagingChannelId, name: "staging")]))
+        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/\(Fixture.stagingChannelId)/ios/v1/index.json", ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: Fixture.stagingChannelId, platform: "ios", releases: []))
+        try await harness.core.setChannel(.name("staging"))
         let result = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result, .upToDate(nil))
         let channel = await harness.core.channel()
-        XCTAssertEqual(channel, ChannelResult(id: "c-staging", name: "staging", source: .runtime))
-        await harness.core.setChannel(.name("nowhere"))
+        XCTAssertEqual(channel, ChannelResult(id: Fixture.stagingChannelId, name: "staging", source: .runtime))
+        try await harness.core.setChannel(.name("nowhere"))
         let unknown = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(unknown.reason, FailedReason.channelUnknown.rawValue)
     }
 
-    func testShouldAnswerNoIdForARuntimeNameBeforeASyncResolvedItAndTheIdAfter() async {
+    func testShouldAnswerNoIdForARuntimeNameBeforeASyncResolvedItAndTheIdAfter() async throws {
         let harness = Harness()
-        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: "c-staging", name: "staging")]))
-        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/c-staging/ios/v1/index.json", ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: "c-staging", platform: "ios", releases: []))
-        await harness.core.setChannel(.name("staging"))
+        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: Fixture.stagingChannelId, name: "staging")]))
+        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/\(Fixture.stagingChannelId)/ios/v1/index.json", ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: Fixture.stagingChannelId, platform: "ios", releases: []))
+        try await harness.core.setChannel(.name("staging"))
         let unresolved = await harness.core.channel()
         XCTAssertEqual(unresolved, ChannelResult(id: nil, name: "staging", source: .runtime))
         _ = await harness.core.sync(trigger: .manual)
         let resolved = await harness.core.channel()
-        XCTAssertEqual(resolved, ChannelResult(id: "c-staging", name: "staging", source: .runtime))
+        XCTAssertEqual(resolved, ChannelResult(id: Fixture.stagingChannelId, name: "staging", source: .runtime))
+    }
+
+    func testShouldRefuseAChannelIdThatIsNotAUuidAndRequestOnlyTheConfiguredChannel() async throws {
+        let harness = Harness()
+        harness.publish([], sequence: 1)
+        do {
+            try await harness.core.setChannel(.id("../../a0000000-0000-4000-8000-0000000000ff/channels/c1/ios/v1/index.json?"))
+            XCTFail("expected a plain error")
+        } catch is PlainError {}
+        let channel = await harness.core.channel()
+        XCTAssertEqual(channel, ChannelResult(id: Fixture.channelId, name: nil, source: .config))
+        _ = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(harness.http.requests.map { $0.url.absoluteString }, [Fixture.indexUrl()])
+    }
+
+    func testShouldRefuseAResourceFileWhoseChannelIdIsNotAUuid() throws {
+        XCTAssertThrowsError(try Harness.makeCore(configuration: Fixture.configuration(channelId: "c1/../../other"))) { error in
+            XCTAssertTrue(error is PlainError)
+        }
+    }
+
+    func testShouldFailWithInvalidIndexWhenTheIndexNamesAnotherApp() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        harness.http.stubJson(Fixture.indexUrl(), ChannelIndex(sequence: 1, appId: "a0000000-0000-4000-8000-0000000000ff", channelId: Fixture.channelId, platform: "ios", releases: [v2.release]))
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.reason, FailedReason.indexInvalid.rawValue)
+        XCTAssertEqual(harness.http.requests.count, 1)
+    }
+
+    func testShouldFailWithInvalidIndexWhenTheIndexNamesAnotherChannelOrPlatform() async {
+        let harness = Harness()
+        harness.http.stubJson(Fixture.indexUrl(), ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: Fixture.stagingChannelId, platform: "ios", releases: []))
+        let otherChannel = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(otherChannel.reason, FailedReason.indexInvalid.rawValue)
+        harness.http.stubJson(Fixture.indexUrl(), ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: Fixture.channelId, platform: "android", releases: []))
+        let otherPlatform = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(otherPlatform.reason, FailedReason.indexInvalid.rawValue)
+    }
+
+    func testShouldFailWithInvalidIndexWhenTheChannelsIndexNamesTheChannelByAnIdThatIsNotAUuid() async throws {
+        let harness = Harness()
+        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: "../evil", name: "staging")]))
+        try await harness.core.setChannel(.name("staging"))
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.reason, FailedReason.indexInvalid.rawValue)
+        XCTAssertEqual(harness.http.requests.count, 1)
     }
 
     func testShouldMergeAttributesAndRefuseInvalidOnes() async throws {
@@ -962,9 +1010,9 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(harness.listener.rolledBack.isEmpty)
     }
 
-    func testShouldFailOfflineNotUnknownWhenAChannelNameCannotBeResolved() async {
+    func testShouldFailOfflineNotUnknownWhenAChannelNameCannotBeResolved() async throws {
         let harness = Harness()
-        await harness.core.setChannel(.name("staging"))
+        try await harness.core.setChannel(.name("staging"))
         harness.http.isOffline = true
         let result = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.reason, FailedReason.deviceOffline.rawValue)

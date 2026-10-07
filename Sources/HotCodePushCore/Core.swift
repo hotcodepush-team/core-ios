@@ -58,13 +58,20 @@ public actor Core {
     /// The work a call starts beside its answer — the automatic cycles and the batches — until it ends.
     private var backgroundWork: [UUID: Task<Void, Never>] = [:]
 
-    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
+    /// Throws the plain error when the resource file names its app or its channel by a value that could name another path on the files host.
+    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) throws {
+        guard WireRule.identifier.accepts(configuration.appId) else {
+            throw PlainError("The resource file's appId is not an app id: \(configuration.appId)")
+        }
+        if let channelId = configuration.channelId {
+            try Core.validate(channelId: channelId)
+        }
         self.configuration = configuration
         self.device = device
         self.state = StateStore(store: store)
         self.files = files
         self.embedded = embedded
-        self.downloader = Downloader(configuration: configuration, files: files, embedded: embedded, http: http, temporaryDirectory: temporaryDirectory)
+        self.downloader = Downloader(configuration: configuration, platform: device.platform, files: files, embedded: embedded, http: http, temporaryDirectory: temporaryDirectory)
         self.http = http
         self.loader = loader
         self.listener = listener
@@ -426,9 +433,20 @@ public actor Core {
         }
     }
 
-    public func setChannel(_ choice: ChannelChoice?) {
+    /// Throws the plain error for an id that is not a UUID: it never reaches a URL, and the stored choice stays.
+    public func setChannel(_ choice: ChannelChoice?) throws {
+        if case .id(let id) = choice {
+            try Core.validate(channelId: id)
+        }
         state.channel = choice
         state.cachedIndex = nil
+    }
+
+    /// A channel id is a UUID, so nothing with `..`, `/` or a query reaches the index's URL.
+    private static func validate(channelId: String) throws {
+        guard WireRule.uuid.accepts(channelId) else {
+            throw PlainError("A channel id is a UUID: \(channelId)")
+        }
     }
 
     public func deviceResult() -> DeviceResult {
@@ -689,6 +707,9 @@ public actor Core {
                     return .invalid("The channels index could not be parsed")
                 }
                 guard let entry = index.channels.first(where: { $0.name == name }) else { return .unknown }
+                guard WireRule.uuid.accepts(entry.id) else {
+                    return .invalid("The channels index names the channel \(name) by an id that is not a UUID")
+                }
                 resolvedChannelName = (name, entry.id)
                 return .id(entry.id)
             case 404:
@@ -724,6 +745,9 @@ public actor Core {
         case 200:
             guard let index = try? Json.decoder.decode(ChannelIndex.self, from: response.body) else {
                 return .invalid("The channel index could not be parsed")
+            }
+            guard index.appId == configuration.appId, index.channelId == channelId, index.platform == device.platform else {
+                return .invalid("The channel index names another app, channel or platform")
             }
             if let cached = cached, index.sequence < cached.body.sequence {
                 return .index(cached.body)

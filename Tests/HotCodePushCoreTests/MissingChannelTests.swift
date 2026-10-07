@@ -73,9 +73,9 @@ final class MissingChannelTests: XCTestCase {
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
-        await harness.core.setChannel(.id(Fixture.channelId))
+        try await harness.core.setChannel(.id(Fixture.channelId))
         _ = await harness.core.sync(trigger: .manual)
-        await harness.core.setChannel(nil)
+        try await harness.core.setChannel(nil)
         await harness.core.waitForBackgroundWork()
         let requestCount = harness.http.requests.count
         harness.loader.served = "b2"
@@ -117,7 +117,7 @@ final class MissingChannelTests: XCTestCase {
         let harness = harnessWithoutChannel()
         harness.publish([], sequence: 1)
         await harness.core.handleAppStart()
-        await harness.core.setChannel(.id(Fixture.channelId))
+        try await harness.core.setChannel(.id(Fixture.channelId))
         await harness.core.handleAppResume()
         await harness.core.waitForBackgroundWork()
         let lastCheck = try XCTUnwrap(StateStore(store: harness.store).lastCheck)
@@ -127,7 +127,7 @@ final class MissingChannelTests: XCTestCase {
 
     func testShouldFireUpdateFailedOnceWhenAnAutomaticCheckFindsItsRuntimeChannelGoneAndTheBuildCarriesNoneAndStartNoCheckAfterIt() async throws {
         let harness = harnessWithoutChannel()
-        await harness.core.setChannel(.id("c-gone"))
+        try await harness.core.setChannel(.id(Fixture.goneChannelId))
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.channelUnknown])
@@ -147,7 +147,7 @@ final class MissingChannelTests: XCTestCase {
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
-        await harness.core.setChannel(.id(Fixture.channelId))
+        try await harness.core.setChannel(.id(Fixture.channelId))
         let result = await harness.core.sync(trigger: .manual)
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(result.status, .updated)
@@ -156,22 +156,22 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(report["channelSource"] as? String, "runtime")
     }
 
-    func testShouldAnswerUnknownChannelAgainWhenTheRuntimeChoiceIsCleared() async {
+    func testShouldAnswerUnknownChannelAgainWhenTheRuntimeChoiceIsCleared() async throws {
         let harness = harnessWithoutChannel()
         harness.publish([], sequence: 1)
         await harness.core.handleAppStart()
-        await harness.core.setChannel(.id(Fixture.channelId))
+        try await harness.core.setChannel(.id(Fixture.channelId))
         let followed = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(followed, .upToDate(nil))
-        await harness.core.setChannel(nil)
+        try await harness.core.setChannel(nil)
         let cleared = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(cleared, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
     }
 
-    func testShouldClearARuntimeChannelThatServesNoIndexAndAnswerUnknownChannel() async {
+    func testShouldClearARuntimeChannelThatServesNoIndexAndAnswerUnknownChannel() async throws {
         let harness = harnessWithoutChannel()
         await harness.core.handleAppStart()
-        await harness.core.setChannel(.id("c-gone"))
+        try await harness.core.setChannel(.id(Fixture.goneChannelId))
         let result = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
         let channel = await harness.core.channel()
@@ -179,12 +179,12 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(harness.http.requests.count, 1)
     }
 
-    func testShouldFallBackToTheConfiguredChannelWhenTheRuntimeChannelServesNoIndex() async {
+    func testShouldFallBackToTheConfiguredChannelWhenTheRuntimeChannelServesNoIndex() async throws {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
-        await harness.core.setChannel(.id("c-gone"))
+        try await harness.core.setChannel(.id(Fixture.goneChannelId))
         let result = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.status, .updated)
         let channel = await harness.core.channel()
