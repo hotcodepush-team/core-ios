@@ -54,6 +54,8 @@ public actor Core {
     private var resolvedChannelName: (name: String, id: String)?
     /// The stored rollback notice was announced in this process, so the app coming up next has received it.
     private var hasAnnouncedRollback = false
+    /// The release a switch replaced in this run, `notifyReady()`'s `previousRelease` until it is read.
+    private var releaseBeforeSwitch: Release?
     /// This session's log, the newest last, behind the debug screen.
     private var logEntries: [LogEntry] = []
     /// The work a call starts beside its answer — the automatic cycles and the batches — until it ends.
@@ -132,12 +134,15 @@ public actor Core {
         settleStart()
     }
 
-    /// Ends the gate when `readySignal` is `manual`, settles the start, and tells the app whether this start follows a rollback.
+    /// Ends the gate when `readySignal` is `manual`, settles the start, and tells the app whether this start follows a rollback or a
+    /// switch, `previousRelease` the release that ran before it; each is told once.
     public func notifyReady() -> NotifyReadyResult {
         confirmCurrentRelease()
         let rollback = state.lastRollback
         state.lastRollback = nil
-        let result = NotifyReadyResult(currentRelease: state.currentRelease, previousRelease: rollback?.from, isRolledBack: rollback != nil, rollbackReason: rollback?.reason)
+        let previousRelease = rollback?.from ?? releaseBeforeSwitch
+        releaseBeforeSwitch = nil
+        let result = NotifyReadyResult(currentRelease: state.currentRelease, previousRelease: previousRelease, isRolledBack: rollback != nil, rollbackReason: rollback?.reason)
         settleStart()
         return result
     }
@@ -519,6 +524,7 @@ public actor Core {
 
     private func switchToNextRelease() {
         guard let next = state.nextRelease else { return }
+        releaseBeforeSwitch = state.currentRelease
         state.currentRelease = next
         state.nextRelease = nil
         loader.persistServedBundle(bundleId: next.bundleId)

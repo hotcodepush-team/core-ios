@@ -43,6 +43,28 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(harness.scheduler.tasks[0].isCancelled)
     }
 
+    func testShouldNameTheReleaseASwitchReplacedAsPreviousReleaseOnce() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        _ = await harness.core.notifyReady()
+        let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
+        harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
+        _ = await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b3"
+        harness.restart()
+        await harness.core.handleAppStart()
+        let ready = await harness.core.notifyReady()
+        XCTAssertEqual(ready, NotifyReadyResult(currentRelease: v3.release.release, previousRelease: v2.release.release, isRolledBack: false, rollbackReason: nil))
+        let again = await harness.core.notifyReady()
+        XCTAssertNil(again.previousRelease)
+    }
+
     func testShouldStartOnTheEmbeddedBundleWhenTheBinaryChanged() async {
         let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
