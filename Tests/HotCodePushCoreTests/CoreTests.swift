@@ -185,6 +185,41 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.fallbackRelease?.id, "r1")
     }
 
+    func testShouldDropAHeldInstallWhoseReleaseWasRevokedWhileItWaited() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        await harness.core.setRestartAllowed(false)
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.publish([v2], sequence: 2, revoked: ["r1"], etag: "\"e2\"")
+        _ = try await harness.core.checkForUpdate()
+        await harness.core.setRestartAllowed(true)
+        XCTAssertEqual(harness.loader.loaded, [])
+        XCTAssertEqual(harness.loader.persisted, .some(nil))
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertNil(status.nextRelease)
+    }
+
+    func testShouldDropAHeldApplyUpdateWhoseReleaseWasRevokedWhileItWaited() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        let applied = await harness.core.applyUpdate()
+        XCTAssertEqual(applied.status, .applied)
+        harness.publish([v2], sequence: 2, revoked: ["r1"], etag: "\"e2\"")
+        _ = try await harness.core.checkForUpdate()
+        await harness.core.handleRendered()
+        XCTAssertEqual(harness.loader.loaded, [])
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertNil(status.nextRelease)
+    }
+
     func testShouldAnswerTheEmbeddedBundleAtAStartOverAStoreItCannotRead() async {
         for stored in ["{ not json", #"{"id":"r1"}"#] {
             let harness = Harness()

@@ -278,10 +278,7 @@ public actor Core {
         guard let next = state.nextRelease else {
             return ApplyResult(status: .nothingToApply, release: state.currentRelease)
         }
-        restartThroughGate(isAskedByApp: true) { [self] in
-            switchToNextRelease()
-            reloadApp()
-        }
+        restartThroughGate(isAskedByApp: true) { [self] in applyNextRelease() }
         return ApplyResult(status: .applied, release: next)
     }
 
@@ -619,10 +616,16 @@ public actor Core {
         if let next = state.nextRelease {
             loader.persistServedBundle(bundleId: next.bundleId)
         }
-        restartThroughGate(isAskedByApp: false) { [self] in
-            switchToNextRelease()
-            reloadApp()
-        }
+        restartThroughGate(isAskedByApp: false) { [self] in applyNextRelease() }
+    }
+
+    /// The switch and the reload as one act, once the cached index still lists the release: one revoked or gone from it while the
+    /// restart was held is dropped, and nothing reloads.
+    private func applyNextRelease() {
+        discardNextReleaseThatLeftTheIndex()
+        guard state.nextRelease != nil else { return }
+        switchToNextRelease()
+        reloadApp()
     }
 
     /// A restart waits until the app is up in this run, and the SDK's own also while the app holds restarts. One is held at most: the app's replaces a held one, the SDK's yields to it.
