@@ -81,9 +81,14 @@ public actor Core {
 
     // MARK: Lifecycle
 
+    /// The longest a host's synchronous start waits for the start's answer before it serves the embedded bundle.
+    public static let startTimeout: TimeInterval = 2
+
     /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
-    /// has not come up after and the gate; the cleanup runs after it returns, so the host waiting on the start never waits on it.
-    public func handleAppStart() {
+    /// has not come up after and the gate. Answers the bundle the host serves, `nil` for the embedded one, without awaiting the
+    /// network: the start's check and the cleanup run after it returns, so a host waiting on the start never waits on them.
+    @discardableResult
+    public func handleAppStart() -> String? {
         if state.pendingRollbackEvent == nil {
             state.lastRollback = nil
         }
@@ -107,7 +112,23 @@ public actor Core {
         } else if configuration.autoCheck {
             startAutomaticCycle(trigger: .start)
         }
-        unusedFilesDeletion = startBackgroundWork { await self.deleteUnusedFiles() }
+        unusedFilesDeletion = startBackgroundWork { self.deleteUnusedFiles() }
+        return state.currentRelease?.bundleId
+    }
+
+    /// The start for a host that resolves its bundle in synchronous code before its WebView or JavaScript loads: `handleAppStart()`'s
+    /// answer, waited for at most `startTimeout`. Without an answer in time it answers the embedded bundle, and the start, once it
+    /// runs, reloads the host into the bundle it resolved, as it does whenever the host serves another one.
+    public nonisolated func handleAppStartBlocking() -> String? {
+        return handleAppStartBlocking(timeout: Core.startTimeout)
+    }
+
+    nonisolated func handleAppStartBlocking(timeout: TimeInterval) -> String? {
+        let answer = StartAnswer()
+        Task.detached(priority: .userInitiated) {
+            answer.resolve(await self.handleAppStart())
+        }
+        return answer.wait(timeout: timeout) ?? nil
     }
 
     /// A mandatory release follows its own strategy, so one the app took over waits across starts; any other switches under `next-start`; a bundle the WebView already serves is adopted.
@@ -914,5 +935,27 @@ public actor Core {
 
     private func resolveMonth(of date: Date) -> String {
         return String(Iso8601.format(date).prefix(7))
+    }
+}
+
+/// The start's answer handed from the core's task to the host's waiting thread.
+private final class StartAnswer: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var bundleId: String??
+
+    func resolve(_ bundleId: String?) {
+        lock.lock()
+        self.bundleId = .some(bundleId)
+        lock.unlock()
+        semaphore.signal()
+    }
+
+    /// The answer, `nil` when none came within the timeout.
+    func wait(timeout: TimeInterval) -> String?? {
+        guard semaphore.wait(timeout: .now() + timeout) == .success else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        return bundleId
     }
 }

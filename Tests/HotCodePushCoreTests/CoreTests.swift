@@ -65,6 +65,63 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(again.previousRelease)
     }
 
+    func testShouldAnswerTheBundleTheHostServesAtStart() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        let embedded = await harness.core.handleAppStart()
+        XCTAssertNil(embedded)
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.restart()
+        let switched = await harness.core.handleAppStart()
+        XCTAssertEqual(switched, "b2")
+    }
+
+    func testShouldAnswerTheStartsBundleToAHostThatWaitsInSynchronousCode() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.restart()
+        let core = harness.core
+        let answer = await Task.detached { core.handleAppStartBlocking() }.value
+        XCTAssertEqual(answer, "b2")
+    }
+
+    func testShouldAnswerTheEmbeddedBundleWhenTheStartDoesNotAnswerInTimeAndReloadIntoItsBundleOnceItDoes() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.restart()
+        let release = DispatchSemaphore(value: 0)
+        harness.loader.whileReadingServedBundle = { _ = release.wait(timeout: .now() + 5) }
+        let core = harness.core
+        let answer = await Task.detached { core.handleAppStartBlocking(timeout: 0.1) }.value
+        XCTAssertNil(answer)
+        release.signal()
+        await harness.core.waitForBackgroundWork()
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease?.bundleId, "b2")
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+    }
+
+    func testShouldAnswerTheEmbeddedBundleAtAStartOverAStoreItCannotRead() async {
+        for stored in ["{ not json", #"{"id":"r1"}"#] {
+            let harness = Harness()
+            harness.store.set(stored, forKey: "hotcodepush.currentRelease")
+            harness.store.set(stored, forKey: "hotcodepush.fallbackRelease")
+            let answer = await harness.core.handleAppStart()
+            XCTAssertNil(answer, stored)
+            let status = await harness.core.getState()
+            XCTAssertNil(status.currentRelease, stored)
+            XCTAssertNil(status.fallbackRelease, stored)
+            XCTAssertTrue(harness.listener.rolledBack.isEmpty, stored)
+        }
+    }
+
     func testShouldStartOnTheEmbeddedBundleWhenTheBinaryChanged() async throws {
         let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))

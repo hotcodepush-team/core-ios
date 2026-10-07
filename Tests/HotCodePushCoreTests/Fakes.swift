@@ -115,6 +115,8 @@ final class FakeLoader: BundleLoader {
     @Locked var loaded: [String?] = []
     @Locked var served: String?
     @Locked var isMetered = false
+    /// Runs inside the next read of the served bundle: a host slow to answer while the start waits on it.
+    @Locked var whileReadingServedBundle: (() -> Void)?
 
     init(root: URL) {
         self.root = root
@@ -138,6 +140,10 @@ final class FakeLoader: BundleLoader {
     }
 
     func servedBundleId() -> String? {
+        if let whileReadingServedBundle = whileReadingServedBundle {
+            self.whileReadingServedBundle = nil
+            whileReadingServedBundle()
+        }
         return served
     }
 
