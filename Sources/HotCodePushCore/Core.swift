@@ -87,8 +87,9 @@ public actor Core {
     /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
     /// has not come up after and the gate. Answers the bundle the host serves, `nil` for the embedded one, without awaiting the
     /// network: the start's check and the cleanup run after it returns, so a host waiting on the start never waits on them.
+    /// A headless start, one the host knows no screen will render for, neither applies a waiting release nor arms the gate.
     @discardableResult
-    public func handleAppStart() -> String? {
+    public func handleAppStart(isHeadless: Bool = false) -> String? {
         if state.pendingRollbackEvent == nil {
             state.lastRollback = nil
         }
@@ -99,7 +100,7 @@ public actor Core {
             rollbackCurrentRelease(reason: .appCrashed, detail: nil)
         }
         discardNextReleaseThatLeftTheIndex()
-        if let next = state.nextRelease, shouldSwitchAtStart(to: next) {
+        if !isHeadless, let next = state.nextRelease, shouldSwitchAtStart(to: next) {
             switchToNextRelease()
         }
         loadBundle()
@@ -119,14 +120,14 @@ public actor Core {
     /// The start for a host that resolves its bundle in synchronous code before its WebView or JavaScript loads: `handleAppStart()`'s
     /// answer, waited for at most `startTimeout`. Without an answer in time it answers the embedded bundle, and the start, once it
     /// runs, reloads the host into the bundle it resolved, as it does whenever the host serves another one.
-    public nonisolated func handleAppStartBlocking() -> String? {
-        return handleAppStartBlocking(timeout: Core.startTimeout)
+    public nonisolated func handleAppStartBlocking(isHeadless: Bool = false) -> String? {
+        return handleAppStartBlocking(isHeadless: isHeadless, timeout: Core.startTimeout)
     }
 
-    nonisolated func handleAppStartBlocking(timeout: TimeInterval) -> String? {
+    nonisolated func handleAppStartBlocking(isHeadless: Bool = false, timeout: TimeInterval) -> String? {
         let answer = StartAnswer()
         Task.detached(priority: .userInitiated) {
-            answer.resolve(await self.handleAppStart())
+            answer.resolve(await self.handleAppStart(isHeadless: isHeadless))
         }
         return answer.wait(timeout: timeout) ?? nil
     }

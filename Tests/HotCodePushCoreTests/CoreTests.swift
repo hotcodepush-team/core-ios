@@ -108,6 +108,43 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.loader.loaded, ["b2"])
     }
 
+    func testShouldNeitherApplyAWaitingReleaseNorArmTheGateAtAHeadlessStart() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        let headless = await harness.core.handleAppStart(isHeadless: true)
+        XCTAssertNil(headless)
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.nextRelease?.id, "r1")
+        XCTAssertTrue(harness.scheduler.tasks.isEmpty)
+        harness.restart()
+        let started = await harness.core.handleAppStart()
+        XCTAssertEqual(started, "b2")
+        XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [10])
+    }
+
+    func testShouldStillRollBackACrashAtAHeadlessStart() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        harness.scheduler.tasks = []
+        harness.restart()
+        let headless = await harness.core.handleAppStart(isHeadless: true)
+        XCTAssertNil(headless)
+        XCTAssertEqual(StateStore(store: harness.store).failedBundleIds, ["b2"])
+        XCTAssertTrue(harness.scheduler.tasks.isEmpty)
+    }
+
     func testShouldAnswerTheEmbeddedBundleAtAStartOverAStoreItCannotRead() async {
         for stored in ["{ not json", #"{"id":"r1"}"#] {
             let harness = Harness()
