@@ -135,6 +135,15 @@ final class FixtureTests: XCTestCase {
         let manifests: [Case]
     }
 
+    private struct AttributeValuesFile: Decodable {
+        struct Case: Decodable {
+            let name: String
+            let value: String
+            let isValid: Bool
+        }
+        let cases: [Case]
+    }
+
     private struct ConfiguredHostsFile: Decodable {
         struct Case: Decodable {
             let name: String
@@ -270,6 +279,14 @@ final class FixtureTests: XCTestCase {
         try assertRefused(ChannelIndex.self, listed: "refusedIndexes", holding: "index")
         try assertRefused(BundleManifest.self, listed: "refusedManifests", holding: "manifest")
         try assertRefused(ManifestEnvelope.self, listed: "refusedEnvelopes", holding: "envelope")
+    }
+
+    func testShouldMatchEveryAttributeValuesFixture() throws {
+        let cases = try load("attribute-values.json", as: AttributeValuesFile.self).cases
+        XCTAssertFalse(cases.isEmpty)
+        for testCase in cases {
+            XCTAssertEqual((try? AttributeRules.validate(value: testCase.value)) != nil, testCase.isValid, testCase.name)
+        }
     }
 
     /// A production build names no host, which the fixture writes as `null`: the configuration's defaults apply.

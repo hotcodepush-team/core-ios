@@ -90,6 +90,7 @@ public struct PlainError: Error, LocalizedError, Equatable {
 
 public enum AttributeRules {
     static let keyPattern = try! NSRegularExpression(pattern: "^[A-Za-z0-9_.-]{1,64}$")
+    static let valueMaximumCodePoints = 256
 
     public static func validate(key: String, value: String) throws {
         guard keyPattern.firstMatch(in: key, range: NSRange(key.startIndex..., in: key)) != nil else {
@@ -98,10 +99,15 @@ public enum AttributeRules {
         try validate(value: value)
     }
 
-    /// The value rule alone, shared with the app's rollback reason.
+    /// The value rule alone, shared with the app's rollback reason: at most 256 Unicode code points, counted neither in UTF-16
+    /// code units nor in the characters a reader sees, and no control character, C0, DEL or C1, which the events endpoint refuses.
     public static func validate(value: String) throws {
-        guard value.count <= 256, !value.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) else {
-            throw PlainError("A value is a printable string without control characters, at most 256 characters")
+        guard isValid(value: value) else {
+            throw PlainError("A value is at most \(valueMaximumCodePoints) Unicode code points without a control character")
         }
+    }
+
+    static func isValid(value: String) -> Bool {
+        return value.unicodeScalars.count <= valueMaximumCodePoints && !value.unicodeScalars.contains(where: WireRule.isControlCharacter)
     }
 }

@@ -457,6 +457,11 @@ enum WireRule {
         }
     }
 
+    /// Unicode's `Cc`: the C0 controls, DEL and the C1 controls.
+    static func isControlCharacter(_ scalar: Unicode.Scalar) -> Bool {
+        return scalar.properties.generalCategory == .control
+    }
+
     /// The segments are split on the `/` scalar, never on characters: a slash followed by a combining mark is still a separator, so `..` cannot hide behind one.
     private static func isRelativePath(_ value: String) -> Bool {
         let scalars = value.unicodeScalars

@@ -464,6 +464,17 @@ final class CoreTests: XCTestCase {
         }
     }
 
+    func testShouldRefuseAnAttributeValueWithAC1ControlCharacterAndKeepTheStoredOnes() async throws {
+        let harness = Harness()
+        try await harness.core.setAttributes(["plan": "beta"])
+        do {
+            try await harness.core.setAttributes(["plan": "beta\u{0085}", "tenant": "acme"])
+            XCTFail("expected a plain error")
+        } catch is PlainError {}
+        let device = await harness.core.deviceResult()
+        XCTAssertEqual(device.attributes, ["plan": "beta"])
+    }
+
     func testShouldReportChecksOncePerRelease() async {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), conditions: [.os(range: ">=99")])
