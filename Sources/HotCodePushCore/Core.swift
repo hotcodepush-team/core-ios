@@ -55,6 +55,8 @@ public actor Core {
     private var hasAnnouncedRollback = false
     /// This session's log, the newest last, behind the debug screen.
     private var logEntries: [LogEntry] = []
+    /// The work a call starts beside its answer — the automatic cycles and the batches — until it ends.
+    private var backgroundWork: [UUID: Task<Void, Never>] = [:]
 
     public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
         self.configuration = configuration
@@ -153,7 +155,22 @@ public actor Core {
     /// The start's, the resume's and the interval's cycle; a device without a channel starts none, since it could only fail.
     private func startAutomaticCycle(trigger: SyncTrigger) {
         guard hasChannel else { return }
-        Task { await self.sync(trigger: trigger) }
+        startBackgroundWork { _ = await self.sync(trigger: trigger) }
+    }
+
+    private func startBackgroundWork(_ work: @escaping () async -> Void) {
+        let id = UUID()
+        backgroundWork[id] = Task {
+            await work()
+            backgroundWork[id] = nil
+        }
+    }
+
+    /// Returns once no background work runs, the work it started meanwhile included: what a test waits on instead of a sleep.
+    func waitForBackgroundWork() async {
+        while let work = backgroundWork.values.first {
+            await work.value
+        }
     }
 
     // MARK: The three stages
@@ -212,7 +229,7 @@ public actor Core {
         if result.status == .failed, let reason = result.reason.flatMap(FailedReason.init(rawValue:)) {
             listener.updateFailed(UpdateFailedEvent(release: result.release, reason: reason, message: result.message ?? "", trigger: trigger))
         }
-        Task { await self.sendDeviceEvents() }
+        startBackgroundWork { await self.sendDeviceEvents() }
         return result
     }
 
@@ -611,8 +628,7 @@ public actor Core {
     private func startReadyTimer() {
         stopReadyTimer()
         readyTimer = scheduler.schedule(after: configuration.readyTimeout) { [weak self] in
-            guard let self = self else { return }
-            Task { await self.handleReadyTimeout() }
+            await self?.handleReadyTimeout()
         }
     }
 
@@ -632,8 +648,7 @@ public actor Core {
         intervalTimer?.cancel()
         guard configuration.autoCheck else { return }
         intervalTimer = scheduler.schedule(after: seconds) { [weak self] in
-            guard let self = self else { return }
-            Task { await self.startAutomaticCycle(trigger: .interval) }
+            await self?.startAutomaticCycle(trigger: .interval)
         }
     }
 

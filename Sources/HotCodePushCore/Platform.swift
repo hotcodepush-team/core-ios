@@ -49,7 +49,7 @@ public protocol ScheduledTask {
 }
 
 public protocol Scheduler {
-    func schedule(after seconds: TimeInterval, _ block: @escaping () -> Void) -> ScheduledTask
+    func schedule(after seconds: TimeInterval, _ block: @escaping () async -> Void) -> ScheduledTask
 }
 
 public protocol Clock {
@@ -62,7 +62,7 @@ public struct SystemClock: Clock {
 }
 
 public final class DispatchScheduler: Scheduler {
-    private final class Task: ScheduledTask {
+    private final class ScheduledWorkItem: ScheduledTask {
         let item: DispatchWorkItem
         init(item: DispatchWorkItem) { self.item = item }
         func cancel() { item.cancel() }
@@ -70,10 +70,10 @@ public final class DispatchScheduler: Scheduler {
 
     public init() {}
 
-    public func schedule(after seconds: TimeInterval, _ block: @escaping () -> Void) -> ScheduledTask {
-        let item = DispatchWorkItem(block: block)
+    public func schedule(after seconds: TimeInterval, _ block: @escaping () async -> Void) -> ScheduledTask {
+        let item = DispatchWorkItem { Task { await block() } }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds, execute: item)
-        return Task(item: item)
+        return ScheduledWorkItem(item: item)
     }
 }
 

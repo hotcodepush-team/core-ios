@@ -58,7 +58,7 @@ final class DebugReportTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         _ = await harness.core.sync(trigger: .manual)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await harness.core.waitForBackgroundWork()
         let log = await harness.core.debugSnapshot().log
         XCTAssertEqual(log.last?.code, "REPORT_REFUSED")
         XCTAssertEqual(log.last?.message, "2 events dropped: HTTP 422")
@@ -71,7 +71,7 @@ final class DebugReportTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         _ = await harness.core.sync(trigger: .manual)
-        try await Task.sleep(nanoseconds: 50_000_000)
+        await harness.core.waitForBackgroundWork()
         let log = await harness.core.debugSnapshot().log
         XCTAssertEqual(log.last?.code, "REPORT_FAILED")
         XCTAssertEqual(log.last?.message, "2 events kept for the next sync: HTTP 202")

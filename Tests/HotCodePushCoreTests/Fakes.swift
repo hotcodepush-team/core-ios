@@ -1,6 +1,39 @@
 import Foundation
 @testable import HotCodePushCore
 
+/// A value the test and the core's tasks reach from different threads: every read, write and mutation under one lock.
+@propertyWrapper
+final class Locked<Value> {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(wrappedValue: Value) {
+        value = wrappedValue
+    }
+
+    var wrappedValue: Value {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            value = newValue
+        }
+    }
+
+    var projectedValue: Locked<Value> { self }
+
+    /// A read and a write as one step, so two appends from two threads both land.
+    func mutate(_ body: (inout Value) -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        body(&value)
+    }
+}
+
 final class FakeHttpClient: HttpClient {
     struct Stub {
         let status: Int
@@ -8,15 +41,15 @@ final class FakeHttpClient: HttpClient {
         let body: Data
     }
 
-    var stubs: [String: Stub] = [:]
-    var requests: [(url: URL, headers: [String: String])] = []
-    var posts: [(url: URL, headers: [String: String], body: Data)] = []
-    var isOffline = false
+    @Locked var stubs: [String: Stub] = [:]
+    @Locked var requests: [(url: URL, headers: [String: String])] = []
+    @Locked var posts: [(url: URL, headers: [String: String], body: Data)] = []
+    @Locked var isOffline = false
     /// Runs once inside the next post, before it answers: what the app does while a batch is on its way.
-    var whilePosting: (() async -> Void)?
+    @Locked var whilePosting: (() async -> Void)?
 
     func stub(_ url: String, status: Int = 200, headers: [String: String] = [:], body: Data) {
-        stubs[url] = Stub(status: status, headers: headers, body: body)
+        $stubs.mutate { $0[url] = Stub(status: status, headers: headers, body: body) }
     }
 
     func stubJson<T: Encodable>(_ url: String, _ value: T, status: Int = 200, headers: [String: String] = [:]) {
@@ -24,14 +57,14 @@ final class FakeHttpClient: HttpClient {
     }
 
     func get(_ url: URL, headers: [String: String]) async throws -> HttpResponse {
-        requests.append((url, headers))
+        $requests.mutate { $0.append((url, headers)) }
         if isOffline { throw URLError(.notConnectedToInternet) }
         guard let stub = stubs[url.absoluteString] else { return HttpResponse(status: 404, headers: [:], body: Data()) }
         return HttpResponse(status: stub.status, headers: stub.headers, body: stub.body)
     }
 
     func post(_ url: URL, headers: [String: String], body: Data) async throws -> HttpResponse {
-        posts.append((url, headers, body))
+        $posts.mutate { $0.append((url, headers, body)) }
         if let whilePosting = whilePosting {
             self.whilePosting = nil
             await whilePosting()
@@ -43,7 +76,7 @@ final class FakeHttpClient: HttpClient {
     }
 
     func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws {
-        requests.append((url, [:]))
+        $requests.mutate { $0.append((url, [:])) }
         if isOffline { throw URLError(.notConnectedToInternet) }
         guard let stub = stubs[url.absoluteString], stub.status == 200 else { throw HttpStatusError(status: stubs[url.absoluteString]?.status ?? 404) }
         guard stub.body.count <= maximumBytes else { throw DownloadFailure.downloadFailed("\(url.lastPathComponent) is larger than its \(maximumBytes) bytes") }
@@ -54,8 +87,8 @@ final class FakeHttpClient: HttpClient {
 }
 
 final class InMemoryStore: KeyValueStore {
-    private(set) var values: [String: String] = [:]
-    private(set) var integers: [String: Int] = [:]
+    @Locked private(set) var values: [String: String] = [:]
+    @Locked private(set) var integers: [String: Int] = [:]
 
     init() {}
 
@@ -64,7 +97,7 @@ final class InMemoryStore: KeyValueStore {
     }
 
     func set(_ value: String?, forKey key: String) {
-        values[key] = value
+        $values.mutate { $0[key] = value }
     }
 
     func integer(forKey key: String) -> Int? {
@@ -72,16 +105,16 @@ final class InMemoryStore: KeyValueStore {
     }
 
     func set(_ value: Int?, forKey key: String) {
-        integers[key] = value
+        $integers.mutate { $0[key] = value }
     }
 }
 
 final class FakeLoader: BundleLoader {
     let root: URL
-    var persisted: String??
-    var loaded: [String?] = []
-    var served: String?
-    var isMetered = false
+    @Locked var persisted: String??
+    @Locked var loaded: [String?] = []
+    @Locked var served: String?
+    @Locked var isMetered = false
 
     init(root: URL) {
         self.root = root
@@ -100,7 +133,7 @@ final class FakeLoader: BundleLoader {
     }
 
     func loadServedBundle(bundleId: String?) {
-        loaded.append(bundleId)
+        $loaded.mutate { $0.append(bundleId) }
         served = bundleId
     }
 
@@ -114,48 +147,51 @@ final class FakeLoader: BundleLoader {
 }
 
 final class FakeListener: CoreListener {
-    var available: [UpdateAvailableEvent] = []
-    var downloaded: [UpdateDownloadedEvent] = []
-    var failed: [UpdateFailedEvent] = []
-    var progress: [(String, Int, Int)] = []
-    var rolledBack: [RolledBackEvent] = []
+    @Locked var available: [UpdateAvailableEvent] = []
+    @Locked var downloaded: [UpdateDownloadedEvent] = []
+    @Locked var failed: [UpdateFailedEvent] = []
+    @Locked var progress: [(String, Int, Int)] = []
+    @Locked var rolledBack: [RolledBackEvent] = []
 
-    func updateAvailable(_ event: UpdateAvailableEvent) { available.append(event) }
-    func updateDownloaded(_ event: UpdateDownloadedEvent) { downloaded.append(event) }
-    func updateFailed(_ event: UpdateFailedEvent) { failed.append(event) }
-    func downloadProgress(releaseId: String, downloadedBytes: Int, totalBytes: Int) { progress.append((releaseId, downloadedBytes, totalBytes)) }
-    func rolledBack(_ event: RolledBackEvent) { rolledBack.append(event) }
+    func updateAvailable(_ event: UpdateAvailableEvent) { $available.mutate { $0.append(event) } }
+    func updateDownloaded(_ event: UpdateDownloadedEvent) { $downloaded.mutate { $0.append(event) } }
+    func updateFailed(_ event: UpdateFailedEvent) { $failed.mutate { $0.append(event) } }
+    func downloadProgress(releaseId: String, downloadedBytes: Int, totalBytes: Int) { $progress.mutate { $0.append((releaseId, downloadedBytes, totalBytes)) } }
+    func rolledBack(_ event: RolledBackEvent) { $rolledBack.mutate { $0.append(event) } }
 }
 
 final class ManualScheduler: Scheduler {
     final class Task: ScheduledTask {
         let seconds: TimeInterval
-        let block: () -> Void
-        var isCancelled = false
-        init(seconds: TimeInterval, block: @escaping () -> Void) { self.seconds = seconds; self.block = block }
+        let block: () async -> Void
+        @Locked var isCancelled = false
+        init(seconds: TimeInterval, block: @escaping () async -> Void) { self.seconds = seconds; self.block = block }
         func cancel() { isCancelled = true }
     }
 
-    var tasks: [Task] = []
+    @Locked var tasks: [Task] = []
 
-    func schedule(after seconds: TimeInterval, _ block: @escaping () -> Void) -> ScheduledTask {
+    func schedule(after seconds: TimeInterval, _ block: @escaping () async -> Void) -> ScheduledTask {
         let task = Task(seconds: seconds, block: block)
-        tasks.append(task)
+        $tasks.mutate { $0.append(task) }
         return task
     }
 
-    /// Fires every pending task that is still alive, the way time would.
-    func fire() {
-        let pending = tasks
-        tasks = []
+    /// Fires every pending task that is still alive, the way time would, and returns once each has run.
+    func fire() async {
+        var pending: [Task] = []
+        $tasks.mutate { tasks in
+            pending = tasks
+            tasks = []
+        }
         for task in pending where !task.isCancelled {
-            task.block()
+            await task.block()
         }
     }
 }
 
 final class FixedClock: Clock {
-    var now: Date
+    @Locked var now: Date
 
     init(now: Date) {
         self.now = now
@@ -163,7 +199,7 @@ final class FixedClock: Clock {
 }
 
 final class InMemoryEmbeddedBundle: EmbeddedBundle {
-    var files: [String: Data] = [:]
+    @Locked var files: [String: Data] = [:]
 
     func has(sha256: String) -> Bool {
         return files[sha256] != nil
