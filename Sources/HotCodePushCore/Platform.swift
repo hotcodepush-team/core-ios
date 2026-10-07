@@ -93,10 +93,14 @@ public enum AttributeRules {
     static let valueMaximumCodePoints = 256
 
     public static func validate(key: String, value: String) throws {
-        guard keyPattern.firstMatch(in: key, range: NSRange(key.startIndex..., in: key)) != nil else {
+        guard isValid(key: key) else {
             throw PlainError("An attribute key is an identifier of letters, digits, '_', '-' and '.', at most 64 characters: \(key)")
         }
         try validate(value: value)
+    }
+
+    static func isValid(key: String) -> Bool {
+        return keyPattern.firstMatch(in: key, range: NSRange(key.startIndex..., in: key)) != nil
     }
 
     /// The value rule alone, shared with the app's rollback reason: at most 256 Unicode code points, counted neither in UTF-16

@@ -258,6 +258,59 @@ final class FixtureTests: XCTestCase {
         }
     }
 
+    /// The fixture's batches, each a JSON object as the endpoint reads it.
+    private func deviceEventsBatches(listed key: String) throws -> [(name: String, batch: [String: Any], skippedEventIndexes: [Int])] {
+        let url = FixtureTests.fixturesDirectory.appendingPathComponent("device-events.json")
+        let file = try XCTUnwrap(try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as? [String: Any])
+        let cases = try XCTUnwrap(file[key] as? [[String: Any]])
+        XCTAssertFalse(cases.isEmpty, key)
+        return try cases.map { (try XCTUnwrap($0["name"] as? String), try XCTUnwrap($0["batch"] as? [String: Any]), $0["skippedEventIndexes"] as? [Int] ?? []) }
+    }
+
+    /// The batch as the device's own types hold it, built only from events the device can write: `nil` when they cannot hold it.
+    private func rebuildBatch(_ batch: [String: Any], leavingOut skippedEventIndexes: [Int]) -> DeviceEventsRequest? {
+        guard let deviceId = batch["deviceId"] as? String, let platform = batch["platform"] as? String, let sdkVersion = batch["sdkVersion"] as? String,
+              let events = batch["events"] as? [Any], batch.keys.contains("report") else { return nil }
+        let readEvents = events.enumerated().filter { !skippedEventIndexes.contains($0.offset) }.map { $0.element }
+        guard let decodedEvents = try? readEvents.map({ try Json.decoder.decode(DeviceEvent.self, from: JSONSerialization.data(withJSONObject: $0)) }) else { return nil }
+        var report: DeviceReport?
+        if let document = batch["report"], !(document is NSNull) {
+            guard JSONSerialization.isValidJSONObject(document), let decoded = try? Json.decoder.decode(DeviceReport.self, from: JSONSerialization.data(withJSONObject: document)) else { return nil }
+            report = decoded
+        }
+        return DeviceEventsRequest(deviceId: deviceId, events: decodedEvents, platform: platform, report: report, sdkVersion: sdkVersion)
+    }
+
+    /// The batch with the events the endpoint skips left out and the fields no reader of this version knows removed.
+    private func resolveReadBatch(_ batch: [String: Any], leavingOut skippedEventIndexes: [Int]) -> NSDictionary {
+        var read = batch.filter { DeviceEventsRequest.CodingKeys(stringValue: $0.key) != nil }
+        let events = (batch["events"] as? [[String: Any]]) ?? []
+        read["events"] = events.enumerated().filter { !skippedEventIndexes.contains($0.offset) }.map { $0.element.filter { DeviceEvent.CodingKeys(stringValue: $0.key) != nil } }
+        if let report = batch["report"] as? [String: Any] {
+            read["report"] = report.filter { DeviceReport.CodingKeys(stringValue: $0.key) != nil }
+        }
+        return read as NSDictionary
+    }
+
+    private func encodedObject(_ request: DeviceEventsRequest) throws -> NSDictionary {
+        return try XCTUnwrap(try JSONSerialization.jsonObject(with: Json.encoder.encode(request)) as? NSDictionary)
+    }
+
+    func testShouldEncodeEveryAcceptedDeviceEventsFixtureAsTheEndpointReadsIt() throws {
+        for testCase in try deviceEventsBatches(listed: "acceptedBatches") {
+            let request = try XCTUnwrap(rebuildBatch(testCase.batch, leavingOut: testCase.skippedEventIndexes), testCase.name)
+            XCTAssertTrue(request.isReadable, testCase.name)
+            XCTAssertEqual(try encodedObject(request), resolveReadBatch(testCase.batch, leavingOut: testCase.skippedEventIndexes), testCase.name)
+        }
+    }
+
+    func testShouldBuildNoRefusedDeviceEventsFixture() throws {
+        for testCase in try deviceEventsBatches(listed: "refusedBatches") {
+            guard let request = rebuildBatch(testCase.batch, leavingOut: []), request.isReadable else { continue }
+            XCTAssertNotEqual(try encodedObject(request), testCase.batch as NSDictionary, testCase.name)
+        }
+    }
+
     func testShouldMatchEveryEvaluationFixture() throws {
         let directory = FixtureTests.fixturesDirectory.appendingPathComponent("evaluation")
         let files = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasSuffix(".json") }.sorted()

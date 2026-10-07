@@ -523,6 +523,20 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(device.attributes, ["plan": "beta"])
     }
 
+    func testShouldSendTheEventsWithoutTheReportWhenAStoredAttributeIsOneTheEventsEndpointRefuses() async throws {
+        let harness = Harness()
+        harness.acknowledgeEvents()
+        StateStore(store: harness.store).attributes = ["plan": "beta\u{0085}"]
+        harness.publish([Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))], sequence: 1)
+        _ = await harness.core.sync(trigger: .manual)
+        await harness.core.waitForBackgroundWork()
+        let batch = try XCTUnwrap(try JSONSerialization.jsonObject(with: try XCTUnwrap(harness.http.posts.last).body) as? [String: Any])
+        XCTAssertTrue(batch["report"] is NSNull)
+        XCTAssertFalse((batch["events"] as? [Any] ?? []).isEmpty)
+        let log = await harness.core.debugSnapshot().log
+        XCTAssertTrue(log.contains { $0.code == "REPORT_UNREADABLE" })
+    }
+
     func testShouldReportChecksOncePerRelease() async {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), conditions: [.os(range: ">=99")])

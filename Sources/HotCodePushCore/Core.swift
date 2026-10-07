@@ -785,7 +785,7 @@ public actor Core {
     }
 
     private func enqueueDeviceEvent(_ event: DeviceEvent) {
-        state.unsentEvents = Array((state.unsentEvents + [event]).suffix(200))
+        state.unsentEvents = Array((state.unsentEvents + [event]).suffix(DeviceEventsRequest.maximumEventCount))
         if isSendingDeviceEvents {
             eventCountEnqueuedInFlight += 1
         }
@@ -798,15 +798,24 @@ public actor Core {
         logEntries = Array((logEntries + [entry]).suffix(LogEntry.capacity))
     }
 
-    /// One batch to the events endpoint, the outbox as it stands and the report when it changed: a readable 202 takes both,
+    /// One batch to the events endpoint, the outbox as it stands and the report when it changed and the endpoint reads it: a readable 202 takes both,
     /// a refusal drops the events and leaves the report unacknowledged, anything else keeps both for the next sync.
     private func sendDeviceEvents() async {
         guard !isSendingDeviceEvents, !isDisabledInThisBuild else { return }
         let events = state.unsentEvents
-        let report = buildDeviceReport()
-        guard !events.isEmpty || report != nil,
-              let url = URL(string: "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/events"),
-              let body = try? Json.encoder.encode(DeviceEventsRequest(deviceId: state.deviceId, events: events, platform: device.platform, report: report, sdkVersion: device.sdkVersion)) else { return }
+        var report = buildDeviceReport()
+        if report?.isReadable == false {
+            record(LogEntry(at: clock.now, code: "REPORT_UNREADABLE", message: "the device report stays unsent: a fact or an attribute is one the events endpoint refuses"))
+            report = nil
+        }
+        guard !events.isEmpty || report != nil else { return }
+        let request = DeviceEventsRequest(deviceId: state.deviceId, events: events, platform: device.platform, report: report, sdkVersion: device.sdkVersion)
+        guard request.isReadable else {
+            record(LogEntry(at: clock.now, code: "REPORT_UNREADABLE", message: "\(events.count) events kept: the SDK's version or the platform is one the events endpoint refuses"))
+            return
+        }
+        guard let url = URL(string: "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/events"),
+              let body = try? Json.encoder.encode(request) else { return }
         isSendingDeviceEvents = true
         eventCountEnqueuedInFlight = 0
         defer { isSendingDeviceEvents = false }

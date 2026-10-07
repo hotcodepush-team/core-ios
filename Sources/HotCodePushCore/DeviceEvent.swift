@@ -120,10 +120,22 @@ public struct DeviceReport: Codable, Equatable {
         try container.encode(osVersion, forKey: .osVersion)
         try container.encode(releaseId, forKey: .releaseId)
     }
+
+    /// Whether the events endpoint reads the report: every text fact printable, every attribute under the attribute rules and
+    /// every id an identifier. A report it refuses costs the batch's events at every sync, so the device never sends one.
+    var isReadable: Bool {
+        let texts = [binaryBuild, binaryVersion, channelId, osVersion] + [fingerprint].compactMap { $0 }
+        let ids = [embeddedBundleId, releaseId].compactMap { $0 }
+        return texts.allSatisfy(WireRule.printable.accepts) && ids.allSatisfy(WireRule.identifier.accepts)
+            && attributes.allSatisfy { AttributeRules.isValid(key: $0.key) && AttributeRules.isValid(value: $0.value) }
+    }
 }
 
 /// One batch to `POST /v1/apps/{appId}/events`: the outbox and, when it changed, the report.
 public struct DeviceEventsRequest: Encodable {
+    /// The outbox's cap and so the largest batch a device sends; the events endpoint refuses a larger one.
+    static let maximumEventCount = 200
+
     public let deviceId: String
     public let events: [DeviceEvent]
     public let platform: String
@@ -141,6 +153,13 @@ public struct DeviceEventsRequest: Encodable {
         try container.encode(platform, forKey: .platform)
         try container.encode(report, forKey: .report)
         try container.encode(sdkVersion, forKey: .sdkVersion)
+    }
+
+    /// Whether the events endpoint reads the batch whole: the device's id and the SDK's version printable, a platform it knows, no
+    /// more events than the outbox holds and a readable report.
+    var isReadable: Bool {
+        return [deviceId, sdkVersion].allSatisfy(WireRule.printable.accepts) && ChannelIndex.platforms.contains(platform)
+            && events.count <= DeviceEventsRequest.maximumEventCount && (report?.isReadable ?? true)
     }
 }
 

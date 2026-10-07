@@ -450,6 +450,8 @@ enum WireRule {
     case relativePath
     /// At least one character.
     case nonEmpty
+    /// At least one character and no control character: the text a device reports, which the server stores as sent.
+    case printable
     /// An absolute `http` or `https` URL with a host: `javascript:`, `file:`, `data:` and every other scheme are refused.
     case url
     /// The scheme, a colon and the base64 of the signature.
@@ -474,6 +476,8 @@ enum WireRule {
             return WireRule.isRelativePath(value)
         case .nonEmpty:
             return !value.isEmpty
+        case .printable:
+            return !value.isEmpty && !value.unicodeScalars.contains(where: WireRule.isControlCharacter)
         case .url:
             guard let url = URL(string: value), let scheme = url.scheme?.lowercased(), let host = url.host else { return false }
             return WireRule.urlSchemes.contains(scheme) && !host.isEmpty
