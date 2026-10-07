@@ -117,20 +117,20 @@ public enum Evaluator {
             return ReleaseVerdict(release: release, isEligible: false, reason: .releaseRevoked, condition: nil)
         }
         if release.createdAt < device.builtAt {
-            return ReleaseVerdict(release: release, isEligible: false, reason: .olderThanBinary, condition: nil)
+            return ReleaseVerdict(release: release, isEligible: false, reason: .releaseOlderThanBinary, condition: nil)
         }
         if device.failedBundleIds.contains(release.bundleId) {
-            return ReleaseVerdict(release: release, isEligible: false, reason: .failedBefore, condition: nil)
+            return ReleaseVerdict(release: release, isEligible: false, reason: .bundleFailedBefore, condition: nil)
         }
         for condition in release.conditions where !isSatisfied(condition, device: device) {
             guard let type = condition.type else {
-                return ReleaseVerdict(release: release, isEligible: false, reason: .unsupportedCondition, condition: nil)
+                return ReleaseVerdict(release: release, isEligible: false, reason: .conditionUnsupported, condition: nil)
             }
-            let reason: SkippedReason = (type == .attribute || type == .device) ? .notTargeted : .incompatible
+            let reason: SkippedReason = (type == .attribute || type == .device) ? .deviceNotTargeted : .deviceIncompatible
             return ReleaseVerdict(release: release, isEligible: false, reason: reason, condition: type)
         }
         if Hashing.rolloutBucket(deviceId: device.deviceId, releaseId: release.id) >= release.rollout {
-            return ReleaseVerdict(release: release, isEligible: false, reason: .notInRollout, condition: nil)
+            return ReleaseVerdict(release: release, isEligible: false, reason: .deviceNotInRollout, condition: nil)
         }
         return ReleaseVerdict(release: release, isEligible: true, reason: nil, condition: nil)
     }

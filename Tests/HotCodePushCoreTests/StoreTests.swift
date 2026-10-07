@@ -10,7 +10,20 @@ final class StoreTests: XCTestCase {
         let state = StateStore(store: store)
         XCTAssertEqual(state.deviceId, "device-1")
         XCTAssertNil(state.currentRelease)
-        XCTAssertEqual(store.integer(forKey: "hotcodepush.stateVersion"), 2)
+        XCTAssertEqual(store.integer(forKey: "hotcodepush.stateVersion"), StateStore.stateVersion)
+    }
+
+    func testShouldDropAnOldReasonWhenThePreviousStateVersionStoredIt() {
+        let store = InMemoryStore()
+        let release = "{\"id\":\"r1\",\"number\":1,\"bundleId\":\"b1\",\"bundleVersion\":\"1\",\"isMandatory\":false}"
+        store.set(2, forKey: "hotcodepush.stateVersion")
+        store.set("{\"from\":\(release),\"to\":null,\"reason\":\"CRASHED\"}", forKey: "hotcodepush.pendingRollbackEvent")
+        store.set("[{\"type\":\"failed\",\"releaseId\":\"r1\",\"reason\":\"CRASHED\"}]", forKey: "hotcodepush.unsentEvents")
+        store.set("device-1", forKey: "hotcodepush.deviceId")
+        let state = StateStore(store: store)
+        XCTAssertNil(state.pendingRollbackEvent)
+        XCTAssertEqual(state.unsentEvents, [])
+        XCTAssertEqual(state.deviceId, "device-1")
     }
 
     func testShouldGenerateAStableDeviceIdOnce() {

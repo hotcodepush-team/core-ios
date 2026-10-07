@@ -14,32 +14,33 @@ public enum SyncStatus: String, Codable {
 }
 
 public enum SkippedReason: String, Codable {
-    case incompatible = "INCOMPATIBLE"
-    case notTargeted = "NOT_TARGETED"
-    case notInRollout = "NOT_IN_ROLLOUT"
-    case unsupportedCondition = "UNSUPPORTED_CONDITION"
-    case olderThanBinary = "OLDER_THAN_BINARY"
+    case buildDebug = "BUILD_DEBUG"
+    case bundleFailedBefore = "BUNDLE_FAILED_BEFORE"
     case channelPaused = "CHANNEL_PAUSED"
-    case spendingCapReached = "SPENDING_CAP_REACHED"
+    case conditionUnsupported = "CONDITION_UNSUPPORTED"
+    case connectionMetered = "CONNECTION_METERED"
+    case deviceIncompatible = "DEVICE_INCOMPATIBLE"
+    case deviceNotInRollout = "DEVICE_NOT_IN_ROLLOUT"
+    case deviceNotTargeted = "DEVICE_NOT_TARGETED"
+    case releaseOlderThanBinary = "RELEASE_OLDER_THAN_BINARY"
     case releaseRevoked = "RELEASE_REVOKED"
-    case failedBefore = "FAILED_BEFORE"
-    case debugBuild = "DEBUG_BUILD"
-    case meteredConnection = "METERED_CONNECTION"
+    case spendingCapReached = "SPENDING_CAP_REACHED"
 }
 
 public enum FailedReason: String, Codable {
-    case offline = "OFFLINE"
-    case unknownChannel = "UNKNOWN_CHANNEL"
-    case invalidIndex = "INVALID_INDEX"
-    case invalidSignature = "INVALID_SIGNATURE"
+    case channelUnknown = "CHANNEL_UNKNOWN"
+    case contentMismatched = "CONTENT_MISMATCHED"
+    case deviceOffline = "DEVICE_OFFLINE"
     case downloadFailed = "DOWNLOAD_FAILED"
-    case verificationFailed = "VERIFICATION_FAILED"
+    case indexInvalid = "INDEX_INVALID"
+    case manifestInvalid = "MANIFEST_INVALID"
+    case signatureInvalid = "SIGNATURE_INVALID"
 }
 
 public enum RollbackReason: String, Codable {
-    case readyTimeout = "READY_TIMEOUT"
-    case crashed = "CRASHED"
-    case reportedByApp = "REPORTED_BY_APP"
+    case appCrashed = "APP_CRASHED"
+    case appRequested = "APP_REQUESTED"
+    case readinessTimedOut = "READINESS_TIMED_OUT"
 }
 
 /// When a downloaded update runs, in the strategies' vocabulary.

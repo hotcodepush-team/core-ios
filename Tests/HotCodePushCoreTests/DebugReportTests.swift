@@ -12,10 +12,10 @@ final class DebugReportTests: XCTestCase {
         let text = DebugReport.text(of: snapshot)
         let device = await harness.core.deviceResult()
         XCTAssertTrue(text.contains("Device id: \(device.id)"), text)
-        XCTAssertTrue(text.contains("Result: SKIPPED INCOMPATIBLE binary"), text)
+        XCTAssertTrue(text.contains("Result: SKIPPED DEVICE_INCOMPATIBLE binary"), text)
         XCTAssertTrue(text.contains("Sequence: 7"), text)
         XCTAssertTrue(text.contains("Running: the embedded bundle"), text)
-        XCTAssertTrue(text.contains("SKIPPED INCOMPATIBLE binary — manual: release #1 (1.1.0) is not taken"), text)
+        XCTAssertTrue(text.contains("SKIPPED DEVICE_INCOMPATIBLE binary — manual: release #1 (1.1.0) is not taken"), text)
         XCTAssertEqual(DebugReport.sections(of: snapshot).map { $0.title }, ["Device", "Channel", "Releases", "Last check", "Index", "Configuration", "Log"])
     }
 

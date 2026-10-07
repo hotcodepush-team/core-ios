@@ -2,7 +2,7 @@ import XCTest
 @testable import HotCodePushCore
 
 /// A build whose build step found no JavaScript bundled embeds no bundle: live updates are off in it, every cycle skips with
-/// `DEBUG_BUILD` without a request, and nothing is sent.
+/// `BUILD_DEBUG` without a request, and nothing is sent.
 final class MissingEmbeddedBundleTests: XCTestCase {
     private func configurationWithoutEmbeddedBundle(channelId: String? = Fixture.channelId, installStrategy: InstallStrategy = .nextStart) -> Configuration {
         return Fixture.configuration(installStrategy: installStrategy, builtAt: Fixture.builtAt.addingTimeInterval(86_400), channelId: channelId, hasEmbeddedBundle: false)
@@ -28,7 +28,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(result, .skipped(nil, reason: .debugBuild))
+        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
     }
@@ -38,7 +38,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = await harness.core.checkForUpdate()
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(result, .skipped(nil, reason: .debugBuild))
+        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
     }
@@ -48,7 +48,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = await harness.core.downloadUpdate()
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(result, .skipped(nil, reason: .debugBuild))
+        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
     }
@@ -58,7 +58,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         harness.publish([Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))], sequence: 1)
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .skipped(nil, reason: .debugBuild))
+        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
     }
 
@@ -133,6 +133,6 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         let text = DebugReport.text(of: await harness.core.debugSnapshot())
         XCTAssertTrue(text.contains("Embedded bundle: none: the build embeds no bundle, live updates are off in it"), text)
         XCTAssertTrue(text.contains("Channel id: none: a build without an embedded bundle resolves no channel name"), text)
-        XCTAssertTrue(text.contains("Result: SKIPPED DEBUG_BUILD"), text)
+        XCTAssertTrue(text.contains("Result: SKIPPED BUILD_DEBUG"), text)
     }
 }

@@ -82,7 +82,7 @@ public actor Core {
             dropStoredReleases()
         }
         if isCurrentReleaseUnconfirmed() {
-            rollbackCurrentRelease(reason: .crashed, detail: nil)
+            rollbackCurrentRelease(reason: .appCrashed, detail: nil)
         }
         discardNextReleaseThatLeftTheIndex()
         if let next = state.nextRelease, shouldSwitchAtStart(to: next) {
@@ -219,21 +219,21 @@ public actor Core {
     private func resolveCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let current = state.currentRelease
         if isDisabledInThisBuild {
-            return .skipped(current, reason: .debugBuild)
+            return .skipped(current, reason: .buildDebug)
         }
         let channelId: String
         switch await resolveChannelId() {
         case .id(let id): channelId = id
-        case .offline: return .failed(current, reason: .offline, message: "The channels index could not be fetched to resolve the channel name")
-        case .unknown: return .failed(current, reason: .unknownChannel, message: "The channel set at runtime is not in the app's channels index")
-        case .invalid(let message): return .failed(current, reason: .invalidIndex, message: message)
-        case .missing: return .failed(current, reason: .unknownChannel, message: Core.missingChannelMessage)
+        case .offline: return .failed(current, reason: .deviceOffline, message: "The channels index could not be fetched to resolve the channel name")
+        case .unknown: return .failed(current, reason: .channelUnknown, message: "The channel set at runtime is not in the app's channels index")
+        case .invalid(let message): return .failed(current, reason: .indexInvalid, message: message)
+        case .missing: return .failed(current, reason: .channelUnknown, message: Core.missingChannelMessage)
         }
         let index: ChannelIndex
         switch await fetchChannelIndex(channelId: channelId) {
         case .index(let fetched): index = fetched
-        case .offline: return .failed(current, reason: .offline, message: "The channel index could not be fetched and no cached copy exists")
-        case .invalid(let message): return .failed(current, reason: .invalidIndex, message: message)
+        case .offline: return .failed(current, reason: .deviceOffline, message: "The channel index could not be fetched and no cached copy exists")
+        case .invalid(let message): return .failed(current, reason: .indexInvalid, message: message)
         case .absent: return .upToDate(current)
         case .gone:
             state.channel = nil
@@ -287,7 +287,7 @@ public actor Core {
             case .manual:
                 return .available(release, notes: target.notes, downloadBytes: target.sizeBytes)
             case .unmetered where loader.isConnectionMetered():
-                return .skipped(release, reason: .meteredConnection)
+                return .skipped(release, reason: .connectionMetered)
             case .auto, .unmetered:
                 return await install(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger, stage: stage, isDownloadForced: false)
             }
@@ -360,7 +360,7 @@ public actor Core {
             try AttributeRules.validate(value: detail)
         }
         guard state.currentRelease != nil else { return }
-        rollbackCurrentRelease(reason: .reportedByApp, detail: detail)
+        rollbackCurrentRelease(reason: .appRequested, detail: detail)
     }
 
     /// Back to the embedded bundle, now or, before the app is up in this run, once it is: every downloaded update and the failed list go, the identity stays.
@@ -581,9 +581,9 @@ public actor Core {
         enqueueDeviceEvent(.rolledBack(fromReleaseId: current.id, toReleaseId: fallback?.id))
         loader.persistServedBundle(bundleId: fallback?.bundleId)
         switch reason {
-        case .crashed, .reportedByApp:
+        case .appCrashed, .appRequested:
             reloadApp()
-        case .readyTimeout:
+        case .readinessTimedOut:
             restartThroughGate(isAskedByApp: false) { [self] in reloadApp() }
         }
     }
@@ -625,7 +625,7 @@ public actor Core {
     func handleReadyTimeout() {
         guard isCurrentReleaseUnconfirmed() else { return }
         hasStartSettled = true
-        rollbackCurrentRelease(reason: .readyTimeout, detail: nil)
+        rollbackCurrentRelease(reason: .readinessTimedOut, detail: nil)
     }
 
     private func scheduleIntervalSync(after seconds: TimeInterval) {
@@ -723,7 +723,7 @@ public actor Core {
         }
     }
 
-    /// Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `DEBUG_BUILD`.
+    /// Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`.
     private var isDisabledInThisBuild: Bool {
         return configuration.embeddedBundleManifest == nil || (device.isDebugBuild && !configuration.enabledInDebugBuilds)
     }

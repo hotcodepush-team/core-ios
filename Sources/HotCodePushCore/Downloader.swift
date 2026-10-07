@@ -1,21 +1,23 @@
 import Foundation
 
 public enum DownloadFailure: Error, Equatable {
-    case invalidSignature(String)
-    case verificationFailed(String)
+    case contentMismatched(String)
     case downloadFailed(String)
+    case manifestInvalid(String)
+    case signatureInvalid(String)
 
     public var reason: FailedReason {
         switch self {
-        case .invalidSignature: return .invalidSignature
-        case .verificationFailed: return .verificationFailed
+        case .contentMismatched: return .contentMismatched
         case .downloadFailed: return .downloadFailed
+        case .manifestInvalid: return .manifestInvalid
+        case .signatureInvalid: return .signatureInvalid
         }
     }
 
     public var message: String {
         switch self {
-        case .invalidSignature(let message), .verificationFailed(let message), .downloadFailed(let message): return message
+        case .contentMismatched(let message), .downloadFailed(let message), .manifestInvalid(let message), .signatureInvalid(let message): return message
         }
     }
 }
@@ -79,10 +81,10 @@ public final class Downloader {
         }
         guard response.status == 200 else { throw DownloadFailure.downloadFailed("HTTP \(response.status) for the manifest") }
         guard let envelope = try? Json.decoder.decode(ManifestEnvelope.self, from: response.body), let manifest = try? envelope.decodeManifest() else {
-            throw DownloadFailure.verificationFailed("The manifest could not be parsed")
+            throw DownloadFailure.manifestInvalid("The manifest could not be parsed")
         }
         try verifyManifestSignature(envelope, expectedSha256: target.manifestSha256)
-        guard envelope.bundleId == target.bundleId else { throw DownloadFailure.verificationFailed("The manifest names another bundle") }
+        guard envelope.bundleId == target.bundleId else { throw DownloadFailure.manifestInvalid("The manifest names another bundle") }
         return (envelope, manifest)
     }
 
@@ -90,12 +92,12 @@ public final class Downloader {
     /// an unsigned or wrongly signed manifest is refused before a byte of the bundle is fetched.
     func verifyManifestSignature(_ envelope: ManifestEnvelope, expectedSha256: String) throws {
         let actual = Hashing.sha256Hex(envelope.manifest)
-        guard actual == expectedSha256 else { throw DownloadFailure.verificationFailed("The manifest's hash does not match the index") }
+        guard actual == expectedSha256 else { throw DownloadFailure.manifestInvalid("The manifest's hash does not match the index") }
         guard !configuration.publicKeys.isEmpty else { return }
         do {
             try Signatures.verifyManifestSignature(envelope, publicKeys: configuration.publicKeys)
         } catch let refusal as SignatureRefusal {
-            throw DownloadFailure.invalidSignature(Downloader.describe(refusal, keyId: envelope.signature?.keyId ?? ""))
+            throw DownloadFailure.signatureInvalid(Downloader.describe(refusal, keyId: envelope.signature?.keyId ?? ""))
         }
     }
 
@@ -168,7 +170,7 @@ public final class Downloader {
         defer { try? FileManager.default.removeItem(at: file) }
         guard let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { throw DownloadFailure.downloadFailed("The pack could not be read") }
         if let sizeBytes = source.sizeBytes, data.count != sizeBytes {
-            throw DownloadFailure.verificationFailed("The pack holds \(data.count) of its \(sizeBytes) bytes")
+            throw DownloadFailure.contentMismatched("The pack holds \(data.count) of its \(sizeBytes) bytes")
         }
         do {
             try PackReader.forEachEntry(in: data) { entry in
@@ -184,7 +186,7 @@ public final class Downloader {
         } catch let failure as DownloadFailure {
             throw failure
         } catch {
-            throw DownloadFailure.verificationFailed("The pack did not verify: \(error)")
+            throw DownloadFailure.contentMismatched("The pack did not verify: \(error)")
         }
         return data.count
     }
@@ -216,7 +218,7 @@ public final class Downloader {
     func resolvePinnedUrl(_ string: String) throws -> URL {
         let isOnConfiguredHost = [configuration.filesBaseUrl, configuration.updatesBaseUrl].contains { string.hasPrefix("\($0)/") }
         guard isOnConfiguredHost, let url = URL(string: string) else {
-            throw DownloadFailure.verificationFailed("\(string) is not on a configured host")
+            throw DownloadFailure.manifestInvalid("\(string) is not on a configured host")
         }
         return url
     }
@@ -239,7 +241,7 @@ public final class Downloader {
         do {
             try files.writeFile(content, sha256: file.sha256)
         } catch {
-            throw DownloadFailure.verificationFailed("The file \(file.path) did not match its hash")
+            throw DownloadFailure.contentMismatched("The file \(file.path) did not match its hash")
         }
         return content.count
     }

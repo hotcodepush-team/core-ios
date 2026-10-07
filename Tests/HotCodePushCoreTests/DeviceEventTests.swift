@@ -9,14 +9,14 @@ final class DeviceEventTests: XCTestCase {
     {
       "deviceId": "d1",
       "events": [
-        { "condition": "binary", "reason": "INCOMPATIBLE", "releaseId": "r2", "status": "SKIPPED", "type": "checked" },
+        { "condition": "binary", "reason": "DEVICE_INCOMPATIBLE", "releaseId": "r2", "status": "SKIPPED", "type": "checked" },
         { "releaseId": "r3", "status": "AVAILABLE", "type": "checked" },
         { "bundleId": "b1", "bytes": 4096, "packKind": "delta", "releaseId": "r1", "type": "downloaded" },
         { "releaseId": "r1", "type": "applied" },
         { "releaseId": "r1", "type": "confirmed" },
-        { "reason": "READY_TIMEOUT", "releaseId": "r1", "type": "failed" },
-        { "detail": "checkout crashed on launch", "reason": "REPORTED_BY_APP", "releaseId": "r1", "type": "failed" },
-        { "reason": "INVALID_SIGNATURE", "releaseId": "r2", "type": "failed" },
+        { "reason": "READINESS_TIMED_OUT", "releaseId": "r1", "type": "failed" },
+        { "detail": "checkout crashed on launch", "reason": "APP_REQUESTED", "releaseId": "r1", "type": "failed" },
+        { "reason": "SIGNATURE_INVALID", "releaseId": "r2", "type": "failed" },
         { "fromReleaseId": "r2", "toReleaseId": "r1", "type": "rolledBack" },
         { "fromReleaseId": "r1", "toReleaseId": null, "type": "rolledBack" }
       ],
@@ -37,14 +37,14 @@ final class DeviceEventTests: XCTestCase {
     """
 
     private static let events: [DeviceEvent] = [
-        .checked(releaseId: "r2", status: .skipped, reason: .incompatible, condition: .binary),
+        .checked(releaseId: "r2", status: .skipped, reason: .deviceIncompatible, condition: .binary),
         .checked(releaseId: "r3", status: .available),
         .downloaded(releaseId: "r1", bundleId: "b1", bytes: 4096, packKind: .delta),
         .applied(releaseId: "r1"),
         .confirmed(releaseId: "r1"),
-        .failed(releaseId: "r1", reason: RollbackReason.readyTimeout.rawValue),
-        .failed(releaseId: "r1", reason: RollbackReason.reportedByApp.rawValue, detail: "checkout crashed on launch"),
-        .failed(releaseId: "r2", reason: FailedReason.invalidSignature.rawValue),
+        .failed(releaseId: "r1", reason: RollbackReason.readinessTimedOut.rawValue),
+        .failed(releaseId: "r1", reason: RollbackReason.appRequested.rawValue, detail: "checkout crashed on launch"),
+        .failed(releaseId: "r2", reason: FailedReason.signatureInvalid.rawValue),
         .rolledBack(fromReleaseId: "r2", toReleaseId: "r1"),
         .rolledBack(fromReleaseId: "r1", toReleaseId: nil)
     ]

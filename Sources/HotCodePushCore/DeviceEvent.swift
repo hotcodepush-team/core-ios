@@ -12,7 +12,7 @@ public struct DeviceEvent: Codable, Equatable {
     public let packKind: String?
     public let fromReleaseId: String?
     public let toReleaseId: String?
-    /// The app's `rollback({ reason })` on `REPORTED_BY_APP`: printable, at most 256 characters.
+    /// The app's `rollback({ reason })` on `APP_REQUESTED`: printable, at most 256 characters.
     public let detail: String?
 
     private init(type: String, releaseId: String? = nil, bundleId: String? = nil, status: String? = nil, reason: String? = nil, condition: ConditionType? = nil, bytes: Int? = nil, packKind: String? = nil, fromReleaseId: String? = nil, toReleaseId: String? = nil, detail: String? = nil) {

@@ -10,7 +10,7 @@ final class DownloaderTests: XCTestCase {
         let harness = DownloaderHarness()
         let release = harness.publish(DownloaderHarness.bundle(["index.html": indexHtml]).manifest, manifestUrl: "https://elsewhere.test/manifest.json")
         let failure = await harness.downloadFailure(release)
-        XCTAssertEqual(failure?.reason, .verificationFailed)
+        XCTAssertEqual(failure?.reason, .manifestInvalid)
         XCTAssertTrue(harness.http.requests.isEmpty)
     }
 
@@ -18,14 +18,14 @@ final class DownloaderTests: XCTestCase {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, packUrl: "https://elsewhere.test/pack"))
-        XCTAssertEqual(failure?.reason, .verificationFailed)
+        XCTAssertEqual(failure?.reason, .manifestInvalid)
         XCTAssertEqual(harness.http.requests.map { $0.url.host }, ["files.test"])
     }
 
     func testShouldRefuseAManifestPathThatClimbsOutOfTheServedTree() async {
         let harness = DownloaderHarness()
         let failure = await harness.downloadFailure(harness.publish(DownloaderHarness.bundle(["../../escape.html": indexHtml]).manifest))
-        XCTAssertEqual(failure?.reason, .verificationFailed)
+        XCTAssertEqual(failure?.reason, .manifestInvalid)
         XCTAssertTrue(harness.files.bundleIds().isEmpty)
         XCTAssertFalse(FileManager.default.fileExists(atPath: harness.root.appendingPathComponent("escape.html").path))
     }
@@ -34,7 +34,7 @@ final class DownloaderTests: XCTestCase {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, bundleId: "b3"))
-        XCTAssertEqual(failure?.reason, .verificationFailed)
+        XCTAssertEqual(failure?.reason, .manifestInvalid)
         XCTAssertEqual(harness.http.requests.map { $0.url.lastPathComponent }, ["manifest.json"])
     }
 
@@ -52,7 +52,7 @@ final class DownloaderTests: XCTestCase {
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let manifest = DownloaderHarness.replacingFiles(of: bundle.manifest, with: bundle.manifest.files.map { .init(path: $0.path, sha256: $0.sha256, sizeBytes: $0.sizeBytes - 1) })
         let failure = await harness.downloadFailure(harness.publish(manifest, pack: bundle.pack))
-        XCTAssertEqual(failure?.reason, .verificationFailed)
+        XCTAssertEqual(failure?.reason, .contentMismatched)
         XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
     }
 
@@ -60,7 +60,7 @@ final class DownloaderTests: XCTestCase {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, packSizeBytes: bundle.pack.count + 1))
-        XCTAssertEqual(failure?.reason, .verificationFailed)
+        XCTAssertEqual(failure?.reason, .contentMismatched)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: harness.root.appendingPathComponent("tmp").path), [])
     }
 
@@ -79,7 +79,7 @@ final class DownloaderTests: XCTestCase {
         let pack = PackWriter.pack([indexHtml, appJs].map { PackEntry.file(sha256: Hashing.sha256Hex($0), body: $0) })
         let manifest = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs]).manifest
         let failure = await harness.downloadFailure(harness.publish(manifest, pack: pack))
-        XCTAssertEqual(failure?.reason, .verificationFailed)
+        XCTAssertEqual(failure?.reason, .contentMismatched)
         XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
     }
 
@@ -96,7 +96,7 @@ final class DownloaderTests: XCTestCase {
         let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [SigningFixture.publicKey(of: SigningFixture.keyA)]))
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack))
-        XCTAssertEqual(failure, .invalidSignature("The manifest is unsigned and the app accepts only signed bundles"))
+        XCTAssertEqual(failure, .signatureInvalid("The manifest is unsigned and the app accepts only signed bundles"))
         XCTAssertEqual(harness.http.requests.map { $0.url.lastPathComponent }, ["manifest.json"])
     }
 
@@ -104,7 +104,7 @@ final class DownloaderTests: XCTestCase {
         let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [SigningFixture.publicKey(of: SigningFixture.keyA)]))
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, signingKey: SigningFixture.keyB))
-        XCTAssertEqual(failure, .invalidSignature("The manifest is signed by a key the app does not list: \(SigningFixture.keyId(of: SigningFixture.keyB))"))
+        XCTAssertEqual(failure, .signatureInvalid("The manifest is signed by a key the app does not list: \(SigningFixture.keyId(of: SigningFixture.keyB))"))
         XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
     }
 
@@ -113,7 +113,7 @@ final class DownloaderTests: XCTestCase {
         let harness = DownloaderHarness(configuration: Fixture.configuration(publicKeys: [DevicePublicKey(der: "AQID", keyId: keyId)]))
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, signingKey: SigningFixture.keyA))
-        XCTAssertEqual(failure, .invalidSignature("The app's configuration is wrong: the system cannot import the public key \(keyId) of the resource file as an RSA key"))
+        XCTAssertEqual(failure, .signatureInvalid("The app's configuration is wrong: the system cannot import the public key \(keyId) of the resource file as an RSA key"))
         XCTAssertEqual(harness.http.requests.map { $0.url.lastPathComponent }, ["manifest.json"])
     }
 
@@ -180,6 +180,15 @@ final class DownloaderTests: XCTestCase {
         harness.http.stub("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/files/\(Hashing.sha256Hex(indexHtml))", body: indexHtml)
         let failure = await harness.downloadFailure(harness.publish(manifest))
         XCTAssertEqual(failure?.reason, .downloadFailed)
+        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
+    }
+
+    func testShouldRefuseASingleFileThatDoesNotMatchItsHash() async {
+        let harness = DownloaderHarness()
+        let manifest = DownloaderHarness.manifest(files: [.init(path: "index.html", sha256: Hashing.sha256Hex(indexHtml), sizeBytes: indexHtml.count)])
+        harness.http.stub(DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(indexHtml)), body: Data("<html>v3</html>".utf8))
+        let failure = await harness.downloadFailure(harness.publish(manifest))
+        XCTAssertEqual(failure?.reason, .contentMismatched)
         XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
     }
 

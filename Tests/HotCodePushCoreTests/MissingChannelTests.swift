@@ -2,7 +2,7 @@ import XCTest
 @testable import HotCodePushCore
 
 /// A build whose build step ran without a token or offline carries no channel: it checks nothing on its own, answers an explicit
-/// call `UNKNOWN_CHANNEL` without a request and reports nothing, until the app sets a channel at runtime.
+/// call `CHANNEL_UNKNOWN` without a request and reports nothing, until the app sets a channel at runtime.
 final class MissingChannelTests: XCTestCase {
     private func harnessWithoutChannel() -> Harness {
         let harness = Harness(configuration: Fixture.configuration(autoCheck: true, channelId: nil))
@@ -31,11 +31,11 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(result, .failed(nil, reason: .unknownChannel, message: Core.missingChannelMessage))
+        XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
-        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.unknownChannel])
+        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.channelUnknown])
         XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.manual])
         let channel = await harness.core.channel()
         XCTAssertEqual(channel, ChannelResult(id: nil, name: nil, source: .config))
@@ -46,10 +46,10 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = await harness.core.checkForUpdate()
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(result, .failed(nil, reason: .unknownChannel, message: Core.missingChannelMessage))
+        XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
-        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.unknownChannel])
+        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.channelUnknown])
         XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.manual])
     }
 
@@ -57,7 +57,7 @@ final class MissingChannelTests: XCTestCase {
         let harness = Harness(configuration: Fixture.configuration(enabledInDebugBuilds: false, channelId: nil), isDebugBuild: true)
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .skipped(nil, reason: .debugBuild))
+        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertTrue(harness.listener.failed.isEmpty)
     }
 
@@ -130,7 +130,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.setChannel(.id("c-gone"))
         await harness.core.handleAppStart()
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.unknownChannel])
+        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.channelUnknown])
         XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.start])
         harness.scheduler.fire()
         await harness.core.handleAppPause()
@@ -165,7 +165,7 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(followed, .upToDate(nil))
         await harness.core.setChannel(nil)
         let cleared = await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(cleared, .failed(nil, reason: .unknownChannel, message: Core.missingChannelMessage))
+        XCTAssertEqual(cleared, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
     }
 
     func testShouldClearARuntimeChannelThatServesNoIndexAndAnswerUnknownChannel() async {
@@ -173,7 +173,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         await harness.core.setChannel(.id("c-gone"))
         let result = await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .failed(nil, reason: .unknownChannel, message: Core.missingChannelMessage))
+        XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
         let channel = await harness.core.channel()
         XCTAssertEqual(channel.source, .config)
         XCTAssertEqual(harness.http.requests.count, 1)
@@ -210,7 +210,7 @@ final class MissingChannelTests: XCTestCase {
         let text = DebugReport.text(of: await harness.core.debugSnapshot())
         XCTAssertTrue(text.contains("Channel id: none: the build carries no channel, it was built without a token or offline"), text)
         XCTAssertTrue(text.contains("Configured channel: none"), text)
-        XCTAssertTrue(text.contains("Result: FAILED UNKNOWN_CHANNEL"), text)
+        XCTAssertTrue(text.contains("Result: FAILED CHANNEL_UNKNOWN"), text)
         XCTAssertTrue(text.contains(Core.missingChannelMessage), text)
     }
 }

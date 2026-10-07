@@ -137,10 +137,10 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.failedBundleIds, ["b2"])
         XCTAssertEqual(harness.loader.loaded, ["b2", nil])
         let again = await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(again, .skipped(v2.release.release, reason: .failedBefore))
+        XCTAssertEqual(again, .skipped(v2.release.release, reason: .bundleFailedBefore))
         let ready = await harness.core.notifyReady()
         XCTAssertEqual(ready.isRolledBack, true)
-        XCTAssertEqual(ready.rollbackReason, .readyTimeout)
+        XCTAssertEqual(ready.rollbackReason, .readinessTimedOut)
         XCTAssertEqual(ready.previousRelease, v2.release.release)
     }
 
@@ -158,7 +158,7 @@ final class CoreTests: XCTestCase {
         let status = await harness.core.getState()
         XCTAssertNil(status.currentRelease)
         XCTAssertEqual(status.failedBundleIds, ["b2"])
-        XCTAssertEqual(harness.listener.rolledBack.last?.reason, .crashed)
+        XCTAssertEqual(harness.listener.rolledBack.last?.reason, .appCrashed)
         XCTAssertEqual(harness.loader.loaded.last, .some(nil))
     }
 
@@ -206,7 +206,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.status, .failed)
-        XCTAssertEqual(result.reason, FailedReason.offline.rawValue)
+        XCTAssertEqual(result.reason, FailedReason.deviceOffline.rawValue)
     }
 
     func testShouldSendTheEtagAndAcceptANotModified() async {
@@ -232,7 +232,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.listener.available.first?.trigger, .manual)
     }
 
-    func testShouldFailVerificationOnATamperedManifest() async {
+    func testShouldRefuseATamperedManifest() async {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
@@ -240,7 +240,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.status, .failed)
-        XCTAssertEqual(result.reason, FailedReason.verificationFailed.rawValue)
+        XCTAssertEqual(result.reason, FailedReason.manifestInvalid.rawValue)
     }
 
     func testShouldRefuseAnUnsignedManifestOnceAPublicKeyIsConfigured() async {
@@ -249,7 +249,7 @@ final class CoreTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result.reason, FailedReason.invalidSignature.rawValue)
+        XCTAssertEqual(result.reason, FailedReason.signatureInvalid.rawValue)
     }
 
     func testShouldAdoptAReleaseCarryingTheRunningBundleWithoutAReload() async {
@@ -419,7 +419,7 @@ final class CoreTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual, options: SyncOptions(downloadStrategy: .unmetered))
-        XCTAssertEqual(result, .skipped(v2.release.release, reason: .meteredConnection))
+        XCTAssertEqual(result, .skipped(v2.release.release, reason: .connectionMetered))
     }
 
     func testShouldResolveAChannelNameThroughTheChannelsIndex() async {
@@ -433,7 +433,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(channel, ChannelResult(id: "c-staging", name: "staging", source: .runtime))
         await harness.core.setChannel(.name("nowhere"))
         let unknown = await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(unknown.reason, FailedReason.unknownChannel.rawValue)
+        XCTAssertEqual(unknown.reason, FailedReason.channelUnknown.rawValue)
     }
 
     func testShouldAnswerNoIdForARuntimeNameBeforeASyncResolvedItAndTheIdAfter() async {
@@ -473,7 +473,7 @@ final class CoreTests: XCTestCase {
         _ = await harness.core.sync(trigger: .manual)
         let events = StateStore(store: harness.store).unsentEvents.filter { $0.type == "checked" }
         XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events[0].reason, SkippedReason.incompatible.rawValue)
+        XCTAssertEqual(events[0].reason, SkippedReason.deviceIncompatible.rawValue)
         XCTAssertEqual(events[0].condition, .os)
     }
 
@@ -630,7 +630,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = await harness.core.sync(trigger: .manual)
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(result, .skipped(nil, reason: .debugBuild))
+        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertEqual(harness.http.posts.count, 0)
     }
 
@@ -750,7 +750,7 @@ final class CoreTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         let skipped = await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(skipped, .skipped(v2.release.release, reason: .meteredConnection))
+        XCTAssertEqual(skipped, .skipped(v2.release.release, reason: .connectionMetered))
         let downloaded = await harness.core.downloadUpdate()
         XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1"))
         XCTAssertEqual(harness.listener.downloaded.map { $0.installAt }, [.nextStart])
@@ -808,7 +808,7 @@ final class CoreTests: XCTestCase {
         _ = await harness.core.notifyReady()
         try await harness.core.rollbackUpdate(detail: "checkout crashed")
         let failed = StateStore(store: harness.store).unsentEvents.last { $0.type == "failed" }
-        XCTAssertEqual(failed?.reason, RollbackReason.reportedByApp.rawValue)
+        XCTAssertEqual(failed?.reason, RollbackReason.appRequested.rawValue)
         XCTAssertEqual(failed?.detail, "checkout crashed")
         do {
             try await harness.core.rollbackUpdate(detail: "a\nb")
@@ -828,7 +828,7 @@ final class CoreTests: XCTestCase {
         harness.restart(configuration: Fixture.configuration(autoCheck: true))
         await harness.core.handleAppStart()
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(harness.listener.rolledBack.last?.reason, .crashed)
+        XCTAssertEqual(harness.listener.rolledBack.last?.reason, .appCrashed)
         XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
         XCTAssertEqual(harness.files.bundleIds(), [])
     }
@@ -847,7 +847,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.loader.loaded, ["b2"])
         await harness.core.setRestartAllowed(true)
         XCTAssertEqual(harness.loader.loaded, ["b2", nil])
-        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readinessTimedOut])
     }
 
     func testShouldAnnounceARollbackAtTheNextStartWhenTheProcessEndedWhileItsReloadWasHeld() async throws {
@@ -857,10 +857,10 @@ final class CoreTests: XCTestCase {
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertTrue(harness.listener.rolledBack.isEmpty)
         await restartOnTheServedBundle(harness)
-        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readinessTimedOut])
         let ready = await harness.core.notifyReady()
         XCTAssertTrue(ready.isRolledBack)
-        XCTAssertEqual(ready.rollbackReason, .readyTimeout)
+        XCTAssertEqual(ready.rollbackReason, .readinessTimedOut)
         XCTAssertEqual(ready.previousRelease?.id, "r1")
     }
 
@@ -869,7 +869,7 @@ final class CoreTests: XCTestCase {
         try await harness.core.rollbackUpdate(detail: nil)
         XCTAssertEqual(harness.listener.rolledBack.count, 1)
         await restartOnTheServedBundle(harness)
-        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.reportedByApp, .reportedByApp])
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.appRequested, .appRequested])
     }
 
     func testShouldNotAnnounceARollbackAgainAtTheNextStartWhenTheAppRenderedAfterTheReload() async throws {
@@ -901,17 +901,17 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         harness.restart()
         await harness.core.handleAppStart()
-        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.crashed])
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.appCrashed])
     }
 
     func testShouldKeepTheNoticeWhenTheReadinessTimerRanOutAndNothingRendered() async throws {
         let harness = try await harnessOnAnUnconfirmedRelease()
         harness.scheduler.fire()
         try await Task.sleep(nanoseconds: 50_000_000)
-        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
-        XCTAssertEqual(StateStore(store: harness.store).pendingRollbackEvent?.reason, .readyTimeout)
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readinessTimedOut])
+        XCTAssertEqual(StateStore(store: harness.store).pendingRollbackEvent?.reason, .readinessTimedOut)
         await restartOnTheServedBundle(harness)
-        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout, .readyTimeout])
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readinessTimedOut, .readinessTimedOut])
     }
 
     func testShouldKeepTheNoticeWhenTheAppRendersWhileTheRollbacksReloadIsHeld() async throws {
@@ -920,10 +920,10 @@ final class CoreTests: XCTestCase {
         harness.scheduler.fire()
         try await Task.sleep(nanoseconds: 50_000_000)
         await harness.core.handleRendered()
-        XCTAssertEqual(StateStore(store: harness.store).pendingRollbackEvent?.reason, .readyTimeout)
+        XCTAssertEqual(StateStore(store: harness.store).pendingRollbackEvent?.reason, .readinessTimedOut)
         await harness.core.setRestartAllowed(true)
-        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
-        XCTAssertEqual(StateStore(store: harness.store).pendingRollbackEvent?.reason, .readyTimeout)
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readinessTimedOut])
+        XCTAssertEqual(StateStore(store: harness.store).pendingRollbackEvent?.reason, .readinessTimedOut)
     }
 
     func testShouldRemoveTheNoticeAtTheStartOfANewBinary() async throws {
@@ -956,8 +956,8 @@ final class CoreTests: XCTestCase {
         await harness.core.setChannel(.name("staging"))
         harness.http.isOffline = true
         let result = await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result.reason, FailedReason.offline.rawValue)
-        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.offline])
+        XCTAssertEqual(result.reason, FailedReason.deviceOffline.rawValue)
+        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.deviceOffline])
     }
 
     func testShouldTakeTheStreamedDeltaWhenTheDeviceIsTwoReleasesBehind() async throws {
@@ -1171,7 +1171,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         try await harness.core.rollbackUpdate(detail: nil)
         XCTAssertEqual(harness.loader.loaded, [nil])
-        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.reportedByApp])
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.appRequested])
         let status = await harness.core.getState()
         XCTAssertNil(status.currentRelease)
         XCTAssertEqual(status.failedBundleIds, ["b2"])
@@ -1221,7 +1221,7 @@ final class CoreTests: XCTestCase {
         harness.scheduler.fire()
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertEqual(harness.loader.loaded, [nil])
-        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readyTimeout])
+        XCTAssertEqual(harness.listener.rolledBack.map { $0.reason }, [.readinessTimedOut])
         let status = await harness.core.getState()
         XCTAssertNil(status.currentRelease)
         XCTAssertEqual(status.failedBundleIds, ["b2"])

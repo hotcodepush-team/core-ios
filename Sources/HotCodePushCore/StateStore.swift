@@ -53,7 +53,7 @@ public struct LastRollback: Codable, Equatable {
 /// The SDK's keys, `hotcodepush.<name>` each: three identity keys kept for the install's life,
 /// the rest a cache under `stateVersion` that is dropped and rebuilt when unreadable.
 public final class StateStore {
-    public static let stateVersion = 2
+    public static let stateVersion = 3
     static let prefix = "hotcodepush."
 
     private let store: KeyValueStore
