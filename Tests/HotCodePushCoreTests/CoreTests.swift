@@ -396,6 +396,23 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.scheduler.tasks.count, 1)
     }
 
+    func testShouldNeverInstallOnResumeAMandatoryReleaseTheAppTookOverWhenTheStrategyIsNextResume() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextResume, mandatoryInstallStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        let result = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.installAt, .manual)
+        await harness.core.handleAppPause()
+        harness.clock.now = harness.clock.now.addingTimeInterval(300)
+        await harness.core.handleAppResume()
+        XCTAssertEqual(harness.loader.loaded, [])
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.nextRelease?.id, v2.release.id)
+    }
+
     func testShouldKeepANextResumeReleaseWaitingAfterAShortBackground() async {
         let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextResume))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))

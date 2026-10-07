@@ -118,6 +118,12 @@ public actor Core {
         return configuration.installStrategy == .nextStart
     }
 
+    /// A release installs on resume when its strategy is `next-resume`: a mandatory one follows `mandatoryInstallStrategy`, which has
+    /// no `next-resume`, so one the app took over is never installed behind its back.
+    private func shouldInstallOnResume(_ next: Release) -> Bool {
+        return resolveInstallStrategy(isMandatory: next.isMandatory, options: SyncOptions()) == .nextResume
+    }
+
     /// The first render of the run, the readiness signal when `readySignal` is `render`, settles the start whatever it is.
     public func handleRendered() {
         if configuration.readySignal == .render {
@@ -148,7 +154,7 @@ public actor Core {
         let backgroundDuration = backgroundedAt.map { clock.now.timeIntervalSince($0) }
         backgroundedAt = nil
         discardNextReleaseThatLeftTheIndex()
-        if let duration = backgroundDuration, configuration.installStrategy == .nextResume, state.nextRelease != nil, duration >= configuration.installOnResumeAfter {
+        if let duration = backgroundDuration, let next = state.nextRelease, shouldInstallOnResume(next), duration >= configuration.installOnResumeAfter {
             installNextRelease()
             return
         }
