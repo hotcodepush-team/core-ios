@@ -7,7 +7,7 @@ final class DebugReportTests: XCTestCase {
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), conditions: [.binary(range: ">=9.0.0")])
         harness.publish([v2], sequence: 7)
         await harness.core.handleAppStart()
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         let snapshot = await harness.core.debugSnapshot()
         let text = DebugReport.text(of: snapshot)
         let device = await harness.core.deviceResult()
@@ -19,14 +19,14 @@ final class DebugReportTests: XCTestCase {
         XCTAssertEqual(DebugReport.sections(of: snapshot).map { $0.title }, ["Device", "Channel", "Releases", "Last check", "Index", "Configuration", "Log"])
     }
 
-    func testShouldLogTheDownloadTheInstallAndTheReportOfASync() async {
+    func testShouldLogTheDownloadTheInstallAndTheReportOfASync() async throws {
         let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
         harness.acknowledgeEvents()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         await harness.core.handleRendered()
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         _ = await harness.core.notifyReady()
         await Task.yield()
         let log = await harness.core.debugSnapshot().log
@@ -37,13 +37,13 @@ final class DebugReportTests: XCTestCase {
         XCTAssertTrue(log.contains { $0.code == "REPORTED" }, log.map { $0.code }.joined(separator: ", "))
     }
 
-    func testShouldLogARateLimitedReportAndKeepTheOutbox() async {
+    func testShouldLogARateLimitedReportAndKeepTheOutbox() async throws {
         let harness = Harness()
         harness.http.stubJson(Fixture.eventsUrl(), ["error": "E_RATE_LIMITED"], status: 429)
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         await Task.yield()
         let log = await harness.core.debugSnapshot().log
         XCTAssertEqual(log.last?.code, "REPORT_FAILED")
@@ -57,7 +57,7 @@ final class DebugReportTests: XCTestCase {
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         await harness.core.waitForBackgroundWork()
         let log = await harness.core.debugSnapshot().log
         XCTAssertEqual(log.last?.code, "REPORT_REFUSED")
@@ -70,7 +70,7 @@ final class DebugReportTests: XCTestCase {
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         await harness.core.waitForBackgroundWork()
         let log = await harness.core.debugSnapshot().log
         XCTAssertEqual(log.last?.code, "REPORT_FAILED")
@@ -79,12 +79,12 @@ final class DebugReportTests: XCTestCase {
         XCTAssertNil(StateStore(store: harness.store).reportedAt)
     }
 
-    func testShouldKeepTheNewestTwoHundredEntries() async {
+    func testShouldKeepTheNewestTwoHundredEntries() async throws {
         let harness = Harness()
         harness.publish([], sequence: 1)
         await harness.core.handleAppStart()
         for _ in 0..<(LogEntry.capacity + 5) {
-            _ = await harness.core.checkForUpdate()
+            _ = try await harness.core.checkForUpdate()
         }
         await harness.core.waitForBackgroundWork()
         let log = await harness.core.debugSnapshot().log

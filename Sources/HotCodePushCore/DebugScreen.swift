@@ -44,7 +44,7 @@ public final class DebugScreenViewController: UITableViewController {
 
     @objc private func checkNow() {
         Task {
-            _ = await core.sync(trigger: .manual)
+            _ = try? await core.sync(trigger: .manual)
             reload()
         }
     }

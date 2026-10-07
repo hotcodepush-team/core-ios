@@ -26,7 +26,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
     func testShouldSkipASyncWithDebugBuildAndRequestNothingWhenTheBuildEmbedsNoBundle() async throws {
         let harness = harnessWithoutEmbeddedBundle()
         await harness.core.handleAppStart()
-        let result = await harness.core.sync(trigger: .manual)
+        let result = try await harness.core.sync(trigger: .manual)
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
@@ -36,7 +36,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
     func testShouldSkipACheckWithDebugBuildAndRequestNothingWhenTheBuildEmbedsNoBundle() async throws {
         let harness = harnessWithoutEmbeddedBundle()
         await harness.core.handleAppStart()
-        let result = await harness.core.checkForUpdate()
+        let result = try await harness.core.checkForUpdate()
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
@@ -46,23 +46,23 @@ final class MissingEmbeddedBundleTests: XCTestCase {
     func testShouldSkipADownloadWithDebugBuildAndRequestNothingWhenTheBuildEmbedsNoBundle() async throws {
         let harness = harnessWithoutEmbeddedBundle()
         await harness.core.handleAppStart()
-        let result = await harness.core.downloadUpdate()
+        let result = try await harness.core.downloadUpdate()
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
     }
 
-    func testShouldSkipWithDebugBuildWhenTheBuildEmbedsNoBundleIsNoDebugBuildAndHasDebugBuildsEnabled() async {
+    func testShouldSkipWithDebugBuildWhenTheBuildEmbedsNoBundleIsNoDebugBuildAndHasDebugBuildsEnabled() async throws {
         let harness = Harness(configuration: configurationWithoutEmbeddedBundle(), isDebugBuild: false)
         harness.publish([Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))], sequence: 1)
         await harness.core.handleAppStart()
-        let result = await harness.core.sync(trigger: .manual)
+        let result = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
     }
 
-    func testShouldEmptyTheStoreAndAnnounceNothingAtTheStartOfABuildWithoutAnEmbeddedBundleWhenTheStoreHoldsAnotherBinarysReleases() async {
+    func testShouldEmptyTheStoreAndAnnounceNothingAtTheStartOfABuildWithoutAnEmbeddedBundleWhenTheStoreHoldsAnotherBinarysReleases() async throws {
         let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
@@ -70,12 +70,12 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         await harness.core.handleRendered()
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         _ = await harness.core.notifyReady()
         harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         harness.publish([v2, v3, v4], sequence: 3, etag: "\"e3\"")
-        _ = await harness.core.sync(trigger: .manual, options: SyncOptions(installStrategy: .nextStart))
+        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(installStrategy: .nextStart))
         let held = await harness.core.getState()
         XCTAssertEqual([held.currentRelease?.id, held.nextRelease?.id, held.fallbackRelease?.id], ["r2", "r3", "r1"])
         let outbox = StateStore(store: harness.store).unsentEvents
@@ -100,7 +100,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         harness.http.stub(Fixture.eventsUrl(), status: 500, body: Data())
         harness.publish([Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))], sequence: 1)
         await harness.core.handleAppStart()
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         await harness.core.waitForBackgroundWork()
         let outbox = StateStore(store: harness.store).unsentEvents
         XCTAssertEqual(outbox.count, 2)
@@ -108,7 +108,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         harness.acknowledgeEvents()
         harness.restart(configuration: configurationWithoutEmbeddedBundle())
         await harness.core.handleAppStart()
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(harness.http.posts.count, postCount)
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents, outbox)
@@ -126,10 +126,10 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         XCTAssertTrue(harness.listener.rolledBack.isEmpty)
     }
 
-    func testShouldSayOnTheDebugReportThatTheBuildEmbedsNoBundleAndThatSuchABuildResolvesNoChannelName() async {
+    func testShouldSayOnTheDebugReportThatTheBuildEmbedsNoBundleAndThatSuchABuildResolvesNoChannelName() async throws {
         let harness = Harness(configuration: configurationWithoutEmbeddedBundle(channelId: nil), isDebugBuild: true)
         await harness.core.handleAppStart()
-        _ = await harness.core.sync(trigger: .manual)
+        _ = try await harness.core.sync(trigger: .manual)
         let text = DebugReport.text(of: await harness.core.debugSnapshot())
         XCTAssertTrue(text.contains("Embedded bundle: none: the build embeds no bundle, live updates are off in it"), text)
         XCTAssertTrue(text.contains("Channel id: none: a build without an embedded bundle resolves no channel name"), text)

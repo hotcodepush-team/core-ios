@@ -65,14 +65,7 @@ public actor Core {
     /// The cleanup the start leaves behind it, which every cycle waits for, since a download writes files no kept release lists yet.
     private var unusedFilesDeletion: Task<Void, Never>?
 
-    /// Throws the plain error when the resource file names its app or its channel by a value that could name another path on the files host.
-    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) throws {
-        guard WireRule.identifier.accepts(configuration.appId) else {
-            throw PlainError("The resource file's appId is not an app id: \(configuration.appId)")
-        }
-        if let channelId = configuration.channelId {
-            try Core.validate(channelId: channelId)
-        }
+    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
         self.configuration = configuration
         self.device = device
         self.state = StateStore(store: store)
@@ -182,7 +175,7 @@ public actor Core {
     /// The start's, the resume's and the interval's cycle; a device without a channel starts none, since it could only fail.
     private func startAutomaticCycle(trigger: SyncTrigger) {
         guard hasChannel else { return }
-        startBackgroundWork { _ = await self.sync(trigger: trigger) }
+        startBackgroundWork { _ = try? await self.sync(trigger: trigger) }
     }
 
     @discardableResult
@@ -205,18 +198,22 @@ public actor Core {
 
     // MARK: The three stages
 
-    /// One full cycle; a second call while one runs joins the running one.
-    public func sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()) async -> SyncResult {
+    /// One full cycle; a second call while one runs joins the running one. Each stage throws the plain error, fetching nothing, for a
+    /// channel id in effect that is not a UUID.
+    public func sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()) async throws -> SyncResult {
+        try verifyChannelId()
         return await runCycle(trigger: trigger, stage: .sync, options: options)
     }
 
     /// The first stage: fetch and evaluate, download nothing.
-    public func checkForUpdate() async -> SyncResult {
+    public func checkForUpdate() async throws -> SyncResult {
+        try verifyChannelId()
         return await runCycle(trigger: .manual, stage: .check, options: SyncOptions())
     }
 
     /// The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then install per the strategies.
-    public func downloadUpdate() async -> SyncResult {
+    public func downloadUpdate() async throws -> SyncResult {
+        try verifyChannelId()
         return await runCycle(trigger: .manual, stage: .download, options: SyncOptions())
     }
 
@@ -465,16 +462,29 @@ public actor Core {
     /// Throws the plain error for an id that is not a UUID: it never reaches a URL, and the stored choice stays.
     public func setChannel(_ choice: ChannelChoice?) throws {
         if case .id(let id) = choice {
-            try Core.validate(channelId: id)
+            try verifyChannelId(id)
         }
         state.channel = choice
         state.cachedIndex = nil
     }
 
+    /// The channel id a cycle would fetch by, the runtime one or the build's: one stored by an earlier version, or a resource file
+    /// written by hand, is refused like the app's own; a name resolves through the channels index, which checks its id there.
+    private func verifyChannelId() throws {
+        switch state.channel {
+        case .id(let id): try verifyChannelId(id)
+        case .name: return
+        case nil:
+            if let id = configuration.channelId {
+                try verifyChannelId(id)
+            }
+        }
+    }
+
     /// A channel id is a UUID, so nothing with `..`, `/` or a query reaches the index's URL.
-    private static func validate(channelId: String) throws {
-        guard WireRule.uuid.accepts(channelId) else {
-            throw PlainError("A channel id is a UUID: \(channelId)")
+    private func verifyChannelId(_ id: String) throws {
+        guard WireRule.uuid.accepts(id) else {
+            throw PlainError("A channel id is a UUID: \(id)")
         }
     }
 

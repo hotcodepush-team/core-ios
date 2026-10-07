@@ -296,18 +296,12 @@ final class Harness {
         files = FileStore(rootDirectory: root.appendingPathComponent("store"))
         device = DeviceFacts(platform: "ios", binaryVersion: "2.4.1", binaryBuild: "57", osVersion: "17.4", sdkVersion: "0.0.0", isDebugBuild: isDebugBuild)
         embedded.files[Hashing.sha256Hex(Fixture.embeddedIndexHtml)] = Fixture.embeddedIndexHtml
-        core = try! Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
-    }
-
-    /// A core over fresh fakes, for a test of what the core refuses to start with.
-    static func makeCore(configuration: Configuration) throws -> Core {
-        let harness = Harness()
-        return try Core(configuration: configuration, device: harness.device, store: harness.store, files: harness.files, embedded: harness.embedded, http: harness.http, loader: harness.loader, listener: harness.listener)
+        core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
     /// A second core over the same store and files: the next start of the app.
     func restart(configuration: Configuration = Fixture.configuration()) {
-        core = try! Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
+        core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
     /// The events endpoint answering every batch with the same server time.

@@ -61,7 +61,7 @@ public struct Configuration: Codable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        appId = try container.decode(String.self, forKey: .appId)
+        appId = try container.decode(.identifier, forKey: .appId)
         channelId = try container.decodeNullable(.nonEmpty, forKey: .channelId)
         autoCheck = try container.decodeIfPresent(Bool.self, forKey: .autoCheck) ?? true
         checkInterval = try container.decodeIfPresent(Double.self, forKey: .checkInterval) ?? 900
@@ -76,7 +76,7 @@ public struct Configuration: Codable, Equatable {
         builtAt = try container.decode(Date.self, forKey: .builtAt)
         fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint)
         embeddedBundleManifest = try container.decodeNullable(EmbeddedBundleManifest.self, forKey: .embeddedBundleManifest)
-        embeddedBundleId = try container.decodeIfPresent(String.self, forKey: .embeddedBundleId)
+        embeddedBundleId = try container.decodeIfPresent(.identifier, forKey: .embeddedBundleId)
         filesBaseUrl = try container.decodeIfPresent(.url, forKey: .filesBaseUrl) ?? Configuration.defaultFilesBaseUrl
         updatesBaseUrl = try container.decodeIfPresent(.url, forKey: .updatesBaseUrl) ?? Configuration.defaultUpdatesBaseUrl
     }

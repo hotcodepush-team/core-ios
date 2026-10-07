@@ -444,7 +444,7 @@ enum WireRule {
     case identifier
     /// 64 lowercase hexadecimal characters: a file hash names a file.
     case sha256
-    /// A UUID in its canonical spelling, lowercase hexadecimal in groups of 8, 4, 4, 4 and 12: a channel id names a path on the files host.
+    /// A UUID in its textual form, hexadecimal in either case in groups of 8, 4, 4, 4 and 12: a channel id names a path on the files host.
     case uuid
     /// Relative and `/`-separated, with no empty, `.` or `..` segment, no backslash and no NUL.
     case relativePath
@@ -460,6 +460,7 @@ enum WireRule {
     private static let urlSchemes: Set = ["http", "https"]
     private static let identifierScalars = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-".unicodeScalars)
     private static let sha256Scalars = Set("0123456789abcdef".unicodeScalars)
+    private static let hexadecimalScalars = Set("0123456789abcdefABCDEF".unicodeScalars)
     private static let schemeScalars = Set("abcdefghijklmnopqrstuvwxyz0123456789_-".unicodeScalars)
     private static let base64Scalars = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".unicodeScalars)
 
@@ -471,7 +472,7 @@ enum WireRule {
             return value.unicodeScalars.count == 64 && value.unicodeScalars.allSatisfy(WireRule.sha256Scalars.contains)
         case .uuid:
             let groups = value.unicodeScalars.split(separator: "-", omittingEmptySubsequences: false)
-            return groups.map(\.count) == [8, 4, 4, 4, 12] && groups.allSatisfy { $0.allSatisfy(WireRule.sha256Scalars.contains) }
+            return groups.map(\.count) == [8, 4, 4, 4, 12] && groups.allSatisfy { $0.allSatisfy(WireRule.hexadecimalScalars.contains) }
         case .relativePath:
             return WireRule.isRelativePath(value)
         case .nonEmpty:
@@ -523,10 +524,13 @@ extension KeyedDecodingContainer {
         return value
     }
 
-    /// An optional string the rule accepts when it is there.
+    /// An optional string the rule accepts when it is there, `null` or absent when it is not.
     func decodeIfPresent(_ rule: WireRule, forKey key: Key) throws -> String? {
-        guard contains(key) else { return nil }
-        return try decode(rule, forKey: key)
+        guard let value = try decodeIfPresent(String.self, forKey: key) else { return nil }
+        guard rule.accepts(value) else {
+            throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Not a valid \(key.stringValue): \(value)")
+        }
+        return value
     }
 
     /// A key that must be present, `null` when it holds nothing: the wire carries every field, so an absent one is a broken document, never an empty value.
