@@ -132,6 +132,21 @@ public actor Core {
         return answer.wait(timeout: timeout) ?? nil
     }
 
+    /// A reload the core did not perform — a JavaScript restart, a development reload — runs through the gate like any start: an
+    /// install held or waiting for the next start takes effect, the reloaded app has to come up again before a restart runs, and a
+    /// release not yet confirmed is gated, its full window again. Unlike a start it takes no unconfirmed release for a crash.
+    /// Answers the bundle the host serves, `nil` for the embedded one.
+    @discardableResult
+    public func handleAppReload() -> String? {
+        discardNextReleaseThatLeftTheIndex()
+        if let next = state.nextRelease, shouldSwitchAtStart(to: next) {
+            switchToNextRelease()
+        }
+        loadBundle()
+        gateReloadedApp()
+        return state.currentRelease?.bundleId
+    }
+
     /// A mandatory release follows its own strategy, so one the app took over waits across starts; any other switches under `next-start`; a bundle the WebView already serves is adopted.
     private func shouldSwitchAtStart(to next: Release) -> Bool {
         if loader.servedBundleId() == next.bundleId { return true }
@@ -582,11 +597,17 @@ public actor Core {
         }
     }
 
-    /// The restart of the web layer: the bundle loads, a rollback the app has not come up after is announced, then the gate runs; the reloaded app starts again and runs what the state says, so a held restart is moot.
+    /// The restart of the web layer: the bundle loads, then the reloaded app goes through the gate.
     private func reloadApp() {
+        loader.loadServedBundle(bundleId: state.currentRelease?.bundleId)
+        gateReloadedApp()
+    }
+
+    /// The reloaded app has to come up again: it runs what the state says, so a held restart is moot; a rollback it has not come up
+    /// after is announced, then the gate runs.
+    private func gateReloadedApp() {
         hasStartSettled = false
         queuedRestart = nil
-        loader.loadServedBundle(bundleId: state.currentRelease?.bundleId)
         announceRollback()
         if isCurrentReleaseUnconfirmed() {
             startReadyTimer()

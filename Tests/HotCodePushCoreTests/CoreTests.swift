@@ -145,6 +145,46 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(harness.scheduler.tasks.isEmpty)
     }
 
+    func testShouldApplyAHeldInstallAndGateItWhenTheHostReloadsOnItsOwn() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        await harness.core.setRestartAllowed(false)
+        _ = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(harness.loader.loaded, [])
+        harness.loader.served = "b2"
+        let reloaded = await harness.core.handleAppReload()
+        XCTAssertEqual(reloaded, "b2")
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease?.id, "r1")
+        XCTAssertNil(status.nextRelease)
+        XCTAssertEqual(harness.scheduler.tasks.filter { !$0.isCancelled }.map { $0.seconds }, [10])
+        XCTAssertEqual(harness.loader.loaded, [])
+        await harness.scheduler.fire()
+        let timedOut = await harness.core.getState()
+        XCTAssertNil(timedOut.currentRelease)
+        XCTAssertEqual(StateStore(store: harness.store).failedBundleIds, ["b2"])
+    }
+
+    func testShouldTakeNoUnconfirmedReleaseForACrashWhenTheHostReloadsOnItsOwn() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        let reloaded = await harness.core.handleAppReload()
+        XCTAssertEqual(reloaded, "b2")
+        XCTAssertTrue(StateStore(store: harness.store).failedBundleIds.isEmpty)
+        await harness.core.handleRendered()
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.fallbackRelease?.id, "r1")
+    }
+
     func testShouldAnswerTheEmbeddedBundleAtAStartOverAStoreItCannotRead() async {
         for stored in ["{ not json", #"{"id":"r1"}"#] {
             let harness = Harness()
