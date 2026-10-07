@@ -40,7 +40,8 @@ public actor Core {
 
     private var readyTimer: ScheduledTask?
     private var intervalTimer: ScheduledTask?
-    private var runningSync: Task<SyncResult, Never>?
+    /// The one cycle that runs, and its stage: no two stages ever download beside each other.
+    private var runningCycle: (stage: Stage, task: Task<SyncResult, Never>)?
     private var isRestartAllowed = true
     private var queuedRestart: QueuedRestart?
     /// The app is up in this run: its first render, `notifyReady()` or the readiness timeout settles the start, and every reload the core performs unsettles it.
@@ -184,30 +185,34 @@ public actor Core {
 
     /// One full cycle; a second call while one runs joins the running one.
     public func sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()) async -> SyncResult {
-        if let running = runningSync {
-            return await running.value
-        }
-        let task = Task { await self.performCycle(trigger: trigger, stage: .sync, options: options) }
-        runningSync = task
-        let result = await task.value
-        runningSync = nil
-        return result
+        return await runCycle(trigger: trigger, stage: .sync, options: options)
     }
 
     /// The first stage: fetch and evaluate, download nothing.
     public func checkForUpdate() async -> SyncResult {
-        if let running = runningSync {
-            _ = await running.value
-        }
-        return await performCycle(trigger: .manual, stage: .check, options: SyncOptions())
+        return await runCycle(trigger: .manual, stage: .check, options: SyncOptions())
     }
 
     /// The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then install per the strategies.
     public func downloadUpdate() async -> SyncResult {
-        if let running = runningSync {
-            _ = await running.value
+        return await runCycle(trigger: .manual, stage: .download, options: SyncOptions())
+    }
+
+    /// One cycle at a time: a call joins the running cycle of its own stage, and waits for one of another stage before it starts its own.
+    private func runCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
+        while let running = runningCycle {
+            if running.stage == stage {
+                return await running.task.value
+            }
+            _ = await running.task.value
         }
-        return await performCycle(trigger: .manual, stage: .download, options: SyncOptions())
+        let task = Task { () -> SyncResult in
+            let result = await performCycle(trigger: trigger, stage: stage, options: options)
+            runningCycle = nil
+            return result
+        }
+        runningCycle = (stage, task)
+        return await task.value
     }
 
     /// The third stage: apply the downloaded update and reload the app, now or, before the app is up in this run, once it is.

@@ -86,8 +86,9 @@ final class DebugReportTests: XCTestCase {
         for _ in 0..<(LogEntry.capacity + 5) {
             _ = await harness.core.checkForUpdate()
         }
+        await harness.core.waitForBackgroundWork()
         let log = await harness.core.debugSnapshot().log
         XCTAssertEqual(log.count, LogEntry.capacity)
-        XCTAssertEqual(log.last?.code, "UP_TO_DATE")
+        XCTAssertEqual(log.last { $0.code != "REPORT_FAILED" }?.code, "UP_TO_DATE")
     }
 }

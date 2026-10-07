@@ -158,7 +158,8 @@ public final class Downloader {
         }
     }
 
-    /// Streams the pack to disk, resuming what an earlier attempt left and never past its bound, then inflates each
+    /// Streams the pack to disk, resuming what an earlier cycle left — the file is named by bundle and URL for that, and the core's one
+    /// running cycle keeps two downloads from ever sharing it — and never past its bound, then inflates each
     /// wanted file entry up to its file's size, an entry always the gzip bytes the bucket serves, and applies each patch
     /// entry to a wanted file. A patch that does not apply leaves its file missing, fetched whole after the pack.
     func downloadPackEntries(_ source: PackSource, bundleId: String, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> Int {
@@ -199,7 +200,7 @@ public final class Downloader {
 
     /// Writes the file `toSha256` from the patch and the held file `fromSha256`; the store refuses bytes of another hash.
     func applyPatch(_ patch: Data, from fromSha256: String, to toSha256: String, maximumBytes: Int) throws {
-        let directory = temporaryDirectory.appendingPathComponent("\(toSha256).patching", isDirectory: true)
+        let directory = temporaryDirectory.appendingPathComponent("\(UUID().uuidString).patching", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let patchFile = directory.appendingPathComponent("patch")
@@ -232,8 +233,7 @@ public final class Downloader {
     /// decoded the gzip the bucket serves, so the body is the content, whatever bytes it starts with.
     func downloadFile(_ file: BundleManifest.File) async throws -> Int {
         guard let url = URL(string: "\(configuration.filesBaseUrl)/apps/\(configuration.appId)/files/\(file.sha256)") else { throw DownloadFailure.downloadFailed("Invalid file URL") }
-        let temporary = temporaryDirectory.appendingPathComponent("\(file.sha256).file")
-        try? FileManager.default.removeItem(at: temporary)
+        let temporary = temporaryDirectory.appendingPathComponent("\(UUID().uuidString).file")
         defer { try? FileManager.default.removeItem(at: temporary) }
         do {
             try await http.download(url, to: temporary, maximumBytes: file.sizeBytes) { _, _ in }

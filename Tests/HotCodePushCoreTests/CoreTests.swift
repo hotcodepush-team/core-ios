@@ -537,6 +537,31 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(log.contains { $0.code == "REPORT_UNREADABLE" })
     }
 
+    func testShouldDownloadOnceWhenTwoDownloadsAndASyncRunAtOnce() async {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        async let first = harness.core.downloadUpdate()
+        async let second = harness.core.downloadUpdate()
+        async let synced = harness.core.sync(trigger: .interval)
+        let results = await [first, second, synced]
+        XCTAssertEqual(results.map { $0.release?.id }, ["r1", "r1", "r1"])
+        XCTAssertFalse(results.contains { $0.status == .failed })
+        XCTAssertEqual(harness.http.requests.filter { $0.url.absoluteString == v2.envelope.pack.url }.count, 1)
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.filter { $0.type == "downloaded" }.count, 1)
+    }
+
+    func testShouldJoinARunningCheckInsteadOfFetchingTheIndexTwice() async {
+        let harness = Harness()
+        harness.publish([], sequence: 1)
+        async let first = harness.core.checkForUpdate()
+        async let second = harness.core.checkForUpdate()
+        let results = await [first, second]
+        XCTAssertEqual(results, [.upToDate(nil), .upToDate(nil)])
+        XCTAssertEqual(harness.http.requests.count, 1)
+    }
+
     func testShouldReportChecksOncePerRelease() async {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), conditions: [.os(range: ">=99")])
