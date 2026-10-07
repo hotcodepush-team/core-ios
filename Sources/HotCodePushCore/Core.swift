@@ -60,8 +60,10 @@ public actor Core {
     private var releaseBeforeSwitch: Release?
     /// This session's log, the newest last, behind the debug screen.
     private var logEntries: [LogEntry] = []
-    /// The work a call starts beside its answer — the automatic cycles and the batches — until it ends.
+    /// The work a call starts beside its answer — the automatic cycles, the batches and the cleanup — until it ends.
     private var backgroundWork: [UUID: Task<Void, Never>] = [:]
+    /// The cleanup the start leaves behind it, which every cycle waits for, since a download writes files no kept release lists yet.
+    private var unusedFilesDeletion: Task<Void, Never>?
 
     /// Throws the plain error when the resource file names its app or its channel by a value that could name another path on the files host.
     public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) throws {
@@ -87,7 +89,7 @@ public actor Core {
     // MARK: Lifecycle
 
     /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
-    /// has not come up after, the gate, then the cleanup.
+    /// has not come up after and the gate; the cleanup runs after it returns, so the host waiting on the start never waits on it.
     public func handleAppStart() {
         if state.pendingRollbackEvent == nil {
             state.lastRollback = nil
@@ -112,7 +114,7 @@ public actor Core {
         } else if configuration.autoCheck {
             startAutomaticCycle(trigger: .start)
         }
-        deleteUnusedFiles()
+        unusedFilesDeletion = startBackgroundWork { await self.deleteUnusedFiles() }
     }
 
     /// A mandatory release follows its own strategy, so one the app took over waits across starts; any other switches under `next-start`; a bundle the WebView already serves is adopted.
@@ -183,12 +185,15 @@ public actor Core {
         startBackgroundWork { _ = await self.sync(trigger: trigger) }
     }
 
-    private func startBackgroundWork(_ work: @escaping () async -> Void) {
+    @discardableResult
+    private func startBackgroundWork(_ work: @escaping () async -> Void) -> Task<Void, Never> {
         let id = UUID()
-        backgroundWork[id] = Task {
+        let task = Task {
             await work()
             backgroundWork[id] = nil
         }
+        backgroundWork[id] = task
+        return task
     }
 
     /// Returns once no background work runs, the work it started meanwhile included: what a test waits on instead of a sleep.
@@ -217,6 +222,7 @@ public actor Core {
 
     /// One cycle at a time: a call joins the running cycle of its own stage, and waits for one of another stage before it starts its own.
     private func runCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
+        await unusedFilesDeletion?.value
         while let running = runningCycle {
             if running.stage == stage {
                 return await running.task.value

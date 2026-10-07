@@ -878,6 +878,7 @@ final class CoreTests: XCTestCase {
         harness.loader.served = "b4"
         harness.restart(configuration: Fixture.configuration(installStrategy: .immediate))
         await harness.core.handleAppStart()
+        await harness.core.waitForBackgroundWork()
         let status = await harness.core.getState()
         XCTAssertEqual(status.currentRelease?.bundleId, "b4")
         XCTAssertEqual(status.fallbackRelease?.bundleId, "b3")
@@ -1006,6 +1007,19 @@ final class CoreTests: XCTestCase {
             try await harness.core.rollbackUpdate(detail: "a\nb")
             XCTFail("expected a plain error")
         } catch is PlainError {}
+    }
+
+    func testShouldLetTheStartsSyncDownloadOnlyAfterTheCleanupSoNoFileItWritesIsDeleted() async throws {
+        let harness = Harness(configuration: Fixture.configuration(autoCheck: true))
+        let content = Data("<html>shared</html>".utf8)
+        try harness.files.writeFile(content, sha256: Hashing.sha256Hex(content))
+        try harness.files.writeManifest(BundleManifest(appId: Fixture.appId, bundleVersion: "0.9.0", files: [.init(path: "index.html", sha256: Hashing.sha256Hex(content), sizeBytes: content.count)], platforms: ["ios"]), bundleId: "b-unused")
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: content)
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.waitForBackgroundWork()
+        XCTAssertEqual(harness.files.bundleIds(), ["b2"])
+        XCTAssertTrue(harness.files.isComplete(v2.manifest, embedded: harness.embedded))
     }
 
     func testShouldSyncAndCleanUpAtAStartThatRollsBackACrash() async throws {
