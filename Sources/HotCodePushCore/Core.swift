@@ -298,12 +298,13 @@ public actor Core {
         }
     }
 
-    /// A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far as the stage goes.
+    /// A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far as the
+    /// stage goes. A download that adopts answers `UP_TO_DATE`, since nothing waits, and never `UPDATED`, which only a sync answers.
     private func update(to target: IndexRelease, isMandatory: Bool, trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         if stage != .check, let current = state.currentRelease, current.bundleId == target.bundleId {
             adoptInPlace(release)
-            return .updated(release, notes: target.notes, installAt: .immediate)
+            return stage == .download ? .upToDate(release) : .updated(release, notes: target.notes, installAt: .immediate)
         }
         let strategy = resolveInstallStrategy(isMandatory: isMandatory, options: options)
         if isDownloaded(target) {

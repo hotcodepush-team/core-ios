@@ -270,6 +270,23 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.fallbackRelease?.id, "r2")
     }
 
+    func testShouldAnswerUpToDateNotUpdatedWhenADownloadAdoptsAReleaseCarryingTheRunningBundle() async {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        _ = await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        let rollback = Fixture.release(number: 2, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2, rollback], sequence: 2, etag: "\"e2\"")
+        let result = await harness.core.downloadUpdate()
+        XCTAssertEqual(result, .upToDate(rollback.release.release))
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease?.id, "r2")
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+    }
+
     func testShouldRevertToTheEmbeddedBundleWhenTheRunningReleaseIsRevoked() async {
         let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
