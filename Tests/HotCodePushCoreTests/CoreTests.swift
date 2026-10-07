@@ -804,6 +804,44 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .resume)
     }
 
+    func testShouldPauseTheReadinessTimerInTheBackgroundAndStartItsFullWindowAgainOnResume() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [10])
+        await harness.core.handleAppPause()
+        XCTAssertTrue(harness.scheduler.tasks[0].isCancelled)
+        await harness.scheduler.fire()
+        harness.clock.now = harness.clock.now.addingTimeInterval(60)
+        await harness.core.handleAppResume()
+        let resumed = await harness.core.getState()
+        XCTAssertEqual(resumed.currentRelease?.id, "r1")
+        XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [10])
+        await harness.core.handleRendered()
+        let confirmed = await harness.core.getState()
+        XCTAssertEqual(confirmed.fallbackRelease?.id, "r1")
+        XCTAssertTrue(StateStore(store: harness.store).failedBundleIds.isEmpty)
+    }
+
+    func testShouldArmTheReadinessTimerAtTheResumeWhenAReloadRunsInTheBackground() async throws {
+        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        await harness.core.handleAppPause()
+        _ = await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        XCTAssertTrue(harness.scheduler.tasks.filter { !$0.isCancelled }.allSatisfy { $0.seconds != 10 })
+        await harness.core.handleAppResume()
+        XCTAssertEqual(harness.scheduler.tasks.filter { !$0.isCancelled && $0.seconds == 10 }.count, 1)
+    }
+
     func testShouldPauseTheIntervalTimerInTheBackgroundAndReArmItOnResume() async throws {
         let harness = Harness(configuration: Fixture.configuration(autoCheck: true))
         harness.publish([], sequence: 1)

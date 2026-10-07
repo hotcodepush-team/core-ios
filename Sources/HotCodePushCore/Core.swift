@@ -39,6 +39,8 @@ public actor Core {
     private let clock: Clock
 
     private var readyTimer: ScheduledTask?
+    /// The background stopped the readiness timer, and the resume starts its full window again.
+    private var isReadyTimerPaused = false
     private var intervalTimer: ScheduledTask?
     /// The one cycle that runs, and its stage: no two stages ever download beside each other.
     private var runningCycle: (stage: Stage, task: Task<SyncResult, Never>)?
@@ -147,17 +149,21 @@ public actor Core {
         return result
     }
 
-    /// The background: the interval timer stops, since interval checks belong to the foreground, and the moment is kept for `next-resume`.
+    /// The background: the interval timer stops, since interval checks belong to the foreground, the readiness timer stops, since an
+    /// app that cannot render there proves nothing, and the moment is kept for `next-resume`.
     public func handleAppPause() {
         backgroundedAt = clock.now
         intervalTimer?.cancel()
         intervalTimer = nil
+        pauseReadyTimer()
     }
 
-    /// A resume installs a `next-resume` release after enough time in the background, else checks when the interval has passed.
+    /// A resume starts a paused readiness window again, installs a `next-resume` release after enough time in the background, else
+    /// checks when the interval has passed.
     public func handleAppResume() {
         let backgroundDuration = backgroundedAt.map { clock.now.timeIntervalSince($0) }
         backgroundedAt = nil
+        resumeReadyTimer()
         discardNextReleaseThatLeftTheIndex()
         if let duration = backgroundDuration, let next = state.nextRelease, shouldInstallOnResume(next), duration >= configuration.installOnResumeAfter {
             installNextRelease()
@@ -661,8 +667,13 @@ public actor Core {
         restartThroughGate(isAskedByApp: false) { [self] in reloadApp() }
     }
 
+    /// The readiness window runs in the foreground alone: a gate armed in the background waits for the resume.
     private func startReadyTimer() {
         stopReadyTimer()
+        guard backgroundedAt == nil else {
+            isReadyTimerPaused = true
+            return
+        }
         readyTimer = scheduler.schedule(after: configuration.readyTimeout) { [weak self] in
             await self?.handleReadyTimeout()
         }
@@ -671,11 +682,25 @@ public actor Core {
     private func stopReadyTimer() {
         readyTimer?.cancel()
         readyTimer = nil
+        isReadyTimerPaused = false
+    }
+
+    private func pauseReadyTimer() {
+        guard readyTimer != nil else { return }
+        stopReadyTimer()
+        isReadyTimerPaused = true
+    }
+
+    /// The full window starts again: the time already spent in the foreground counts for nothing, as the time in the background does.
+    private func resumeReadyTimer() {
+        guard isReadyTimerPaused else { return }
+        startReadyTimer()
     }
 
     /// The timeout settles the start before the rollback, so a restart held for the start runs as the reload to the fallback, after the rollback has dropped the release it would switch to.
+    /// A timeout that fires as the timer stops, paused or confirmed, is ignored.
     func handleReadyTimeout() {
-        guard isCurrentReleaseUnconfirmed() else { return }
+        guard readyTimer != nil, isCurrentReleaseUnconfirmed() else { return }
         hasStartSettled = true
         rollbackCurrentRelease(reason: .readinessTimedOut, detail: nil)
     }
