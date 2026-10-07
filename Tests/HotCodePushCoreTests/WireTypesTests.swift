@@ -55,6 +55,13 @@ final class WireTypesTests: XCTestCase {
         XCTAssertEqual(try decodeIndexRelease(id: "1c6e2a3b-7f4d-4e1a-9b2c-3d4e5f6a7b8c", bundleId: bundleId).bundleId, bundleId)
     }
 
+    func testShouldRefuseAResourceFileWhoseHostIsNotHttpOrHttps() throws {
+        let configuration = try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any]
+        var json = try XCTUnwrap(configuration)
+        json["filesBaseUrl"] = "file:///private/var/www"
+        XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)))
+    }
+
     private func decodeManifest(path: String, sha256: String) throws -> BundleManifest {
         let manifest = BundleManifest(appId: Fixture.appId, bundleVersion: "1.0.0", files: [.init(path: path, sha256: sha256, sizeBytes: 7)], platforms: ["ios"])
         return try Json.decoder.decode(BundleManifest.self, from: Json.encoder.encode(manifest))

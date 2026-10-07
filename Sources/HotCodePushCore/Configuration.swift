@@ -77,8 +77,14 @@ public struct Configuration: Codable, Equatable {
         fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint)
         embeddedBundleManifest = try container.decodeNullable(EmbeddedBundleManifest.self, forKey: .embeddedBundleManifest)
         embeddedBundleId = try container.decodeIfPresent(String.self, forKey: .embeddedBundleId)
-        filesBaseUrl = try container.decodeIfPresent(String.self, forKey: .filesBaseUrl) ?? Configuration.defaultFilesBaseUrl
-        updatesBaseUrl = try container.decodeIfPresent(String.self, forKey: .updatesBaseUrl) ?? Configuration.defaultUpdatesBaseUrl
+        filesBaseUrl = try container.decodeIfPresent(.url, forKey: .filesBaseUrl) ?? Configuration.defaultFilesBaseUrl
+        updatesBaseUrl = try container.decodeIfPresent(.url, forKey: .updatesBaseUrl) ?? Configuration.defaultUpdatesBaseUrl
+    }
+
+    /// Whether a manifest, pack or delta URL lies under the files or the updates host: it starts with the base URL and a `/`, so
+    /// another scheme, userinfo, a look-alike host, another port or another path is off the host.
+    public func isOnConfiguredHost(_ url: String) -> Bool {
+        return [filesBaseUrl, updatesBaseUrl].contains { url.hasPrefix("\($0)/") }
     }
 
     public static func decode(_ data: Data) throws -> Configuration {

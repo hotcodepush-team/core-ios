@@ -216,8 +216,7 @@ public final class Downloader {
 
     /// The URL of a manifest, pack or delta only when it is on a configured host: the SDK fetches from our hosts and nowhere else.
     func resolvePinnedUrl(_ string: String) throws -> URL {
-        let isOnConfiguredHost = [configuration.filesBaseUrl, configuration.updatesBaseUrl].contains { string.hasPrefix("\($0)/") }
-        guard isOnConfiguredHost, let url = URL(string: string) else {
+        guard configuration.isOnConfiguredHost(string), let url = URL(string: string) else {
             throw DownloadFailure.manifestInvalid("\(string) is not on a configured host")
         }
         return url

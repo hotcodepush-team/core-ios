@@ -428,11 +428,12 @@ enum WireRule {
     case relativePath
     /// At least one character.
     case nonEmpty
-    /// An absolute URL with a scheme and a host.
+    /// An absolute `http` or `https` URL with a host: `javascript:`, `file:`, `data:` and every other scheme are refused.
     case url
     /// The scheme, a colon and the base64 of the signature.
     case signatureValue
 
+    private static let urlSchemes: Set = ["http", "https"]
     private static let identifierScalars = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-".unicodeScalars)
     private static let sha256Scalars = Set("0123456789abcdef".unicodeScalars)
     private static let schemeScalars = Set("abcdefghijklmnopqrstuvwxyz0123456789_-".unicodeScalars)
@@ -449,8 +450,8 @@ enum WireRule {
         case .nonEmpty:
             return !value.isEmpty
         case .url:
-            guard let url = URL(string: value), let scheme = url.scheme, let host = url.host else { return false }
-            return !scheme.isEmpty && !host.isEmpty
+            guard let url = URL(string: value), let scheme = url.scheme?.lowercased(), let host = url.host else { return false }
+            return WireRule.urlSchemes.contains(scheme) && !host.isEmpty
         case .signatureValue:
             return WireRule.isSignatureValue(value)
         }
@@ -486,6 +487,12 @@ extension KeyedDecodingContainer {
             throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Not a valid \(key.stringValue): \(value)")
         }
         return value
+    }
+
+    /// An optional string the rule accepts when it is there.
+    func decodeIfPresent(_ rule: WireRule, forKey key: Key) throws -> String? {
+        guard contains(key) else { return nil }
+        return try decode(rule, forKey: key)
     }
 
     /// A key that must be present, `null` when it holds nothing: the wire carries every field, so an absent one is a broken document, never an empty value.

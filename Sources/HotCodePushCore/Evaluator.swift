@@ -2,8 +2,6 @@ import Foundation
 
 /// What the device knows when it evaluates a channel index.
 public struct DeviceInfo: Equatable {
-    /// The sequence of the index the device has already evaluated; an older index is ignored.
-    public let appliedIndexSequence: Int?
     public let attributes: [String: String]
     public let binaryBuild: String
     public let binaryVersion: String
@@ -18,8 +16,7 @@ public struct DeviceInfo: Equatable {
     /// The server time of the last acknowledged report, for the spending cap.
     public let reportedAt: Date?
 
-    public init(appliedIndexSequence: Int?, attributes: [String: String], binaryBuild: String, binaryVersion: String, builtAt: Date, currentRelease: Release?, deviceId: String, failedBundleIds: [String], fingerprint: String?, osVersion: String, reportedAt: Date?) {
-        self.appliedIndexSequence = appliedIndexSequence
+    public init(attributes: [String: String], binaryBuild: String, binaryVersion: String, builtAt: Date, currentRelease: Release?, deviceId: String, failedBundleIds: [String], fingerprint: String?, osVersion: String, reportedAt: Date?) {
         self.attributes = attributes
         self.binaryBuild = binaryBuild
         self.binaryVersion = binaryVersion
@@ -59,7 +56,7 @@ public enum Evaluation: Equatable {
     case skipped(IndexRelease?, reason: SkippedReason, condition: ConditionType?)
 }
 
-/// The outcome with the verdicts behind it, newest release first; an index the device does not evaluate — older than the applied one, or capped — leaves them empty.
+/// The outcome with the verdicts behind it, newest release first; an index the device does not evaluate, a capped one, leaves them empty.
 public struct IndexEvaluation: Equatable {
     public let outcome: Evaluation
     public let verdicts: [ReleaseVerdict]
@@ -68,6 +65,8 @@ public struct IndexEvaluation: Equatable {
 /// The device protocol's evaluation, the same rules as `@hotcodepush/protocol`'s, pinned by its fixture suite.
 public enum Evaluator {
     private static let embeddedReleaseNumber = 0
+    /// The components a binary version fills before the build: major, minor and patch.
+    private static let binaryVersionMinimumComponents = 3
 
     public static func evaluate(_ index: ChannelIndex, device: DeviceInfo) -> Evaluation {
         return evaluation(of: index, device: device).outcome
@@ -75,9 +74,6 @@ public enum Evaluator {
 
     public static func evaluation(of index: ChannelIndex, device: DeviceInfo) -> IndexEvaluation {
         let currentIndexRelease = device.currentRelease.flatMap { current in index.releases.first { $0.id == current.id } }
-        if let applied = device.appliedIndexSequence, index.sequence < applied {
-            return IndexEvaluation(outcome: .upToDate(currentIndexRelease), verdicts: [])
-        }
         if isDeviceBeyondCap(index, device: device) {
             return IndexEvaluation(outcome: .skipped(nil, reason: .spendingCapReached, condition: nil), verdicts: [])
         }
@@ -155,13 +151,13 @@ public enum Evaluator {
         }
     }
 
-    /// The binary version with the build number as its fourth component, when both are numbers.
+    /// The binary version with the build number after it, when both are numbers: a version of fewer than three components
+    /// reads with zeros, so the build is always at least the fourth component and `1.0` build `57` is `1.0.0.57`.
     static func resolveBinaryVersion(_ device: DeviceInfo) -> [Int]? {
         guard let version = VersionRange.parseVersion(device.binaryVersion) else { return nil }
-        if let build = VersionRange.parseVersion(device.binaryBuild), build.count == 1 {
-            return version + build
-        }
-        return version
+        guard let build = VersionRange.parseVersion(device.binaryBuild), build.count == 1 else { return version }
+        let padding = Array(repeating: 0, count: max(0, binaryVersionMinimumComponents - version.count))
+        return version + padding + build
     }
 
     static func isDeviceBeyondCap(_ index: ChannelIndex, device: DeviceInfo) -> Bool {

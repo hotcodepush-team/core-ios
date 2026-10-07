@@ -26,7 +26,6 @@ final class FixtureTests: XCTestCase {
             let number: Int
         }
 
-        let appliedIndexSequence: Int?
         let attributes: [String: String]
         let binaryBuild: String
         let binaryVersion: String
@@ -39,7 +38,7 @@ final class FixtureTests: XCTestCase {
         let reportedAt: Date?
 
         var deviceInfo: DeviceInfo {
-            return DeviceInfo(appliedIndexSequence: appliedIndexSequence, attributes: attributes, binaryBuild: binaryBuild, binaryVersion: binaryVersion, builtAt: builtAt, currentRelease: currentRelease.map { Release(id: $0.id, number: $0.number, bundleId: "", bundleVersion: "", isMandatory: false) }, deviceId: deviceId, failedBundleIds: failedBundleIds, fingerprint: fingerprint, osVersion: osVersion, reportedAt: reportedAt)
+            return DeviceInfo(attributes: attributes, binaryBuild: binaryBuild, binaryVersion: binaryVersion, builtAt: builtAt, currentRelease: currentRelease.map { Release(id: $0.id, number: $0.number, bundleId: "", bundleVersion: "", isMandatory: false) }, deviceId: deviceId, failedBundleIds: failedBundleIds, fingerprint: fingerprint, osVersion: osVersion, reportedAt: reportedAt)
         }
     }
 
@@ -134,6 +133,17 @@ final class FixtureTests: XCTestCase {
             let isValid: Bool
         }
         let manifests: [Case]
+    }
+
+    private struct ConfiguredHostsFile: Decodable {
+        struct Case: Decodable {
+            let name: String
+            let filesBaseUrl: String?
+            let updatesBaseUrl: String?
+            let url: String
+            let isOnConfiguredHost: Bool
+        }
+        let cases: [Case]
     }
 
     private struct BoundsFile: Decodable {
@@ -247,7 +257,7 @@ final class FixtureTests: XCTestCase {
             }
         }
         XCTAssertGreaterThan(count, 50)
-        XCTAssertGreaterThanOrEqual(verdictCount, 16)
+        XCTAssertGreaterThanOrEqual(verdictCount, 15)
     }
 
     func testShouldAcceptEveryAcceptedWireRulesFixture() throws {
@@ -260,6 +270,16 @@ final class FixtureTests: XCTestCase {
         try assertRefused(ChannelIndex.self, listed: "refusedIndexes", holding: "index")
         try assertRefused(BundleManifest.self, listed: "refusedManifests", holding: "manifest")
         try assertRefused(ManifestEnvelope.self, listed: "refusedEnvelopes", holding: "envelope")
+    }
+
+    /// A production build names no host, which the fixture writes as `null`: the configuration's defaults apply.
+    func testShouldMatchEveryConfiguredHostsFixture() throws {
+        let cases = try load("configured-hosts.json", as: ConfiguredHostsFile.self).cases
+        XCTAssertFalse(cases.isEmpty)
+        for testCase in cases {
+            let configuration = Fixture.configuration(filesBaseUrl: testCase.filesBaseUrl, updatesBaseUrl: testCase.updatesBaseUrl)
+            XCTAssertEqual(configuration.isOnConfiguredHost(testCase.url), testCase.isOnConfiguredHost, testCase.name)
+        }
     }
 
     func testShouldMatchEveryVersionRangeFixture() throws {

@@ -187,8 +187,8 @@ struct Fixture {
         return EmbeddedBundleManifest(appId: appId, bundleVersion: "1.0.0", files: [.init(path: "index.html", sha256: Hashing.sha256Hex(embeddedIndexHtml), sizeBytes: embeddedIndexHtml.count)], platforms: ["ios"])
     }
 
-    static func configuration(installStrategy: InstallStrategy = .nextStart, mandatoryInstallStrategy: MandatoryInstallStrategy = .immediate, downloadStrategy: DownloadStrategy = .auto, autoCheck: Bool = false, readySignal: ReadySignal = .render, publicKeys: [DevicePublicKey] = [], fingerprint: String? = "fp1:abc", builtAt: Date = Fixture.builtAt, enabledInDebugBuilds: Bool = true, channelId: String? = Fixture.channelId, hasEmbeddedBundle: Bool = true) -> Configuration {
-        let json: [String: Any] = [
+    static func configuration(installStrategy: InstallStrategy = .nextStart, mandatoryInstallStrategy: MandatoryInstallStrategy = .immediate, downloadStrategy: DownloadStrategy = .auto, autoCheck: Bool = false, readySignal: ReadySignal = .render, publicKeys: [DevicePublicKey] = [], fingerprint: String? = "fp1:abc", builtAt: Date = Fixture.builtAt, enabledInDebugBuilds: Bool = true, channelId: String? = Fixture.channelId, hasEmbeddedBundle: Bool = true, filesBaseUrl: String? = Fixture.filesBaseUrl, updatesBaseUrl: String? = Fixture.updatesBaseUrl) -> Configuration {
+        var json: [String: Any] = [
             "appId": appId,
             "channelId": channelId as Any,
             "autoCheck": autoCheck,
@@ -204,10 +204,10 @@ struct Fixture {
             "builtAt": Iso8601.format(builtAt),
             "fingerprint": fingerprint as Any,
             "embeddedBundleManifest": hasEmbeddedBundle ? try! JSONSerialization.jsonObject(with: try! Json.encoder.encode(embeddedManifest())) : NSNull(),
-            "embeddedBundleId": hasEmbeddedBundle ? "embedded" : NSNull(),
-            "filesBaseUrl": filesBaseUrl,
-            "updatesBaseUrl": updatesBaseUrl
+            "embeddedBundleId": hasEmbeddedBundle ? "embedded" : NSNull()
         ]
+        json["filesBaseUrl"] = filesBaseUrl
+        json["updatesBaseUrl"] = updatesBaseUrl
         return try! Configuration.decode(try! JSONSerialization.data(withJSONObject: json))
     }
 
