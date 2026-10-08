@@ -85,8 +85,9 @@ public enum Evaluator {
         let currentNumber = device.currentRelease?.number ?? embeddedReleaseNumber
         let isCurrentRevoked = device.currentRelease.map { isRevoked(id: $0.id, in: index) } ?? false
         let newerVerdict = verdicts.first { $0.release.number > currentNumber && $0.reason != .releaseRevoked }
-        let newerEligible = verdicts.first { $0.isEligible && $0.release.number > currentNumber }
-        let olderEligible = verdicts.first { $0.isEligible && $0.release.number < currentNumber }
+        let eligibleVerdicts = verdicts.filter(\.isEligible)
+        let newerEligible = eligibleVerdicts.first { $0.release.number > currentNumber }
+        let olderEligible = eligibleVerdicts.first { $0.release.number < currentNumber }
         if index.isPaused {
             if isCurrentRevoked {
                 return .skipped(olderEligible?.release, reason: .releaseRevoked, condition: nil)
@@ -97,7 +98,7 @@ public enum Evaluator {
             return .upToDate(currentIndexRelease)
         }
         if let target = newerEligible?.release {
-            return .available(target, isMandatory: isMandatoryTransitively(target, currentNumber: currentNumber, verdicts: verdicts))
+            return .available(target, isMandatory: isMandatoryTransitively(target, currentNumber: currentNumber, eligibleVerdicts: eligibleVerdicts))
         }
         if isCurrentRevoked {
             return .skipped(olderEligible?.release, reason: .releaseRevoked, condition: nil)
@@ -166,9 +167,10 @@ public enum Evaluator {
         return reportedAt >= cappedAt
     }
 
-    /// A release is mandatory for the device when it or any release it skipped over is.
-    static func isMandatoryTransitively(_ target: IndexRelease, currentNumber: Int, verdicts: [ReleaseVerdict]) -> Bool {
-        return verdicts.contains { $0.release.isMandatory && $0.release.number > currentNumber && $0.release.number <= target.number }
+    /// A release is mandatory for the device when it or any release it skips over is, counting only the releases the device could
+    /// take: one a condition, the floor, a revocation, an earlier failure or the rollout keeps from it never makes the move mandatory.
+    static func isMandatoryTransitively(_ target: IndexRelease, currentNumber: Int, eligibleVerdicts: [ReleaseVerdict]) -> Bool {
+        return eligibleVerdicts.contains { $0.release.isMandatory && $0.release.number > currentNumber && $0.release.number <= target.number }
     }
 
     static func isRevoked(id: String, in index: ChannelIndex) -> Bool {
