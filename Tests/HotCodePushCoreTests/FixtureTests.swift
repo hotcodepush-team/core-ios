@@ -237,23 +237,23 @@ final class FixtureTests: XCTestCase {
         return try Json.decoder.decode(T.self, from: try Data(contentsOf: url))
     }
 
-    /// The cases of one list of the wire-rules file, each document re-serialized on its own so a refused one fails only its own decode.
-    private func wireRulesCases(listed key: String, holding document: String) throws -> [(name: String, data: Data)] {
-        let url = FixtureTests.fixturesDirectory.appendingPathComponent("wire-rules.json")
+    /// The cases of one list of a fixture file, each document re-serialized on its own so a refused one fails only its own decode.
+    private func documentCases(in fileName: String, listed key: String, holding document: String) throws -> [(name: String, data: Data)] {
+        let url = FixtureTests.fixturesDirectory.appendingPathComponent(fileName)
         let file = try XCTUnwrap(try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as? [String: Any])
         let cases = try XCTUnwrap(file[key] as? [[String: Any]])
         XCTAssertFalse(cases.isEmpty, key)
         return try cases.map { (try XCTUnwrap($0["name"] as? String), try JSONSerialization.data(withJSONObject: try XCTUnwrap($0[document]))) }
     }
 
-    private func assertAccepted<T: Decodable>(_ type: T.Type, listed key: String, holding document: String) throws {
-        for testCase in try wireRulesCases(listed: key, holding: document) {
+    private func assertAccepted<T: Decodable>(_ type: T.Type, in fileName: String, listed key: String, holding document: String) throws {
+        for testCase in try documentCases(in: fileName, listed: key, holding: document) {
             XCTAssertNoThrow(try Json.decoder.decode(T.self, from: testCase.data), "\(key): \(testCase.name)")
         }
     }
 
-    private func assertRefused<T: Decodable>(_ type: T.Type, listed key: String, holding document: String) throws {
-        for testCase in try wireRulesCases(listed: key, holding: document) {
+    private func assertRefused<T: Decodable>(_ type: T.Type, in fileName: String, listed key: String, holding document: String) throws {
+        for testCase in try documentCases(in: fileName, listed: key, holding: document) {
             XCTAssertThrowsError(try Json.decoder.decode(T.self, from: testCase.data), "\(key): \(testCase.name)")
         }
     }
@@ -334,15 +334,15 @@ final class FixtureTests: XCTestCase {
     }
 
     func testShouldAcceptEveryAcceptedWireRulesFixture() throws {
-        try assertAccepted(ChannelIndex.self, listed: "acceptedIndexes", holding: "index")
-        try assertAccepted(BundleManifest.self, listed: "acceptedManifests", holding: "manifest")
-        try assertAccepted(ManifestEnvelope.self, listed: "acceptedEnvelopes", holding: "envelope")
+        try assertAccepted(ChannelIndex.self, in: "wire-rules.json", listed: "acceptedIndexes", holding: "index")
+        try assertAccepted(BundleManifest.self, in: "wire-rules.json", listed: "acceptedManifests", holding: "manifest")
+        try assertAccepted(ManifestEnvelope.self, in: "wire-rules.json", listed: "acceptedEnvelopes", holding: "envelope")
     }
 
     func testShouldRefuseEveryRefusedWireRulesFixture() throws {
-        try assertRefused(ChannelIndex.self, listed: "refusedIndexes", holding: "index")
-        try assertRefused(BundleManifest.self, listed: "refusedManifests", holding: "manifest")
-        try assertRefused(ManifestEnvelope.self, listed: "refusedEnvelopes", holding: "envelope")
+        try assertRefused(ChannelIndex.self, in: "wire-rules.json", listed: "refusedIndexes", holding: "index")
+        try assertRefused(BundleManifest.self, in: "wire-rules.json", listed: "refusedManifests", holding: "manifest")
+        try assertRefused(ManifestEnvelope.self, in: "wire-rules.json", listed: "refusedEnvelopes", holding: "envelope")
     }
 
     func testShouldMatchEveryAttributeValuesFixture() throws {
@@ -396,6 +396,10 @@ final class FixtureTests: XCTestCase {
         let withoutEmbeddedBundle = cases.filter { $0.resourceFile.embeddedBundleManifest == nil }
         XCTAssertEqual(withoutEmbeddedBundle.count, 1, "the suite carries one build without an embedded bundle")
         XCTAssertTrue(withoutEmbeddedBundle.allSatisfy { $0.name.contains("without an embedded bundle") && $0.resourceFile.embeddedBundleId == nil })
+    }
+
+    func testShouldRefuseEveryRefusedResourceFileFixture() throws {
+        try assertRefused(Configuration.self, in: "resource-files.json", listed: "refusedResourceFiles", holding: "resourceFile")
     }
 
     /// Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form.

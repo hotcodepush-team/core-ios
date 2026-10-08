@@ -31,6 +31,8 @@ public enum ReadySignal: String, Codable {
 public struct Configuration: Codable, Equatable {
     public static let defaultFilesBaseUrl = "https://files.hotcodepush.com"
     public static let defaultUpdatesBaseUrl = "https://updates.hotcodepush.com"
+    /// The floor of `checkInterval` in seconds: a zero made the core check in a tight loop.
+    static let minimumCheckInterval: Double = 60
 
     public var appId: String
     /// The channel the build follows; `nil` in a build whose build step ran without a token or offline and never resolved the channel's name.
@@ -65,6 +67,9 @@ public struct Configuration: Codable, Equatable {
         channelId = try container.decodeNullable(.nonEmpty, forKey: .channelId)
         autoCheck = try container.decodeIfPresent(Bool.self, forKey: .autoCheck) ?? true
         checkInterval = try container.decodeIfPresent(Double.self, forKey: .checkInterval) ?? 900
+        guard checkInterval >= Configuration.minimumCheckInterval else {
+            throw DecodingError.dataCorruptedError(forKey: .checkInterval, in: container, debugDescription: "checkInterval is below its floor of \(Configuration.minimumCheckInterval) seconds: \(checkInterval)")
+        }
         downloadStrategy = try container.decodeIfPresent(DownloadStrategy.self, forKey: .downloadStrategy) ?? .auto
         installStrategy = try container.decodeIfPresent(InstallStrategy.self, forKey: .installStrategy) ?? .nextStart
         mandatoryInstallStrategy = try container.decodeIfPresent(MandatoryInstallStrategy.self, forKey: .mandatoryInstallStrategy) ?? .immediate
