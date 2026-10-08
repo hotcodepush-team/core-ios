@@ -290,7 +290,7 @@ public actor Core {
         return await runCycle(trigger: .manual, stage: .check, options: SyncOptions())
     }
 
-    /// The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then install per the strategies.
+    /// The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then apply per the strategies.
     public func downloadUpdate() async throws -> SyncResult {
         try verifyChannelId()
         return await runCycle(trigger: .manual, stage: .download, options: SyncOptions())
@@ -378,7 +378,7 @@ public actor Core {
                 revertToEmbedded()
                 return .skipped(nil, reason: .releaseRevoked)
             }
-            let outcome = await install(target, isMandatory: true, strategy: .immediate, trigger: trigger, stage: .sync, isDownloadForced: true)
+            let outcome = await install(target, isMandatory: true, strategy: .immediate, trigger: trigger)
             return outcome.status == .failed ? outcome : .skipped(target.release, reason: .releaseRevoked)
         case .skipped(let release, let reason, let condition):
             if let release = release {
@@ -389,20 +389,19 @@ public actor Core {
     }
 
     /// A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far as the
-    /// stage goes. A download that adopts answers `UP_TO_DATE`, since nothing waits, and never `UPDATED`, which only a sync answers.
+    /// stage goes. An adoption answers `UP_TO_DATE`, since nothing waits and nothing reloads.
     private func update(to target: IndexRelease, isMandatory: Bool, trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         if stage != .check, let current = state.currentRelease, current.bundleId == target.bundleId {
             adoptInPlace(release)
-            return stage == .download ? .upToDate(release) : .updated(release, notes: target.notes, installAt: .immediate)
+            return .upToDate(release)
         }
         let strategy = resolveApplyStrategy(isMandatory: isMandatory, options: options)
         if isDownloaded(target) {
             if stage == .check {
                 return .available(release, notes: target.notes, downloadBytes: target.sizeBytes)
             }
-            let outcome = applyDownloaded(release, notes: target.notes, strategy: strategy)
-            return stage == .download ? .downloaded(release, notes: target.notes) : outcome
+            return applyDownloaded(release, notes: target.notes, strategy: strategy)
         }
         listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadBytes: target.sizeBytes, trigger: trigger))
         switch stage {
@@ -415,10 +414,10 @@ public actor Core {
             case .unmetered where loader.isConnectionMetered():
                 return .skipped(release, reason: .connectionMetered)
             case .auto, .unmetered:
-                return await install(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger, stage: stage, isDownloadForced: false)
+                return await install(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
             }
         case .download:
-            return await install(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger, stage: stage, isDownloadForced: true)
+            return await install(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
         }
     }
 
@@ -443,7 +442,7 @@ public actor Core {
         return files.isComplete(manifest, embedded: embedded)
     }
 
-    private func install(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger, stage: Stage, isDownloadForced: Bool) async -> SyncResult {
+    private func install(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         do {
             let baseBundleId = state.currentRelease?.bundleId ?? configuration.embeddedBundleId
@@ -460,24 +459,25 @@ public actor Core {
             return .failed(release, reason: .downloadFailed, message: error.localizedDescription)
         }
         if strategy != .immediate {
-            listener.updateDownloaded(UpdateDownloadedEvent(release: release, installAt: strategy, trigger: trigger))
+            listener.updateDownloaded(UpdateDownloadedEvent(release: release, applyAt: strategy, trigger: trigger))
         }
-        let outcome = applyDownloaded(release, notes: target.notes, strategy: strategy)
-        return stage == .download ? .downloaded(release, notes: target.notes) : outcome
+        return applyDownloaded(release, notes: target.notes, strategy: strategy)
     }
 
-    /// Choosing and applying are two acts: the strategy is a policy over the four functions.
+    /// Choosing and applying are two acts: the strategy is a policy over the four functions. `APPLIED` when the apply happens now,
+    /// the reload following, else `DOWNLOADED` with the moment it waits for.
     private func applyDownloaded(_ release: Release, notes: String?, strategy: ApplyStrategy) -> SyncResult {
         setNextRelease(release)
         switch strategy {
         case .immediate:
             installNextRelease()
+            return .applied(release, notes: notes)
         case .nextStart:
             loader.persistServedBundle(bundleId: release.bundleId)
         case .nextResume, .manual:
             break
         }
-        return .updated(release, notes: notes, installAt: strategy)
+        return .downloaded(release, notes: notes, applyAt: strategy)
     }
 
     /// Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event.

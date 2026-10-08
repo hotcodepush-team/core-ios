@@ -150,7 +150,7 @@ final class MissingChannelTests: XCTestCase {
         try await harness.core.setChannel(.id(Fixture.channelId))
         let result = try await harness.core.sync(trigger: .manual)
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(result.status, .updated)
+        XCTAssertEqual(result.status, .downloaded)
         let report = try XCTUnwrap(try reports(of: harness).first)
         XCTAssertEqual(report["channelId"] as? String, Fixture.channelId)
         XCTAssertEqual(report["channelSource"] as? String, "runtime")
@@ -186,7 +186,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         try await harness.core.setChannel(.id(Fixture.goneChannelId))
         let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result.status, .updated)
+        XCTAssertEqual(result.status, .downloaded)
         let channel = await harness.core.channel()
         XCTAssertEqual(channel, ChannelResult(id: Fixture.channelId, name: nil, source: .config))
     }

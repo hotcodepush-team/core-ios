@@ -8,7 +8,7 @@ public enum SyncStatus: String, Codable {
     case upToDate = "UP_TO_DATE"
     case available = "AVAILABLE"
     case downloaded = "DOWNLOADED"
-    case updated = "UPDATED"
+    case applied = "APPLIED"
     case skipped = "SKIPPED"
     case failed = "FAILED"
 }
@@ -43,33 +43,33 @@ public enum RollbackReason: String, Codable {
     case readinessTimedOut = "READINESS_TIMED_OUT"
 }
 
-/// When a downloaded update runs, in the strategies' vocabulary.
-public typealias InstallMoment = ApplyStrategy
-
-/// One shape for `SyncResult`, `CheckResult` and `DownloadResult`: the status says which fields are set.
+/// One shape for `SyncResult`, `CheckForUpdateResult` and `DownloadUpdateResult`: the status says which fields are set.
+/// `AVAILABLE` when the download is the app's, `DOWNLOADED` when the apply is scheduled or the app's, `applyAt` saying which,
+/// and `APPLIED` when it happened now, the reload following the result.
 public struct SyncResult: Codable, Equatable {
     public let status: SyncStatus
     public let release: Release?
     public let reason: String?
     public let condition: ConditionType?
     public let notes: String?
-    public let installAt: InstallMoment?
+    /// `next-start`, `next-resume` or `manual` on `DOWNLOADED`, never `immediate`, which answers `APPLIED`.
+    public let applyAt: ApplyStrategy?
     public let downloadBytes: Int?
     public let message: String?
 
-    private init(status: SyncStatus, release: Release?, reason: String? = nil, condition: ConditionType? = nil, notes: String? = nil, installAt: InstallMoment? = nil, downloadBytes: Int? = nil, message: String? = nil) {
+    private init(status: SyncStatus, release: Release?, reason: String? = nil, condition: ConditionType? = nil, notes: String? = nil, applyAt: ApplyStrategy? = nil, downloadBytes: Int? = nil, message: String? = nil) {
         self.status = status
         self.release = release
         self.reason = reason
         self.condition = condition
         self.notes = notes
-        self.installAt = installAt
+        self.applyAt = applyAt
         self.downloadBytes = downloadBytes
         self.message = message
     }
 
     enum CodingKeys: String, CodingKey {
-        case status, release, reason, condition, notes, installAt, downloadBytes, message
+        case status, release, reason, condition, notes, applyAt, downloadBytes, message
     }
 
     /// The discriminated union's keys per status; a nullable field is an explicit `null`, an optional one absent.
@@ -85,9 +85,9 @@ public struct SyncResult: Codable, Equatable {
             try container.encode(downloadBytes, forKey: .downloadBytes)
         case .downloaded:
             try container.encode(notes, forKey: .notes)
-        case .updated:
+            try container.encode(applyAt, forKey: .applyAt)
+        case .applied:
             try container.encode(notes, forKey: .notes)
-            try container.encode(installAt, forKey: .installAt)
         case .skipped:
             try container.encode(reason, forKey: .reason)
             try container.encodeIfPresent(condition, forKey: .condition)
@@ -105,12 +105,12 @@ public struct SyncResult: Codable, Equatable {
         return SyncResult(status: .available, release: release, notes: notes, downloadBytes: downloadBytes)
     }
 
-    public static func downloaded(_ release: Release, notes: String?) -> SyncResult {
-        return SyncResult(status: .downloaded, release: release, notes: notes)
+    public static func downloaded(_ release: Release, notes: String?, applyAt: ApplyStrategy) -> SyncResult {
+        return SyncResult(status: .downloaded, release: release, notes: notes, applyAt: applyAt)
     }
 
-    public static func updated(_ release: Release, notes: String?, installAt: InstallMoment) -> SyncResult {
-        return SyncResult(status: .updated, release: release, notes: notes, installAt: installAt)
+    public static func applied(_ release: Release, notes: String?) -> SyncResult {
+        return SyncResult(status: .applied, release: release, notes: notes)
     }
 
     public static func skipped(_ release: Release?, reason: SkippedReason, condition: ConditionType? = nil) -> SyncResult {
@@ -287,10 +287,10 @@ public struct UpdateAvailableEvent: Codable, Equatable {
     }
 }
 
-/// The download completed and the update waits for its install.
+/// The download completed; `applyAt` says when the update is applied, `manual` meaning the app's `applyUpdate()`.
 public struct UpdateDownloadedEvent: Codable, Equatable {
     public let release: Release
-    public let installAt: InstallMoment
+    public let applyAt: ApplyStrategy
     public let trigger: SyncTrigger
 }
 

@@ -58,8 +58,9 @@ public struct LogEntry: Equatable {
         switch result.status {
         case .upToDate: return "\(release ?? "the embedded bundle") is current"
         case .available: return "\(release ?? "a release") is available"
-        case .downloaded: return "\(release ?? "a release") is downloaded and waits for applyUpdate()"
-        case .updated: return "\(release ?? "a release") installs \(result.installAt?.rawValue ?? "")"
+        case .downloaded where result.applyAt == .manual: return "\(release ?? "a release") is downloaded and waits for applyUpdate()"
+        case .downloaded: return "\(release ?? "a release") is downloaded and applies at \(result.applyAt?.rawValue ?? "")"
+        case .applied: return "\(release ?? "a release") is applied and the app reloads"
         case .skipped: return "\(release ?? "the newest release") is not taken"
         case .failed: return result.message ?? ""
         }

@@ -42,10 +42,24 @@ final class DebugReportTests: XCTestCase {
         await Task.yield()
         let log = await harness.core.debugSnapshot().log
         let lifecycle = log.filter { !$0.code.hasPrefix("REPORT") }
-        XCTAssertEqual(lifecycle.map { $0.code }, ["DOWNLOADED", "APPLIED", "UPDATED", "CONFIRMED"])
+        XCTAssertEqual(lifecycle.map { $0.code }, ["DOWNLOADED", "APPLIED", "APPLIED", "CONFIRMED"])
         XCTAssertEqual(lifecycle[0].message, "release r1: \(v2.pack.count) bytes as full pack")
-        XCTAssertEqual(lifecycle[2].message, "manual: release #1 (1.1.0) installs immediate")
+        XCTAssertEqual(lifecycle[2].message, "manual: release #1 (1.1.0) is applied and the app reloads")
         XCTAssertTrue(log.contains { $0.code == "REPORTED" }, log.map { $0.code }.joined(separator: ", "))
+    }
+
+    func testShouldLogTheMomentADownloadedReleaseWaitsFor() async throws {
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        for (strategy, message) in [(ApplyStrategy.nextStart, "is downloaded and applies at next-start"), (.manual, "is downloaded and waits for applyUpdate()")] {
+            let harness = Harness(configuration: Fixture.configuration(applyStrategy: strategy))
+            harness.publish([v2], sequence: 1)
+            await harness.core.handleAppStart()
+            _ = try await harness.core.sync(trigger: .manual)
+            let log = await harness.core.debugSnapshot().log
+            let cycle = try XCTUnwrap(log.first { $0.message.hasPrefix("manual:") })
+            XCTAssertEqual(cycle.code, "DOWNLOADED")
+            XCTAssertEqual(cycle.message, "manual: release #1 (1.1.0) \(message)")
+        }
     }
 
     func testShouldLogARateLimitedReportAndKeepTheOutbox() async throws {
