@@ -481,6 +481,30 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.index?.sequence, 5)
     }
 
+    func testShouldIgnoreAnOlderSequenceWhenTheKeptIndexIsYoungerThanADay() async throws {
+        let harness = Harness()
+        harness.publish([], sequence: 5)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.clock.now = harness.clock.now.addingTimeInterval(23 * 3600)
+        harness.publish([], sequence: 4, etag: "\"e0\"")
+        _ = try await harness.core.sync(trigger: .manual)
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.index?.sequence, 5)
+    }
+
+    func testShouldTakeAnOlderSequenceWhenTheKeptIndexIsOlderThanADay() async throws {
+        let harness = Harness()
+        harness.publish([], sequence: 5)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.clock.now = harness.clock.now.addingTimeInterval(25 * 3600)
+        harness.publish([], sequence: 4, etag: "\"e0\"")
+        _ = try await harness.core.sync(trigger: .manual)
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.index?.sequence, 4)
+    }
+
     func testShouldFailOfflineWithoutACachedIndex() async throws {
         let harness = Harness()
         harness.http.isOffline = true

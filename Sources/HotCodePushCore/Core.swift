@@ -88,6 +88,9 @@ public actor Core {
 
     /// The longest a host's synchronous start waits for the start's answer before it serves the embedded bundle.
     public static let startTimeout: TimeInterval = 2
+    /// How long the kept index holds the never-backwards rule: past it, a fetched index is taken whatever its sequence, so a
+    /// forged or buggy far-future sequence cannot freeze the device.
+    static let cachedIndexMaxAge: TimeInterval = 24 * 60 * 60
 
     /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
     /// has not come up after and the gate. Answers the bundle the host serves, `nil` for the embedded one, without awaiting the
@@ -909,7 +912,7 @@ public actor Core {
             guard index.appId == configuration.appId, index.channelId == channelId, index.platform == device.platform else {
                 return .invalid("The channel index names another app, channel or platform")
             }
-            if let cached = cached, index.sequence < cached.body.sequence {
+            if let cached = cached, isMovingBackwards(from: cached, to: index) {
                 return .index(cached.body)
             }
             state.cachedIndex = CachedIndex(etag: response.header("ETag"), fetchedAt: clock.now, body: index)
@@ -920,6 +923,12 @@ public actor Core {
         default:
             return cached.map { .index($0.body) } ?? .offline
         }
+    }
+
+    /// The never-backwards rule: a fetched index with a lower sequence than the kept one is ignored while the kept one is younger
+    /// than `cachedIndexMaxAge`; an older kept index is treated as absent by the rule.
+    private func isMovingBackwards(from cached: CachedIndex, to index: ChannelIndex) -> Bool {
+        return clock.now.timeIntervalSince(cached.fetchedAt) < Core.cachedIndexMaxAge && index.sequence < cached.body.sequence
     }
 
     /// Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`.
