@@ -108,6 +108,28 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.loader.loaded, ["b2"])
     }
 
+    func testShouldHoldARestartUntilTheReloadedBundleRendersWhenAStartThatAnsweredTooLateReloadsAfterARender() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.restart()
+        let core = harness.core
+        await core.handleRendered()
+        let release = DispatchSemaphore(value: 0)
+        harness.loader.whileReadingServedBundle = { _ = release.wait(timeout: .now() + 5) }
+        let answer = await Task.detached { core.handleAppStartBlocking(timeout: 0.1) }.value
+        XCTAssertNil(answer)
+        release.signal()
+        await core.waitForBackgroundWork()
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        await core.clearUpdates()
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        await core.handleRendered()
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+    }
+
     func testShouldNeitherApplyAWaitingReleaseNorArmTheGateAtAHeadlessStart() async throws {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))

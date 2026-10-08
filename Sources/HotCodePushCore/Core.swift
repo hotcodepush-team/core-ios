@@ -587,11 +587,13 @@ public actor Core {
         enqueueDeviceEvent(.applied(releaseId: next.id))
     }
 
+    /// Points the host at the current bundle when it serves another: a reload the core performs, so a render of the bundle it
+    /// replaced — the embedded one a host served past the start's bound — settles nothing after it.
     private func loadBundle() {
         let expected = state.currentRelease?.bundleId
-        if loader.servedBundleId() != expected {
-            loader.loadServedBundle(bundleId: expected)
-        }
+        guard loader.servedBundleId() != expected else { return }
+        loader.loadServedBundle(bundleId: expected)
+        unsettleStart()
     }
 
     /// The restart of the web layer: the bundle loads, then the reloaded app goes through the gate.
@@ -600,15 +602,19 @@ public actor Core {
         gateReloadedApp()
     }
 
-    /// The reloaded app has to come up again: it runs what the state says, so a held restart is moot; a rollback it has not come up
-    /// after is announced, then the gate runs.
+    /// The reloaded app has to come up again: a rollback it has not come up after is announced, then the gate runs.
     private func gateReloadedApp() {
-        hasStartSettled = false
-        queuedRestart = nil
+        unsettleStart()
         announceRollback()
         if isCurrentReleaseUnconfirmed() {
             startReadyTimer()
         }
+    }
+
+    /// The reloaded app has to come up again before a restart runs, and it runs what the state says, so a held restart is moot.
+    private func unsettleStart() {
+        hasStartSettled = false
+        queuedRestart = nil
     }
 
     /// The install the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does.
