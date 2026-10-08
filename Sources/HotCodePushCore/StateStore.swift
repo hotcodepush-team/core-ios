@@ -147,8 +147,8 @@ public final class StateStore {
         set { write("lastRollback", newValue) }
     }
 
-    /// The `rolledBack` event the app has not come up after yet: announced at every start until it does.
-    public var pendingRollbackEvent: RolledBackEvent? {
+    /// The `updateRolledBack` event the app has not come up after yet: announced at every start until it does.
+    public var pendingRollbackEvent: UpdateRolledBackEvent? {
         get { return read("pendingRollbackEvent") }
         set { write("pendingRollbackEvent", newValue) }
     }

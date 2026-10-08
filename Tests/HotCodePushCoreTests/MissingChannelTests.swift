@@ -35,8 +35,8 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
-        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.channelUnknown])
-        XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.manual])
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.channelUnknown])
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.trigger }, [.manual])
         let channel = await harness.core.channel()
         XCTAssertEqual(channel, ChannelResult(id: nil, name: nil, source: .config))
     }
@@ -49,8 +49,8 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
-        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.channelUnknown])
-        XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.manual])
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.channelUnknown])
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.trigger }, [.manual])
     }
 
     func testShouldSkipAnExplicitSyncWithDebugBuildWhenTheBuildIsDisabledAndTheDeviceHasNoChannel() async throws {
@@ -58,7 +58,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
-        XCTAssertTrue(harness.listener.failed.isEmpty)
+        XCTAssertTrue(harness.listener.updateFailed.isEmpty)
     }
 
     func testShouldStartNoCheckAtStartWhenTheDeviceHasNoChannel() async throws {
@@ -87,7 +87,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .manual)
         XCTAssertEqual(harness.http.requests.count, requestCount)
-        XCTAssertTrue(harness.listener.failed.isEmpty)
+        XCTAssertTrue(harness.listener.updateFailed.isEmpty)
     }
 
     func testShouldStartNoCheckOnResumeWhenTheDeviceHasNoChannel() async throws {
@@ -108,7 +108,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.scheduler.fire()
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .manual)
-        XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.manual])
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.trigger }, [.manual])
         XCTAssertTrue(harness.scheduler.tasks.isEmpty)
         XCTAssertTrue(harness.http.requests.isEmpty)
     }
@@ -130,14 +130,14 @@ final class MissingChannelTests: XCTestCase {
         try await harness.core.setChannel(.id(Fixture.goneChannelId))
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(harness.listener.failed.map { $0.reason }, [.channelUnknown])
-        XCTAssertEqual(harness.listener.failed.map { $0.trigger }, [.start])
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.channelUnknown])
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.trigger }, [.start])
         await harness.scheduler.fire()
         await harness.core.handleAppPause()
         harness.clock.now = harness.clock.now.addingTimeInterval(1000)
         await harness.core.handleAppResume()
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(harness.listener.failed.count, 1)
+        XCTAssertEqual(harness.listener.updateFailed.count, 1)
         XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
         XCTAssertEqual(harness.http.requests.count, 1)
     }
@@ -197,7 +197,7 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertNil(StateStore(store: harness.store).lastSyncAt, file: file, line: line)
         let log = await harness.core.debugSnapshot().log
         XCTAssertEqual(log, [], file: file, line: line)
-        XCTAssertTrue(harness.listener.failed.isEmpty, file: file, line: line)
+        XCTAssertTrue(harness.listener.updateFailed.isEmpty, file: file, line: line)
         XCTAssertTrue(harness.http.requests.isEmpty, file: file, line: line)
         XCTAssertTrue(harness.http.posts.isEmpty, file: file, line: line)
         XCTAssertTrue(harness.scheduler.tasks.isEmpty, file: file, line: line)

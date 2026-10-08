@@ -33,7 +33,7 @@ final class ContractTests: XCTestCase {
         let release = Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false)
         XCTAssertEqual(try keys(SyncResult.upToDate(nil)).keys, ["status", "release"])
         XCTAssertTrue(try keys(SyncResult.upToDate(nil)).object["release"] is NSNull)
-        XCTAssertEqual(try keys(SyncResult.available(release, notes: nil, downloadBytes: nil)).keys, ["status", "release", "notes", "downloadBytes"])
+        XCTAssertEqual(try keys(SyncResult.available(release, notes: nil, downloadSizeBytes: nil)).keys, ["status", "release", "notes", "downloadSizeBytes"])
         XCTAssertEqual(try keys(SyncResult.downloaded(release, notes: nil, applyAt: .manual)).keys, ["status", "release", "notes", "applyAt"])
         XCTAssertEqual(try keys(SyncResult.applied(release, notes: nil)).keys, ["status", "release", "notes"])
         XCTAssertEqual(try keys(SyncResult.skipped(nil, reason: .channelPaused)).keys, ["status", "release", "reason"])
@@ -42,7 +42,7 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(try keys(NotifyReadyResult(currentRelease: nil, previousRelease: nil, isRolledBack: false, rollbackReason: nil)).keys, ["currentRelease", "previousRelease", "isRolledBack"])
         XCTAssertEqual(try keys(ApplyResult(status: .nothingToApply, release: nil)).keys, ["status", "release"])
         XCTAssertTrue(try keys(ApplyResult(status: .nothingToApply, release: nil)).object["release"] is NSNull)
-        XCTAssertEqual(try keys(UpdateAvailableEvent(release: release, notes: nil, downloadBytes: nil, trigger: .manual)).keys, ["release", "notes", "downloadBytes", "trigger"])
+        XCTAssertEqual(try keys(UpdateAvailableEvent(release: release, notes: nil, downloadSizeBytes: nil, trigger: .manual)).keys, ["release", "notes", "downloadSizeBytes", "trigger"])
         XCTAssertEqual(try keys(UpdateFailedEvent(release: nil, reason: .deviceOffline, message: "m", trigger: .start)).keys, ["release", "reason", "message", "trigger"])
     }
 }

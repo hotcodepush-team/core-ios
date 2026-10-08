@@ -154,18 +154,19 @@ final class FakeLoader: BundleLoader {
     }
 }
 
+/// Records every event under its own name.
 final class FakeListener: CoreListener {
-    @Locked var available: [UpdateAvailableEvent] = []
-    @Locked var downloaded: [UpdateDownloadedEvent] = []
-    @Locked var failed: [UpdateFailedEvent] = []
-    @Locked var progress: [(String, Int, Int)] = []
-    @Locked var rolledBack: [RolledBackEvent] = []
+    @Locked var downloadProgress: [(String, Int, Int)] = []
+    @Locked var updateAvailable: [UpdateAvailableEvent] = []
+    @Locked var updateDownloaded: [UpdateDownloadedEvent] = []
+    @Locked var updateFailed: [UpdateFailedEvent] = []
+    @Locked var updateRolledBack: [UpdateRolledBackEvent] = []
 
-    func updateAvailable(_ event: UpdateAvailableEvent) { $available.mutate { $0.append(event) } }
-    func updateDownloaded(_ event: UpdateDownloadedEvent) { $downloaded.mutate { $0.append(event) } }
-    func updateFailed(_ event: UpdateFailedEvent) { $failed.mutate { $0.append(event) } }
-    func downloadProgress(releaseId: String, downloadedBytes: Int, totalBytes: Int) { $progress.mutate { $0.append((releaseId, downloadedBytes, totalBytes)) } }
-    func rolledBack(_ event: RolledBackEvent) { $rolledBack.mutate { $0.append(event) } }
+    func downloadProgress(releaseId: String, downloadedBytes: Int, totalBytes: Int) { $downloadProgress.mutate { $0.append((releaseId, downloadedBytes, totalBytes)) } }
+    func updateAvailable(_ event: UpdateAvailableEvent) { $updateAvailable.mutate { $0.append(event) } }
+    func updateDownloaded(_ event: UpdateDownloadedEvent) { $updateDownloaded.mutate { $0.append(event) } }
+    func updateFailed(_ event: UpdateFailedEvent) { $updateFailed.mutate { $0.append(event) } }
+    func updateRolledBack(_ event: UpdateRolledBackEvent) { $updateRolledBack.mutate { $0.append(event) } }
 }
 
 final class ManualScheduler: Scheduler {

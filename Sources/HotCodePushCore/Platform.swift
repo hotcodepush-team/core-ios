@@ -38,13 +38,13 @@ public protocol BundleLoader: AnyObject {
     func isConnectionMetered() -> Bool
 }
 
-/// The five events, named by what happened to the update; a cycle's start and end fire nothing.
+/// The five events, named by the object and what happened to it; a cycle's start and end fire nothing.
 public protocol CoreListener: AnyObject {
     func updateAvailable(_ event: UpdateAvailableEvent)
     func updateDownloaded(_ event: UpdateDownloadedEvent)
     func updateFailed(_ event: UpdateFailedEvent)
     func downloadProgress(releaseId: String, downloadedBytes: Int, totalBytes: Int)
-    func rolledBack(_ event: RolledBackEvent)
+    func updateRolledBack(_ event: UpdateRolledBackEvent)
 }
 
 public protocol ScheduledTask {

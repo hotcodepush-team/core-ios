@@ -54,22 +54,22 @@ public struct SyncResult: Codable, Equatable {
     public let notes: String?
     /// `next-start`, `next-resume` or `manual` on `DOWNLOADED`, never `immediate`, which answers `APPLIED`.
     public let applyAt: ApplyStrategy?
-    public let downloadBytes: Int?
+    public let downloadSizeBytes: Int?
     public let message: String?
 
-    private init(status: SyncStatus, release: Release?, reason: String? = nil, condition: ConditionType? = nil, notes: String? = nil, applyAt: ApplyStrategy? = nil, downloadBytes: Int? = nil, message: String? = nil) {
+    private init(status: SyncStatus, release: Release?, reason: String? = nil, condition: ConditionType? = nil, notes: String? = nil, applyAt: ApplyStrategy? = nil, downloadSizeBytes: Int? = nil, message: String? = nil) {
         self.status = status
         self.release = release
         self.reason = reason
         self.condition = condition
         self.notes = notes
         self.applyAt = applyAt
-        self.downloadBytes = downloadBytes
+        self.downloadSizeBytes = downloadSizeBytes
         self.message = message
     }
 
     enum CodingKeys: String, CodingKey {
-        case status, release, reason, condition, notes, applyAt, downloadBytes, message
+        case status, release, reason, condition, notes, applyAt, downloadSizeBytes, message
     }
 
     /// The discriminated union's keys per status; a nullable field is an explicit `null`, an optional one absent.
@@ -82,7 +82,7 @@ public struct SyncResult: Codable, Equatable {
             break
         case .available:
             try container.encode(notes, forKey: .notes)
-            try container.encode(downloadBytes, forKey: .downloadBytes)
+            try container.encode(downloadSizeBytes, forKey: .downloadSizeBytes)
         case .downloaded:
             try container.encode(notes, forKey: .notes)
             try container.encode(applyAt, forKey: .applyAt)
@@ -101,8 +101,8 @@ public struct SyncResult: Codable, Equatable {
         return SyncResult(status: .upToDate, release: release)
     }
 
-    public static func available(_ release: Release, notes: String?, downloadBytes: Int?) -> SyncResult {
-        return SyncResult(status: .available, release: release, notes: notes, downloadBytes: downloadBytes)
+    public static func available(_ release: Release, notes: String?, downloadSizeBytes: Int?) -> SyncResult {
+        return SyncResult(status: .available, release: release, notes: notes, downloadSizeBytes: downloadSizeBytes)
     }
 
     public static func downloaded(_ release: Release, notes: String?, applyAt: ApplyStrategy) -> SyncResult {
@@ -271,18 +271,18 @@ public struct DeviceResult: Codable, Equatable {
 public struct UpdateAvailableEvent: Codable, Equatable {
     public let release: Release
     public let notes: String?
-    public let downloadBytes: Int?
+    public let downloadSizeBytes: Int?
     public let trigger: SyncTrigger
 
     enum CodingKeys: String, CodingKey {
-        case release, notes, downloadBytes, trigger
+        case release, notes, downloadSizeBytes, trigger
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(release, forKey: .release)
         try container.encode(notes, forKey: .notes)
-        try container.encode(downloadBytes, forKey: .downloadBytes)
+        try container.encode(downloadSizeBytes, forKey: .downloadSizeBytes)
         try container.encode(trigger, forKey: .trigger)
     }
 }
@@ -315,7 +315,7 @@ public struct UpdateFailedEvent: Codable, Equatable {
 }
 
 /// At each start that follows a rollback until the app is up after one, before the readiness gate; `to` is `null` for the embedded bundle.
-public struct RolledBackEvent: Codable, Equatable {
+public struct UpdateRolledBackEvent: Codable, Equatable {
     public let from: Release
     public let to: Release?
     public let reason: RollbackReason

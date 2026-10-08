@@ -88,7 +88,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         XCTAssertNil(started.nextRelease)
         XCTAssertNil(started.fallbackRelease)
         XCTAssertEqual(started.failedBundleIds, [])
-        XCTAssertTrue(harness.listener.rolledBack.isEmpty)
+        XCTAssertTrue(harness.listener.updateRolledBack.isEmpty)
         XCTAssertEqual(harness.scheduler.tasks.count, timerCount)
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents, outbox)
         XCTAssertEqual(harness.loader.persisted, .some(nil))
@@ -123,7 +123,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         XCTAssertEqual(ready, NotifyReadyResult(currentRelease: nil, previousRelease: nil, isRolledBack: false, rollbackReason: nil))
         try await harness.core.rollbackUpdate(detail: nil)
         XCTAssertEqual(harness.loader.loaded, [])
-        XCTAssertTrue(harness.listener.rolledBack.isEmpty)
+        XCTAssertTrue(harness.listener.updateRolledBack.isEmpty)
     }
 
     func testShouldSayOnTheDebugReportThatTheBuildEmbedsNoBundleAndThatSuchABuildResolvesNoChannelName() async throws {

@@ -399,18 +399,18 @@ public actor Core {
         let strategy = resolveApplyStrategy(isMandatory: isMandatory, options: options)
         if isDownloaded(target) {
             if stage == .check {
-                return .available(release, notes: target.notes, downloadBytes: target.sizeBytes)
+                return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
             }
             return applyDownloaded(release, notes: target.notes, strategy: strategy)
         }
-        listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadBytes: target.sizeBytes, trigger: trigger))
+        listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadSizeBytes: target.sizeBytes, trigger: trigger))
         switch stage {
         case .check:
-            return .available(release, notes: target.notes, downloadBytes: target.sizeBytes)
+            return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
         case .sync:
             switch options.downloadStrategy ?? configuration.downloadStrategy {
             case .manual:
-                return .available(release, notes: target.notes, downloadBytes: target.sizeBytes)
+                return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
             case .unmetered where loader.isConnectionMetered():
                 return .skipped(release, reason: .connectionMetered)
             case .auto, .unmetered:
@@ -717,7 +717,7 @@ public actor Core {
     private func announceRollback() {
         guard let event = state.pendingRollbackEvent else { return }
         hasAnnouncedRollback = true
-        listener.rolledBack(event)
+        listener.updateRolledBack(event)
     }
 
     private func adoptInPlace(_ release: Release) {
@@ -757,7 +757,7 @@ public actor Core {
         state.currentRelease = fallback
         state.nextRelease = nil
         state.lastRollback = LastRollback(from: current, to: fallback, reason: reason)
-        state.pendingRollbackEvent = RolledBackEvent(from: current, to: fallback, reason: reason)
+        state.pendingRollbackEvent = UpdateRolledBackEvent(from: current, to: fallback, reason: reason)
         hasAnnouncedRollback = false
         enqueueDeviceEvent(.failed(releaseId: current.id, reason: reason.rawValue, detail: detail))
         enqueueDeviceEvent(.rolledBack(fromReleaseId: current.id, toReleaseId: fallback?.id))
