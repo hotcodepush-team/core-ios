@@ -53,6 +53,9 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - The readiness timer runs in the foreground alone: the background stops it, the resume starts its full window again, and a launch into the background starts it paused.
 - A reload the SDK did not perform is reported with `handleAppReload()`: it applies a held or next-start install, gates an unconfirmed release and makes restarts wait for the app again, and is never a crash.
 - A channel id is a UUID: `setChannel`, `sync`, `checkForUpdate()` and `downloadUpdate()` refuse any other with the plain error before fetching; the index's app, channel and platform and the manifest's app and platforms must be the device's, else `INDEX_INVALID` or `MANIFEST_INVALID`.
+- A fetched index with a lower sequence than the kept one is ignored only while the kept index is younger than `cachedIndexMaxAge`, one day by its `fetchedAt`; an older kept index is replaced whatever the sequence, so a forged far-future sequence freezes a device for a day at most. The sequence is a millisecond time, held in `Int`, 64 bits on every target.
+- A new binary, a changed `builtAt`, and a restored phone drop the kept index and its ETag with the stored releases, so the first check fetches unconditionally.
+- A resource file with a `checkInterval` below 60 seconds is refused like any other schema violation: no `Core` is created and the app runs its embedded bundle.
 - A call joins a running cycle of its own stage and waits for one of another; a download that adopts the running bundle answers `UP_TO_DATE`; a held restart re-checks the cached index before applying.
 - A report the endpoint would refuse is left out of the batch and logged `REPORT_UNREADABLE`; a value `setAttributes` would send is at most 256 code points with no control character.
 - Tests wait on `waitForBackgroundWork()`, never on a sleep.
