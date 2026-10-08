@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// What the platform knows about the binary and the OS.
 public struct DeviceFacts: Equatable {
@@ -59,6 +62,28 @@ public protocol Clock {
 public struct SystemClock: Clock {
     public init() {}
     public var now: Date { Date() }
+}
+
+/// Whether the app runs in the background, which the start cannot learn from a notification: the system launching the app straight
+/// into the background, for a push or a background fetch, posts none.
+public protocol ApplicationState: Sendable {
+    /// Read on the main thread.
+    var isInBackground: Bool { get }
+}
+
+/// UIKit's state. `inactive` is a launch on its way to the foreground, which posts no foreground notification, so it is not the
+/// background; a scene-based app reads `background` while its first scene connects, and UIKit posts the foreground notification
+/// right after. Without UIKit the app is in the foreground.
+public struct SystemApplicationState: ApplicationState {
+    public init() {}
+
+    public var isInBackground: Bool {
+        #if canImport(UIKit)
+        return UIApplication.shared.applicationState == .background
+        #else
+        return false
+        #endif
+    }
 }
 
 public final class DispatchScheduler: Scheduler {

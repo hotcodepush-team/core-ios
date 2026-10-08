@@ -37,6 +37,7 @@ public actor Core {
     private let listener: CoreListener
     private let scheduler: Scheduler
     private let clock: Clock
+    private let applicationState: ApplicationState
 
     private var readyTimer: ScheduledTask?
     /// The background stopped the readiness timer, and the resume starts its full window again.
@@ -65,7 +66,7 @@ public actor Core {
     /// The cleanup the start leaves behind it, which every cycle waits for, since a download writes files no kept release lists yet.
     private var unusedFilesDeletion: Task<Void, Never>?
 
-    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
+    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), applicationState: ApplicationState = SystemApplicationState(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
         self.configuration = configuration
         self.device = device
         self.state = StateStore(store: store)
@@ -77,6 +78,7 @@ public actor Core {
         self.listener = listener
         self.scheduler = scheduler
         self.clock = clock
+        self.applicationState = applicationState
     }
 
     // MARK: Lifecycle
@@ -89,8 +91,18 @@ public actor Core {
     /// network: the start's check and the cleanup run after it returns, so a host waiting on the start never waits on them.
     /// A headless start, one the host knows no screen will render for, neither applies a waiting release nor arms the gate, and
     /// loads nothing: the host serves its answer, and a bundle persisted for the next start stays the one the next start finds.
+    /// The application's state is read on the main thread first: an app the system launched into the background is in the
+    /// background from its start, so the gate waits for its first resume.
     @discardableResult
-    public func handleAppStart(isHeadless: Bool = false) -> String? {
+    public func handleAppStart(isHeadless: Bool = false) async -> String? {
+        let isInBackground = await MainActor.run { applicationState.isInBackground }
+        return handleAppStart(isHeadless: isHeadless, isInBackground: isInBackground)
+    }
+
+    private func handleAppStart(isHeadless: Bool, isInBackground: Bool) -> String? {
+        if isInBackground {
+            backgroundedAt = clock.now
+        }
         if state.pendingRollbackEvent == nil {
             state.lastRollback = nil
         }
@@ -122,15 +134,21 @@ public actor Core {
 
     /// The start for a host that resolves its bundle in synchronous code before its WebView or JavaScript loads: `handleAppStart()`'s
     /// answer, waited for at most `startTimeout`. Without an answer in time it answers the embedded bundle, and the start, once it
-    /// runs, reloads the host into the bundle it resolved, as it does whenever the host serves another one.
+    /// runs, reloads the host into the bundle it resolved, as it does whenever the host serves another one. A host waiting on the
+    /// main thread has the application's state read there before it waits, since the start could not reach the thread it blocks.
     public nonisolated func handleAppStartBlocking(isHeadless: Bool = false) -> String? {
         return handleAppStartBlocking(isHeadless: isHeadless, timeout: Core.startTimeout)
     }
 
     nonisolated func handleAppStartBlocking(isHeadless: Bool = false, timeout: TimeInterval) -> String? {
         let answer = StartAnswer()
+        let isInBackground = Thread.isMainThread ? applicationState.isInBackground : nil
         Task.detached(priority: .userInitiated) {
-            answer.resolve(await self.handleAppStart(isHeadless: isHeadless))
+            if let isInBackground = isInBackground {
+                answer.resolve(await self.handleAppStart(isHeadless: isHeadless, isInBackground: isInBackground))
+            } else {
+                answer.resolve(await self.handleAppStart(isHeadless: isHeadless))
+            }
         }
         return answer.wait(timeout: timeout) ?? nil
     }

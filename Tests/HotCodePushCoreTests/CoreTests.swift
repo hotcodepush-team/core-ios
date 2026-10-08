@@ -1063,6 +1063,38 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(StateStore(store: harness.store).failedBundleIds.isEmpty)
     }
 
+    func testShouldStartTheReadinessTimerAtTheFirstResumeWhenTheAppIsLaunchedIntoTheBackground() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        harness.applicationState.isInBackground = true
+        let started = await harness.core.handleAppStart()
+        XCTAssertEqual(started, "b2")
+        XCTAssertTrue(harness.scheduler.tasks.isEmpty)
+        harness.applicationState.isInBackground = false
+        await harness.core.handleAppResume()
+        XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [10])
+    }
+
+    @MainActor
+    func testShouldReadTheApplicationsStateBeforeItBlocksWhenTheHostWaitsOnTheMainThread() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        harness.applicationState.isInBackground = true
+        let started = harness.core.handleAppStartBlocking()
+        XCTAssertEqual(started, "b2")
+        XCTAssertTrue(harness.scheduler.tasks.isEmpty)
+    }
+
     func testShouldArmTheReadinessTimerAtTheResumeWhenAReloadRunsInTheBackground() async throws {
         let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
