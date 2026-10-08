@@ -5,7 +5,7 @@ import XCTest
 /// call `CHANNEL_UNKNOWN` without a request and reports nothing, until the app sets a channel at runtime.
 final class MissingChannelTests: XCTestCase {
     private func harnessWithoutChannel() -> Harness {
-        let harness = Harness(configuration: Fixture.configuration(autoCheck: true, channelId: nil))
+        let harness = Harness(configuration: Fixture.configuration(checkStrategy: .auto, channelId: nil))
         harness.acknowledgeEvents()
         return harness
     }
@@ -79,7 +79,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.waitForBackgroundWork()
         let requestCount = harness.http.requests.count
         harness.loader.served = "b2"
-        harness.restart(configuration: Fixture.configuration(autoCheck: true, channelId: nil))
+        harness.restart(configuration: Fixture.configuration(checkStrategy: .auto, channelId: nil))
         await harness.core.handleAppStart()
         let started = await harness.core.getState()
         XCTAssertEqual(started.currentRelease, v2.release.release)

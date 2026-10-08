@@ -398,6 +398,44 @@ final class FixtureTests: XCTestCase {
         XCTAssertTrue(withoutEmbeddedBundle.allSatisfy { $0.name.contains("without an embedded bundle") && $0.resourceFile.embeddedBundleId == nil })
     }
 
+    func testShouldReadTheSdkOptionsOfTheStagingResourceFileFixture() throws {
+        let cases = try load("resource-files.json", as: ResourceFilesFile.self).cases
+        let staging = try XCTUnwrap(cases.first { $0.name.contains("against staging") }).resourceFile
+        XCTAssertEqual(staging.checkStrategy, .manual)
+        XCTAssertEqual(staging.checkIntervalSeconds, 900)
+        XCTAssertEqual(staging.downloadStrategy, .unmetered)
+        XCTAssertEqual(staging.applyStrategy, .nextResume)
+        XCTAssertEqual(staging.mandatoryApplyStrategy, .manual)
+        XCTAssertEqual(staging.applyOnResumeAfterSeconds, 300)
+        XCTAssertEqual(staging.readySignal, .manual)
+        XCTAssertEqual(staging.readyTimeoutSeconds, 10)
+        XCTAssertFalse(staging.enabledInDebugBuilds)
+        XCTAssertEqual(staging.filesBaseUrl, "https://files.staging.hotcodepush.com")
+        XCTAssertEqual(staging.updatesBaseUrl, "https://updates.staging.hotcodepush.com")
+    }
+
+    /// A file that leaves the SDK options out reads them as the file that spells out the schema's defaults.
+    func testShouldReadTheDefaultsOfEveryResourceFileFixtureThatLeavesTheSdkOptionsOut() throws {
+        let cases = try load("resource-files.json", as: ResourceFilesFile.self).cases
+        let defaults = try XCTUnwrap(cases.first { $0.name.contains("spelled out at their defaults") }).resourceFile
+        XCTAssertEqual(defaults.checkStrategy, .auto)
+        XCTAssertEqual(defaults.applyStrategy, .nextStart)
+        let leavingOptionsOut = cases.filter { $0.name.contains("embedded bundle as written") }
+        XCTAssertEqual(leavingOptionsOut.count, 2)
+        for testCase in leavingOptionsOut {
+            let options = testCase.resourceFile
+            XCTAssertEqual(options.checkStrategy, defaults.checkStrategy, testCase.name)
+            XCTAssertEqual(options.checkIntervalSeconds, defaults.checkIntervalSeconds, testCase.name)
+            XCTAssertEqual(options.downloadStrategy, defaults.downloadStrategy, testCase.name)
+            XCTAssertEqual(options.applyStrategy, defaults.applyStrategy, testCase.name)
+            XCTAssertEqual(options.mandatoryApplyStrategy, defaults.mandatoryApplyStrategy, testCase.name)
+            XCTAssertEqual(options.applyOnResumeAfterSeconds, defaults.applyOnResumeAfterSeconds, testCase.name)
+            XCTAssertEqual(options.readySignal, defaults.readySignal, testCase.name)
+            XCTAssertEqual(options.readyTimeoutSeconds, defaults.readyTimeoutSeconds, testCase.name)
+            XCTAssertEqual(options.enabledInDebugBuilds, defaults.enabledInDebugBuilds, testCase.name)
+        }
+    }
+
     func testShouldRefuseEveryRefusedResourceFileFixture() throws {
         try assertRefused(Configuration.self, in: "resource-files.json", listed: "refusedResourceFiles", holding: "resourceFile")
     }

@@ -44,7 +44,7 @@ public enum RollbackReason: String, Codable {
 }
 
 /// When a downloaded update runs, in the strategies' vocabulary.
-public typealias InstallMoment = InstallStrategy
+public typealias InstallMoment = ApplyStrategy
 
 /// One shape for `SyncResult`, `CheckResult` and `DownloadResult`: the status says which fields are set.
 public struct SyncResult: Codable, Equatable {

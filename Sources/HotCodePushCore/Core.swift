@@ -131,7 +131,7 @@ public actor Core {
         if isCurrentReleaseUnconfirmed() {
             startReadyTimer()
             isStartSyncPending = true
-        } else if configuration.autoCheck {
+        } else if configuration.checkStrategy == .auto {
             startAutomaticCycle(trigger: .start)
         }
         unusedFilesDeletion = startBackgroundWork { self.deleteUnusedFiles() }
@@ -177,14 +177,14 @@ public actor Core {
     /// A mandatory release follows its own strategy, so one the app took over waits across starts; any other switches under `next-start`; a bundle the WebView already serves is adopted.
     private func shouldSwitchAtStart(to next: Release) -> Bool {
         if loader.servedBundleId() == next.bundleId { return true }
-        if next.isMandatory { return configuration.mandatoryInstallStrategy == .immediate }
-        return configuration.installStrategy == .nextStart
+        if next.isMandatory { return configuration.mandatoryApplyStrategy == .immediate }
+        return configuration.applyStrategy == .nextStart
     }
 
-    /// A release installs on resume when its strategy is `next-resume`: a mandatory one follows `mandatoryInstallStrategy`, which has
+    /// A release installs on resume when its strategy is `next-resume`: a mandatory one follows `mandatoryApplyStrategy`, which has
     /// no `next-resume`, so one the app took over is never installed behind its back.
     private func shouldInstallOnResume(_ next: Release) -> Bool {
-        return resolveInstallStrategy(isMandatory: next.isMandatory, options: SyncOptions()) == .nextResume
+        return resolveApplyStrategy(isMandatory: next.isMandatory, options: SyncOptions()) == .nextResume
     }
 
     /// The first render of the run, the readiness signal when `readySignal` is `render`, settles the start whatever it is. A render
@@ -239,13 +239,13 @@ public actor Core {
         backgroundedAt = nil
         resumeReadyTimer()
         discardNextReleaseThatLeftTheIndex()
-        if let duration = backgroundDuration, let next = state.nextRelease, shouldInstallOnResume(next), duration >= configuration.installOnResumeAfter {
+        if let duration = backgroundDuration, let next = state.nextRelease, shouldInstallOnResume(next), duration >= configuration.applyOnResumeAfterSeconds {
             installNextRelease()
             return
         }
-        guard configuration.autoCheck else { return }
-        if let elapsed = state.lastSyncAt.map({ clock.now.timeIntervalSince($0) }), elapsed < configuration.checkInterval {
-            scheduleIntervalSync(after: configuration.checkInterval - elapsed)
+        guard configuration.checkStrategy == .auto else { return }
+        if let elapsed = state.lastSyncAt.map({ clock.now.timeIntervalSince($0) }), elapsed < configuration.checkIntervalSeconds {
+            scheduleIntervalSync(after: configuration.checkIntervalSeconds - elapsed)
         } else {
             startAutomaticCycle(trigger: .resume)
         }
@@ -331,7 +331,7 @@ public actor Core {
         }
         if stage == .sync {
             state.lastSyncAt = clock.now
-            scheduleIntervalSync(after: configuration.checkInterval)
+            scheduleIntervalSync(after: configuration.checkIntervalSeconds)
         }
         record(LogEntry.ofCycle(result, trigger: trigger, at: clock.now))
         if result.status == .failed, let reason = result.reason.flatMap(FailedReason.init(rawValue:)) {
@@ -396,7 +396,7 @@ public actor Core {
             adoptInPlace(release)
             return stage == .download ? .upToDate(release) : .updated(release, notes: target.notes, installAt: .immediate)
         }
-        let strategy = resolveInstallStrategy(isMandatory: isMandatory, options: options)
+        let strategy = resolveApplyStrategy(isMandatory: isMandatory, options: options)
         if isDownloaded(target) {
             if stage == .check {
                 return .available(release, notes: target.notes, downloadBytes: target.sizeBytes)
@@ -427,15 +427,15 @@ public actor Core {
         return Release(id: target.id, number: target.number, bundleId: target.bundleId, bundleVersion: target.bundleVersion, isMandatory: isMandatory)
     }
 
-    /// A mandatory release follows `mandatoryInstallStrategy`; any other the install strategy.
-    private func resolveInstallStrategy(isMandatory: Bool, options: SyncOptions) -> InstallStrategy {
+    /// A mandatory release follows `mandatoryApplyStrategy`; any other the apply strategy.
+    private func resolveApplyStrategy(isMandatory: Bool, options: SyncOptions) -> ApplyStrategy {
         if isMandatory {
-            switch options.mandatoryInstallStrategy ?? configuration.mandatoryInstallStrategy {
+            switch options.mandatoryApplyStrategy ?? configuration.mandatoryApplyStrategy {
             case .immediate: return .immediate
             case .manual: return .manual
             }
         }
-        return options.installStrategy ?? configuration.installStrategy
+        return options.applyStrategy ?? configuration.applyStrategy
     }
 
     private func isDownloaded(_ target: IndexRelease) -> Bool {
@@ -443,7 +443,7 @@ public actor Core {
         return files.isComplete(manifest, embedded: embedded)
     }
 
-    private func install(_ target: IndexRelease, isMandatory: Bool, strategy: InstallStrategy, trigger: SyncTrigger, stage: Stage, isDownloadForced: Bool) async -> SyncResult {
+    private func install(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger, stage: Stage, isDownloadForced: Bool) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         do {
             let baseBundleId = state.currentRelease?.bundleId ?? configuration.embeddedBundleId
@@ -467,7 +467,7 @@ public actor Core {
     }
 
     /// Choosing and applying are two acts: the strategy is a policy over the four functions.
-    private func applyDownloaded(_ release: Release, notes: String?, strategy: InstallStrategy) -> SyncResult {
+    private func applyDownloaded(_ release: Release, notes: String?, strategy: ApplyStrategy) -> SyncResult {
         setNextRelease(release)
         switch strategy {
         case .immediate:
@@ -742,7 +742,7 @@ public actor Core {
         }
         if isStartSyncPending {
             isStartSyncPending = false
-            if configuration.autoCheck {
+            if configuration.checkStrategy == .auto {
                 startAutomaticCycle(trigger: .start)
             }
         }
@@ -797,7 +797,7 @@ public actor Core {
             isReadyTimerPaused = true
             return
         }
-        readyTimer = scheduler.schedule(after: configuration.readyTimeout) { [weak self] in
+        readyTimer = scheduler.schedule(after: configuration.readyTimeoutSeconds) { [weak self] in
             await self?.handleReadyTimeout()
         }
     }
@@ -830,7 +830,7 @@ public actor Core {
 
     private func scheduleIntervalSync(after seconds: TimeInterval) {
         intervalTimer?.cancel()
-        guard configuration.autoCheck else { return }
+        guard configuration.checkStrategy == .auto else { return }
         intervalTimer = scheduler.schedule(after: seconds) { [weak self] in
             await self?.startAutomaticCycle(trigger: .interval)
         }

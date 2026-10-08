@@ -64,6 +64,26 @@ final class WireTypesTests: XCTestCase {
         }
     }
 
+    func testShouldRefuseAResourceFileWhoseDurationIsBelowItsFloor() throws {
+        let configuration = try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any]
+        for (key, seconds) in [("checkIntervalSeconds", 59.0), ("checkIntervalSeconds", -900), ("readyTimeoutSeconds", 0.5), ("readyTimeoutSeconds", -10), ("applyOnResumeAfterSeconds", -1)] {
+            var json = try XCTUnwrap(configuration)
+            json[key] = seconds
+            XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)), "\(key) \(seconds)")
+        }
+    }
+
+    func testShouldReadEveryDurationAtItsFloorAsWritten() throws {
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any])
+        json["checkIntervalSeconds"] = 60
+        json["readyTimeoutSeconds"] = 1
+        json["applyOnResumeAfterSeconds"] = 0
+        let configuration = try Configuration.decode(try JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(configuration.checkIntervalSeconds, 60)
+        XCTAssertEqual(configuration.readyTimeoutSeconds, 1)
+        XCTAssertEqual(configuration.applyOnResumeAfterSeconds, 0)
+    }
+
     func testShouldRefuseAStoredReleaseWhoseIdsAreNotIdentifiers() throws {
         let stored = Data(#"{"id":"r1","number":1,"bundleId":"../b1","bundleVersion":"1.0.0","isMandatory":false}"#.utf8)
         XCTAssertThrowsError(try Json.decoder.decode(Release.self, from: stored))

@@ -194,7 +194,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldKeepAHeldInstallForTheNextStartAcrossAHeadlessStart() async throws {
-        let configuration = Fixture.configuration(installStrategy: .immediate)
+        let configuration = Fixture.configuration(applyStrategy: .immediate)
         let harness = Harness(configuration: configuration)
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
@@ -236,7 +236,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldApplyAHeldInstallAndGateItWhenTheHostReloadsOnItsOwn() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -276,7 +276,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldDropAHeldInstallWhoseReleaseWasRevokedWhileItWaited() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -294,7 +294,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldDropAHeldApplyUpdateWhoseReleaseWasRevokedWhileItWaited() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .manual))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .manual))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -325,7 +325,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldStartOnTheEmbeddedBundleWhenTheBinaryChanged() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -348,7 +348,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldKeepTheCurrentReleaseWhenTheBinaryIsTheSame() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -364,7 +364,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldStartOnTheEmbeddedBundleWhenTheCurrentReleaseHasNoFilesOnDisk() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -402,7 +402,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldRollBackAReleaseThatNeverRendersAndBlocklistIt() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -444,7 +444,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldFallBackToTheLastConfirmedReleaseNotTheEmbeddedBundle() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -589,7 +589,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldAdoptAReleaseCarryingTheRunningBundleWithoutAReload() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -607,7 +607,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldAnswerUpToDateNotUpdatedWhenADownloadAdoptsAReleaseCarryingTheRunningBundle() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -624,7 +624,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldRevertToTheEmbeddedBundleWhenTheRunningReleaseIsRevoked() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -640,7 +640,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldQueueTheSwitchWithTheReloadWhileRestartsAreNotAllowed() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -663,7 +663,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldApplyUpdateAtOnceWhileRestartsAreNotAllowed() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .manual))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .manual))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -679,7 +679,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldReportARollbackToTheEmbeddedBundleWithANullRelease() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         harness.acknowledgeEvents()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
@@ -700,7 +700,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldRollBackAtOnceWhileRestartsAreNotAllowed() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -716,7 +716,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldClearUpdatesAtOnceWhileRestartsAreNotAllowed() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -731,8 +731,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.files.bundleIds(), [])
     }
 
-    func testShouldInstallANextResumeReleaseAfterInstallOnResumeAfter() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextResume))
+    func testShouldApplyANextResumeReleaseAfterApplyOnResumeAfterSeconds() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextResume))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -750,7 +750,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldNeverInstallOnResumeAMandatoryReleaseTheAppTookOverWhenTheStrategyIsNextResume() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextResume, mandatoryInstallStrategy: .manual))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextResume, mandatoryApplyStrategy: .manual))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -767,7 +767,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldKeepANextResumeReleaseWaitingAfterAShortBackground() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextResume))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextResume))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1056,7 +1056,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldKeepAnEventEnqueuedWhileARefusedBatchWasInFlight() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         harness.http.stub(Fixture.eventsUrl(), status: 400, body: Data())
         harness.http.whilePosting = { _ = await harness.core.notifyReady() }
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
@@ -1071,7 +1071,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldKeepAnEventEnqueuedWhileAnAcknowledgedBatchWasInFlightWhenTheOutboxWasAtItsCap() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         harness.acknowledgeEvents()
         harness.http.whilePosting = { _ = await harness.core.notifyReady() }
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
@@ -1121,8 +1121,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.http.posts.count, 0)
     }
 
-    func testShouldSyncOnStartAndResumeWhenAutoCheckIsOn() async throws {
-        let harness = Harness(configuration: Fixture.configuration(autoCheck: true))
+    func testShouldSyncOnStartAndResumeWhenTheCheckStrategyIsAuto() async throws {
+        let harness = Harness(configuration: Fixture.configuration(checkStrategy: .auto))
         harness.publish([], sequence: 1)
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
@@ -1131,7 +1131,7 @@ final class CoreTests: XCTestCase {
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
         harness.clock.now = harness.clock.now.addingTimeInterval(1000)
-        harness.restart(configuration: Fixture.configuration(autoCheck: true))
+        harness.restart(configuration: Fixture.configuration(checkStrategy: .auto))
         await harness.core.handleAppResume()
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .resume)
@@ -1194,7 +1194,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldArmTheReadinessTimerAtTheResumeWhenAReloadRunsInTheBackground() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1208,7 +1208,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldPauseTheIntervalTimerInTheBackgroundAndReArmItOnResume() async throws {
-        let harness = Harness(configuration: Fixture.configuration(autoCheck: true))
+        let harness = Harness(configuration: Fixture.configuration(checkStrategy: .auto))
         harness.publish([], sequence: 1)
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
@@ -1223,7 +1223,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldDeleteTheServedTreesAndFilesOfBundlesNoKeptReleaseLists() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
         let v4 = Fixture.release(number: 3, bundleId: "b4", content: Data("<html>v4</html>".utf8))
@@ -1236,12 +1236,12 @@ final class CoreTests: XCTestCase {
         _ = try await harness.core.sync(trigger: .manual)
         _ = await harness.core.notifyReady()
         harness.publish([v2, v3, v4], sequence: 3, etag: "\"e3\"")
-        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(installStrategy: .nextStart))
+        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .nextStart))
         for bundleId in ["b2", "b3", "b4"] {
             XCTAssertTrue(FileManager.default.fileExists(atPath: harness.loader.projectionDirectory(bundleId: bundleId).appendingPathComponent("index.html").path), bundleId)
         }
         harness.loader.served = "b4"
-        harness.restart(configuration: Fixture.configuration(installStrategy: .immediate))
+        harness.restart(configuration: Fixture.configuration(applyStrategy: .immediate))
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
         let status = await harness.core.getState()
@@ -1258,7 +1258,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldClearUpdatesToTheEmbeddedBundleAndKeepTheIdentity() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         try await harness.core.setAttributes(["plan": "beta"])
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
@@ -1277,7 +1277,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldStopAfterTheCheckUnderTheManualDownloadStrategyAndDownloadOnCall() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .manual, downloadStrategy: .manual))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .manual, downloadStrategy: .manual))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1315,7 +1315,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldInstallAMandatoryReleaseAtOnceWhateverTheInstallStrategy() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextStart))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1328,7 +1328,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldHandAMandatoryReleaseToTheAppUnderTheManualMandatoryStrategy() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextStart, mandatoryInstallStrategy: .manual))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart, mandatoryApplyStrategy: .manual))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1337,7 +1337,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.listener.downloaded.map { $0.release.isMandatory }, [true])
         XCTAssertEqual(harness.loader.loaded, [])
         harness.loader.served = nil
-        harness.restart(configuration: Fixture.configuration(installStrategy: .nextStart, mandatoryInstallStrategy: .manual))
+        harness.restart(configuration: Fixture.configuration(applyStrategy: .nextStart, mandatoryApplyStrategy: .manual))
         await harness.core.handleAppStart()
         let state = await harness.core.getState()
         XCTAssertNil(state.currentRelease)
@@ -1345,7 +1345,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldTreatTheNewestReleaseAsMandatoryWhenAMandatoryOneWasMissed() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextStart, mandatoryInstallStrategy: .manual))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart, mandatoryApplyStrategy: .manual))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
         let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
         harness.publish([v2, v3], sequence: 1)
@@ -1357,7 +1357,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldCarryTheAppsRollbackReasonOnTheFailureEvent() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1375,7 +1375,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldLetTheStartsSyncDownloadOnlyAfterTheCleanupSoNoFileItWritesIsDeleted() async throws {
-        let harness = Harness(configuration: Fixture.configuration(autoCheck: true))
+        let harness = Harness(configuration: Fixture.configuration(checkStrategy: .auto))
         let content = Data("<html>shared</html>".utf8)
         try harness.files.writeFile(content, sha256: Hashing.sha256Hex(content))
         try harness.files.writeManifest(BundleManifest(appId: Fixture.appId, bundleVersion: "0.9.0", files: [.init(path: "index.html", sha256: Hashing.sha256Hex(content), sizeBytes: content.count)], platforms: ["ios"]), bundleId: "b-unused")
@@ -1388,15 +1388,15 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldSyncAndCleanUpAtAStartThatRollsBackACrash() async throws {
-        let harness = Harness(configuration: Fixture.configuration(autoCheck: true))
+        let harness = Harness(configuration: Fixture.configuration(checkStrategy: .auto))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
         harness.loader.served = "b2"
-        harness.restart(configuration: Fixture.configuration(autoCheck: true))
+        harness.restart(configuration: Fixture.configuration(checkStrategy: .auto))
         await harness.core.handleAppStart()
-        harness.restart(configuration: Fixture.configuration(autoCheck: true))
+        harness.restart(configuration: Fixture.configuration(checkStrategy: .auto))
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(harness.listener.rolledBack.last?.reason, .appCrashed)
@@ -1405,7 +1405,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldAnnounceTheRollbackWhenTheReloadRunsAndNotBefore() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1532,7 +1532,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldTakeTheStreamedDeltaWhenTheDeviceIsTwoReleasesBehind() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1588,7 +1588,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldDiscardADownloadedReleaseThatLeftTheIndexInsteadOfApplyingIt() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .manual))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .manual))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1605,7 +1605,7 @@ final class CoreTests: XCTestCase {
 
     func testShouldBeginTheStartSyncAtOnceWhenTheRunningReleaseIsConfirmed() async throws {
         let harness = Harness()
-        try await restartOnAConfirmedRelease(harness, configuration: Fixture.configuration(autoCheck: true))
+        try await restartOnAConfirmedRelease(harness, configuration: Fixture.configuration(checkStrategy: .auto))
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
         XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
@@ -1618,7 +1618,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         _ = try await harness.core.sync(trigger: .manual)
         harness.loader.served = "b2"
-        harness.restart(configuration: Fixture.configuration(autoCheck: true, readySignal: .manual))
+        harness.restart(configuration: Fixture.configuration(checkStrategy: .auto, readySignal: .manual))
         await harness.core.handleAppStart()
         await harness.core.handleRendered()
         await harness.core.waitForBackgroundWork()
@@ -1628,9 +1628,9 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
     }
 
-    func testShouldBeginNoStartSyncWhenAutoCheckIsOff() async throws {
+    func testShouldBeginNoStartSyncWhenTheCheckStrategyIsManual() async throws {
         let harness = Harness()
-        try await restartOnAConfirmedRelease(harness, configuration: Fixture.configuration(autoCheck: false))
+        try await restartOnAConfirmedRelease(harness, configuration: Fixture.configuration(checkStrategy: .manual))
         await harness.core.handleAppStart()
         await harness.core.handleRendered()
         _ = await harness.core.notifyReady()
@@ -1639,7 +1639,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldReloadAnImmediateInstallAtTheFirstRenderAndNotBeforeWhenItIsReadyBeforeIt() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1656,7 +1656,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldReloadAnImmediateInstallAtNotifyReadyAndNotBeforeWhenItIsReadyBeforeIt() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1669,7 +1669,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldReloadAMandatoryReleaseAtTheFirstRenderAndNotBeforeWhenItIsReadyBeforeIt() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextStart))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1683,7 +1683,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldReloadAMandatoryReleaseAtNotifyReadyAndNotBeforeWhenItIsReadyBeforeIt() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextStart))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1696,7 +1696,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldApplyAnUpdateAtTheFirstRenderAndNotBeforeWhileRestartsAreNotAllowed() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .manual))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .manual))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1749,7 +1749,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldRunARestartHeldByTheAppAndTheStartOnceWhenTheAppAllowsRestartsAfterTheFirstRender() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1765,7 +1765,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldRunARestartHeldByTheAppAndTheStartOnceWhenTheFirstRenderComesAfterTheAppAllowsRestarts() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1799,7 +1799,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldHoldTheNextRestartUntilTheReloadedAppRendersWhenTheCoreReloaded() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1818,7 +1818,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldReloadOnceWhenTheAppAppliesAnUpdateWhileTheAppHoldsARestart() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1835,7 +1835,7 @@ final class CoreTests: XCTestCase {
 
     func testShouldReloadOnceWhenTheAppRollsBackWhileTheStartHoldsARestart() async throws {
         let harness = Harness()
-        try await restartOnAConfirmedRelease(harness, configuration: Fixture.configuration(installStrategy: .immediate))
+        try await restartOnAConfirmedRelease(harness, configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
         harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
@@ -1849,7 +1849,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldSwitchToAHeldImmediateInstallAtTheNextStartWhenItNeverRan() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1857,7 +1857,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.loader.loaded, [])
         XCTAssertEqual(harness.loader.persisted, .some("b2"))
         harness.loader.served = "b2"
-        harness.restart(configuration: Fixture.configuration(installStrategy: .immediate))
+        harness.restart(configuration: Fixture.configuration(applyStrategy: .immediate))
         await harness.core.handleAppStart()
         let started = await harness.core.getState()
         XCTAssertEqual(started.currentRelease, v2.release.release)
@@ -1865,7 +1865,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldSwitchToAHeldMandatoryReleaseAtTheNextStartWhenItNeverRan() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .nextStart))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1873,7 +1873,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.loader.loaded, [])
         XCTAssertEqual(harness.loader.persisted, .some("b2"))
         harness.loader.served = "b2"
-        harness.restart(configuration: Fixture.configuration(installStrategy: .nextStart))
+        harness.restart(configuration: Fixture.configuration(applyStrategy: .nextStart))
         await harness.core.handleAppStart()
         let started = await harness.core.getState()
         XCTAssertEqual(started.currentRelease, v2.release.release)
@@ -1899,14 +1899,14 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldRunTheOlderReleaseAtTheNextStartWhenAHeldMoveFromARevokedReleaseNeverRan() async throws {
-        let configuration = Fixture.configuration(mandatoryInstallStrategy: .manual)
+        let configuration = Fixture.configuration(mandatoryApplyStrategy: .manual)
         let harness = Harness(configuration: configuration)
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
         harness.publish([v2, v3], sequence: 1)
         await harness.core.handleAppStart()
         await harness.core.handleRendered()
-        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(installStrategy: .immediate))
+        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .immediate))
         await harness.core.handleRendered()
         harness.restart(configuration: configuration)
         harness.publish([v2, v3], sequence: 2, revoked: ["r2"], etag: "\"e2\"")
@@ -1946,7 +1946,7 @@ final class CoreTests: XCTestCase {
 
     /// A run that installs v2 at once after the first render and has not confirmed it: its readiness timer is the one scheduled.
     private func harnessOnAnUnconfirmedRelease() async throws -> Harness {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1960,7 +1960,7 @@ final class CoreTests: XCTestCase {
     /// The process ends, and the next one starts on the bundle the core persisted.
     private func restartOnTheServedBundle(_ harness: Harness) async {
         harness.loader.served = harness.loader.persisted ?? nil
-        harness.restart(configuration: Fixture.configuration(installStrategy: .immediate))
+        harness.restart(configuration: Fixture.configuration(applyStrategy: .immediate))
         await harness.core.handleAppStart()
     }
 
@@ -1970,7 +1970,7 @@ final class CoreTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         await harness.core.handleRendered()
-        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(installStrategy: .immediate))
+        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .immediate))
         await harness.core.handleRendered()
         harness.restart(configuration: configuration)
     }

@@ -121,9 +121,9 @@ public enum DebugReport {
             DebugRow(label: "Built at", value: Iso8601.format(configuration.builtAt)),
             DebugRow(label: "Files host", value: configuration.filesBaseUrl),
             DebugRow(label: "Updates host", value: configuration.updatesBaseUrl),
-            DebugRow(label: "Auto check", value: configuration.autoCheck ? "every \(Int(configuration.checkInterval)) s" : "off"),
-            DebugRow(label: "Strategies", value: "download \(configuration.downloadStrategy.rawValue), install \(configuration.installStrategy.rawValue), mandatory \(configuration.mandatoryInstallStrategy.rawValue)"),
-            DebugRow(label: "Ready signal", value: "\(configuration.readySignal.rawValue), \(Int(configuration.readyTimeout)) s"),
+            DebugRow(label: "Check strategy", value: configuration.checkStrategy == .auto ? "auto, every \(Int(configuration.checkIntervalSeconds)) s" : "manual"),
+            DebugRow(label: "Strategies", value: "download \(configuration.downloadStrategy.rawValue), apply \(configuration.applyStrategy.rawValue), mandatory \(configuration.mandatoryApplyStrategy.rawValue)"),
+            DebugRow(label: "Ready signal", value: "\(configuration.readySignal.rawValue), \(Int(configuration.readyTimeoutSeconds)) s"),
             DebugRow(label: "Debug builds", value: configuration.enabledInDebugBuilds ? "enabled" : "disabled"),
             DebugRow(label: "Public keys", value: String(configuration.publicKeys.count))
         ])

@@ -4,8 +4,8 @@ import XCTest
 /// A build whose build step found no JavaScript bundled embeds no bundle: live updates are off in it, every cycle skips with
 /// `BUILD_DEBUG` without a request, and nothing is sent.
 final class MissingEmbeddedBundleTests: XCTestCase {
-    private func configurationWithoutEmbeddedBundle(channelId: String? = Fixture.channelId, installStrategy: InstallStrategy = .nextStart) -> Configuration {
-        return Fixture.configuration(installStrategy: installStrategy, builtAt: Fixture.builtAt.addingTimeInterval(86_400), channelId: channelId, hasEmbeddedBundle: false)
+    private func configurationWithoutEmbeddedBundle(channelId: String? = Fixture.channelId, applyStrategy: ApplyStrategy = .nextStart) -> Configuration {
+        return Fixture.configuration(applyStrategy: applyStrategy, builtAt: Fixture.builtAt.addingTimeInterval(86_400), channelId: channelId, hasEmbeddedBundle: false)
     }
 
     /// A debug build served by the development server, with debug builds enabled as the project leaves them, and a release on its channel.
@@ -63,7 +63,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
     }
 
     func testShouldEmptyTheStoreAndAnnounceNothingAtTheStartOfABuildWithoutAnEmbeddedBundleWhenTheStoreHoldsAnotherBinarysReleases() async throws {
-        let harness = Harness(configuration: Fixture.configuration(installStrategy: .immediate))
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
         let v4 = Fixture.release(number: 3, bundleId: "b4", content: Data("<html>v4</html>".utf8))
@@ -75,7 +75,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
         _ = try await harness.core.sync(trigger: .manual)
         harness.publish([v2, v3, v4], sequence: 3, etag: "\"e3\"")
-        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(installStrategy: .nextStart))
+        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .nextStart))
         let held = await harness.core.getState()
         XCTAssertEqual([held.currentRelease?.id, held.nextRelease?.id, held.fallbackRelease?.id], ["r2", "r3", "r1"])
         let outbox = StateStore(store: harness.store).unsentEvents
