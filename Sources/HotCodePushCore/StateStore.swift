@@ -38,6 +38,18 @@ public struct CachedIndex: Codable, Equatable {
     }
 }
 
+/// The downloaded release waiting to be applied, and the moment the cycle that downloaded it chose: the start and the resume read
+/// it here, never in the configuration, so a per-call strategy holds until the release is applied.
+public struct NextRelease: Codable, Equatable {
+    public let release: Release
+    public let applyAt: ApplyStrategy
+
+    public init(release: Release, applyAt: ApplyStrategy) {
+        self.release = release
+        self.applyAt = applyAt
+    }
+}
+
 public struct LastRollback: Codable, Equatable {
     public let from: Release
     public let to: Release?
@@ -53,7 +65,7 @@ public struct LastRollback: Codable, Equatable {
 /// The SDK's keys, `hotcodepush.<name>` each: three identity keys kept for the install's life,
 /// the rest a cache under `stateVersion` that is dropped and rebuilt when unreadable.
 public final class StateStore {
-    public static let stateVersion = 3
+    public static let stateVersion = 4
     static let prefix = "hotcodepush."
 
     private let store: KeyValueStore
@@ -91,7 +103,7 @@ public final class StateStore {
         set { write("currentRelease", newValue) }
     }
 
-    public var nextRelease: Release? {
+    public var nextRelease: NextRelease? {
         get { return read("nextRelease") }
         set { write("nextRelease", newValue) }
     }

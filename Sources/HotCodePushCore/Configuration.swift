@@ -8,6 +8,16 @@ public enum ApplyStrategy: String, Codable {
     case nextStart = "next-start"
 }
 
+extension ApplyStrategy {
+    /// A mandatory strategy in the apply strategies' vocabulary, which holds both of its values.
+    init(_ strategy: MandatoryApplyStrategy) {
+        switch strategy {
+        case .immediate: self = .immediate
+        case .manual: self = .manual
+        }
+    }
+}
+
 /// Whether the SDK checks on its own, at start, on resume and at the interval; `manual` leaves every cycle to the app's `sync()`.
 public enum CheckStrategy: String, Codable {
     case auto

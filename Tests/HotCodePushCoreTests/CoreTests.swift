@@ -783,6 +783,68 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.nextRelease, v2.release.release)
     }
 
+    func testShouldApplyAReleaseDownloadedUnderAPerCallNextResumeOnResumeAndNotAtTheNextStart() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        let result = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .nextResume))
+        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyAt: .nextResume))
+        harness.restart()
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        let started = await harness.core.getState()
+        XCTAssertNil(started.currentRelease)
+        XCTAssertEqual(started.nextRelease, v2.release.release)
+        await harness.core.handleAppPause()
+        harness.clock.now = harness.clock.now.addingTimeInterval(300)
+        await harness.core.handleAppResume()
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        let resumed = await harness.core.getState()
+        XCTAssertEqual(resumed.currentRelease, v2.release.release)
+    }
+
+    func testShouldSwitchAtTheNextStartToAReleaseDownloadedUnderAPerCallNextStartWhateverTheConfiguredStrategy() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .nextStart))
+        harness.restart(configuration: Fixture.configuration(applyStrategy: .manual))
+        let switched = await harness.core.handleAppStart()
+        XCTAssertEqual(switched, "b2")
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+    }
+
+    func testShouldKeepTheMomentOfADownloadedReleaseWhenACycleWithoutAStrategyFindsIt() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .nextResume))
+        let interval = try await harness.core.sync(trigger: .interval)
+        XCTAssertEqual(interval, .downloaded(v2.release.release, notes: "notes 1", applyAt: .nextResume))
+        XCTAssertEqual(StateStore(store: harness.store).nextRelease?.applyAt, .nextResume)
+        harness.restart()
+        await harness.core.handleAppStart()
+        let started = await harness.core.getState()
+        XCTAssertNil(started.currentRelease)
+        XCTAssertEqual(harness.loader.loaded, [])
+    }
+
+    func testShouldApplyADownloadedReleaseAtOnceWhenTheCallAsksForImmediate() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        let downloaded = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1", applyAt: .nextStart))
+        let applied = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .immediate))
+        XCTAssertEqual(applied, .applied(v2.release.release, notes: "notes 1"))
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+    }
+
     func testShouldSkipOnAMeteredConnectionUnderTheUnmeteredStrategy() async throws {
         let harness = Harness()
         harness.loader.isMetered = true

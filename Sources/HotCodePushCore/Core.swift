@@ -174,17 +174,12 @@ public actor Core {
         return state.currentRelease?.bundleId
     }
 
-    /// A mandatory release follows its own strategy, so one the app took over waits across starts; any other switches under `next-start`; a bundle the WebView already serves is adopted.
-    private func shouldSwitchAtStart(to next: Release) -> Bool {
-        if loader.servedBundleId() == next.bundleId { return true }
-        if next.isMandatory { return configuration.mandatoryApplyStrategy == .immediate }
-        return configuration.applyStrategy == .nextStart
-    }
-
-    /// A release applies on resume when its strategy is `next-resume`: a mandatory one follows `mandatoryApplyStrategy`, which has
-    /// no `next-resume`, so one the app took over is never applied behind its back.
-    private func shouldApplyOnResume(_ next: Release) -> Bool {
-        return resolveApplyStrategy(isMandatory: next.isMandatory, options: SyncOptions()) == .nextResume
+    /// The moment the release carries decides: `next-start` switches, and so does an `immediate` apply this run never got to, a
+    /// mandatory release's included; `next-resume` and `manual` wait, so a mandatory release the app took over waits across starts.
+    /// A bundle the WebView already serves is adopted.
+    private func shouldSwitchAtStart(to next: NextRelease) -> Bool {
+        if loader.servedBundleId() == next.release.bundleId { return true }
+        return next.applyAt == .nextStart || next.applyAt == .immediate
     }
 
     /// The first render of the run, the readiness signal when `readySignal` is `render`, settles the start whatever it is. A render
@@ -232,14 +227,15 @@ public actor Core {
         pauseReadyTimer()
     }
 
-    /// A resume starts a paused readiness window again, applies a `next-resume` release after enough time in the background, else
-    /// checks when the interval has passed.
+    /// A resume starts a paused readiness window again, applies a release that carries `next-resume` after enough time in the
+    /// background, else checks when the interval has passed. A mandatory release never carries it, so one the app took over is never
+    /// applied behind its back.
     public func handleAppResume() {
         let backgroundDuration = backgroundedAt.map { clock.now.timeIntervalSince($0) }
         backgroundedAt = nil
         resumeReadyTimer()
         discardNextReleaseThatLeftTheIndex()
-        if let duration = backgroundDuration, let next = state.nextRelease, shouldApplyOnResume(next), duration >= configuration.applyOnResumeAfterSeconds {
+        if let duration = backgroundDuration, state.nextRelease?.applyAt == .nextResume, duration >= configuration.applyOnResumeAfterSeconds {
             restartIntoNextRelease()
             return
         }
@@ -321,7 +317,7 @@ public actor Core {
             return ApplyResult(status: .nothingToApply, release: state.currentRelease)
         }
         restartThroughGate(isAskedByApp: true) { [self] in applyNextRelease() }
-        return ApplyResult(status: .applied, release: next)
+        return ApplyResult(status: .applied, release: next.release)
     }
 
     private func performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
@@ -389,20 +385,22 @@ public actor Core {
     }
 
     /// A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far as the
-    /// stage goes. An adoption answers `UP_TO_DATE`, since nothing waits and nothing reloads.
+    /// stage goes. An adoption answers `UP_TO_DATE`, since nothing waits and nothing reloads. The apply moment is the call's strategy,
+    /// else the one a release downloaded already carries, else the configuration's, so an automatic cycle never overrides the app's.
     private func update(to target: IndexRelease, isMandatory: Bool, trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         if stage != .check, let current = state.currentRelease, current.bundleId == target.bundleId {
             adoptInPlace(release)
             return .upToDate(release)
         }
-        let strategy = resolveApplyStrategy(isMandatory: isMandatory, options: options)
-        if isDownloaded(target) {
+        let requestedStrategy = resolveRequestedApplyStrategy(isMandatory: isMandatory, options: options)
+        if let downloaded = readDownloadedRelease(target) {
             if stage == .check {
                 return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
             }
-            return applyDownloaded(release, notes: target.notes, strategy: strategy)
+            return applyDownloaded(release, notes: target.notes, strategy: requestedStrategy ?? downloaded.applyAt)
         }
+        let strategy = requestedStrategy ?? resolveConfiguredApplyStrategy(isMandatory: isMandatory)
         listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadSizeBytes: target.sizeBytes, trigger: trigger))
         switch stage {
         case .check:
@@ -426,20 +424,22 @@ public actor Core {
         return Release(id: target.id, number: target.number, bundleId: target.bundleId, bundleVersion: target.bundleVersion, isMandatory: isMandatory)
     }
 
-    /// A mandatory release follows `mandatoryApplyStrategy`; any other the apply strategy.
-    private func resolveApplyStrategy(isMandatory: Bool, options: SyncOptions) -> ApplyStrategy {
-        if isMandatory {
-            switch options.mandatoryApplyStrategy ?? configuration.mandatoryApplyStrategy {
-            case .immediate: return .immediate
-            case .manual: return .manual
-            }
-        }
-        return options.applyStrategy ?? configuration.applyStrategy
+    /// The strategy the call names for this release, `nil` when it names none: a mandatory release follows `mandatoryApplyStrategy`,
+    /// any other `applyStrategy`.
+    private func resolveRequestedApplyStrategy(isMandatory: Bool, options: SyncOptions) -> ApplyStrategy? {
+        return isMandatory ? options.mandatoryApplyStrategy.map(ApplyStrategy.init) : options.applyStrategy
     }
 
-    private func isDownloaded(_ target: IndexRelease) -> Bool {
-        guard let next = state.nextRelease, next.bundleId == target.bundleId, let manifest = files.readManifest(bundleId: next.bundleId) else { return false }
-        return files.isComplete(manifest, embedded: embedded)
+    /// The configuration's strategy for this release, by the same rule.
+    private func resolveConfiguredApplyStrategy(isMandatory: Bool) -> ApplyStrategy {
+        return isMandatory ? ApplyStrategy(configuration.mandatoryApplyStrategy) : configuration.applyStrategy
+    }
+
+    /// The next release when it is the target and every file it lists is on disk.
+    private func readDownloadedRelease(_ target: IndexRelease) -> NextRelease? {
+        guard let next = state.nextRelease, next.release.bundleId == target.bundleId,
+              let manifest = files.readManifest(bundleId: next.release.bundleId), files.isComplete(manifest, embedded: embedded) else { return nil }
+        return next
     }
 
     private func downloadAndApply(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger) async -> SyncResult {
@@ -464,10 +464,10 @@ public actor Core {
         return applyDownloaded(release, notes: target.notes, strategy: strategy)
     }
 
-    /// Choosing and applying are two acts: the strategy is a policy over the four functions. `APPLIED` when the apply happens now,
-    /// the reload following, else `DOWNLOADED` with the moment it waits for.
+    /// Choosing and applying are two acts: the strategy is a policy over the four functions, its moment stored with the release.
+    /// `APPLIED` when the apply happens now, the reload following, else `DOWNLOADED` with the moment it waits for.
     private func applyDownloaded(_ release: Release, notes: String?, strategy: ApplyStrategy) -> SyncResult {
-        setNextRelease(release)
+        setNextRelease(NextRelease(release: release, applyAt: strategy))
         switch strategy {
         case .immediate:
             restartIntoNextRelease()
@@ -518,7 +518,7 @@ public actor Core {
     public func getState() -> StateResult {
         return StateResult(
             currentRelease: state.currentRelease,
-            nextRelease: state.nextRelease,
+            nextRelease: state.nextRelease?.release,
             fallbackRelease: state.fallbackRelease,
             embeddedBundleId: configuration.embeddedBundleId,
             lastCheck: state.lastCheck,
@@ -590,7 +590,7 @@ public actor Core {
 
     /// A restored phone brings the store's keys back without its files: a current or next release with no manifest on disk names a tree that is not there.
     private func hasReleaseWithoutManifest() -> Bool {
-        return [state.currentRelease, state.nextRelease].compactMap { $0 }.contains { files.readManifest(bundleId: $0.bundleId) == nil }
+        return [state.currentRelease, state.nextRelease?.release].compactMap { $0 }.contains { files.readManifest(bundleId: $0.bundleId) == nil }
     }
 
     /// A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded
@@ -608,13 +608,13 @@ public actor Core {
         loader.persistServedBundle(bundleId: nil)
     }
 
-    private func setNextRelease(_ release: Release) {
-        state.nextRelease = release
+    private func setNextRelease(_ next: NextRelease) {
+        state.nextRelease = next
     }
 
     /// A downloaded release that has left the cached index since — revoked, or gone from it — is never applied: it is dropped and the served bundle stays the running one.
     private func discardNextReleaseThatLeftTheIndex() {
-        guard let next = state.nextRelease, let index = state.cachedIndex?.body, hasLeftIndex(next, index) else { return }
+        guard let next = state.nextRelease, let index = state.cachedIndex?.body, hasLeftIndex(next.release, index) else { return }
         state.nextRelease = nil
         loader.persistServedBundle(bundleId: state.currentRelease?.bundleId)
     }
@@ -624,7 +624,7 @@ public actor Core {
     }
 
     private func switchToNextRelease() {
-        guard let next = state.nextRelease else { return }
+        guard let next = state.nextRelease?.release else { return }
         releaseBeforeSwitch = state.currentRelease
         state.currentRelease = next
         state.nextRelease = nil
@@ -675,7 +675,7 @@ public actor Core {
     /// The apply the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does.
     private func restartIntoNextRelease() {
         if let next = state.nextRelease {
-            loader.persistServedBundle(bundleId: next.bundleId)
+            loader.persistServedBundle(bundleId: next.release.bundleId)
         }
         restartThroughGate(isAskedByApp: false) { [self] in applyNextRelease() }
     }
@@ -838,7 +838,7 @@ public actor Core {
 
     /// Everything no kept release lists: the served tree of every other bundle first, since its links hold the bytes.
     private func deleteUnusedFiles() {
-        let kept = Set([state.currentRelease, state.nextRelease, state.fallbackRelease].compactMap { $0?.bundleId })
+        let kept = Set([state.currentRelease, state.nextRelease?.release, state.fallbackRelease].compactMap { $0?.bundleId })
         for bundleId in files.bundleIds() where !kept.contains(bundleId) {
             loader.deleteProjection(bundleId: bundleId)
         }

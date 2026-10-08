@@ -26,6 +26,30 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(state.deviceId, "device-1")
     }
 
+    func testShouldDropANextReleaseStoredWithoutItsApplyMomentByTheThirdStateVersion() {
+        let store = InMemoryStore()
+        let release = "{\"id\":\"r1\",\"number\":1,\"bundleId\":\"b1\",\"bundleVersion\":\"1\",\"isMandatory\":false}"
+        store.set(3, forKey: "hotcodepush.stateVersion")
+        store.set(release, forKey: "hotcodepush.nextRelease")
+        store.set(release, forKey: "hotcodepush.currentRelease")
+        store.set("device-1", forKey: "hotcodepush.deviceId")
+        let state = StateStore(store: store)
+        XCTAssertNil(state.nextRelease)
+        XCTAssertNil(state.currentRelease)
+        XCTAssertEqual(state.deviceId, "device-1")
+    }
+
+    func testShouldStoreTheNextReleaseWithItsApplyMoment() throws {
+        let store = InMemoryStore()
+        let next = NextRelease(release: Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false), applyAt: .nextResume)
+        StateStore(store: store).nextRelease = next
+        XCTAssertEqual(StateStore(store: store).nextRelease, next)
+        let stored = try XCTUnwrap(store.string(forKey: "hotcodepush.nextRelease"))
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(stored.utf8)) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["release", "applyAt"])
+        XCTAssertEqual(object["applyAt"] as? String, "next-resume")
+    }
+
     func testShouldGenerateAStableDeviceIdOnce() {
         let store = InMemoryStore()
         let state = StateStore(store: store)
@@ -37,7 +61,7 @@ final class StoreTests: XCTestCase {
     func testShouldDropTheCacheWhenAValueDoesNotParse() {
         let store = InMemoryStore()
         let state = StateStore(store: store)
-        state.nextRelease = Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false)
+        state.nextRelease = NextRelease(release: Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false), applyAt: .nextStart)
         store.set("not json", forKey: "hotcodepush.currentRelease")
         XCTAssertNil(state.currentRelease)
         XCTAssertNil(state.nextRelease)
