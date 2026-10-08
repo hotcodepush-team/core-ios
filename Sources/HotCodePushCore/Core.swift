@@ -87,7 +87,8 @@ public actor Core {
     /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
     /// has not come up after and the gate. Answers the bundle the host serves, `nil` for the embedded one, without awaiting the
     /// network: the start's check and the cleanup run after it returns, so a host waiting on the start never waits on them.
-    /// A headless start, one the host knows no screen will render for, neither applies a waiting release nor arms the gate.
+    /// A headless start, one the host knows no screen will render for, neither applies a waiting release nor arms the gate, and
+    /// loads nothing: the host serves its answer, and a bundle persisted for the next start stays the one the next start finds.
     @discardableResult
     public func handleAppStart(isHeadless: Bool = false) -> String? {
         if state.pendingRollbackEvent == nil {
@@ -100,10 +101,12 @@ public actor Core {
             rollbackCurrentRelease(reason: .appCrashed, detail: nil)
         }
         discardNextReleaseThatLeftTheIndex()
-        if !isHeadless, let next = state.nextRelease, shouldSwitchAtStart(to: next) {
-            switchToNextRelease()
+        if !isHeadless {
+            if let next = state.nextRelease, shouldSwitchAtStart(to: next) {
+                switchToNextRelease()
+            }
+            loadBundle()
         }
-        loadBundle()
         if !hasAnnouncedRollback {
             announceRollback()
         }

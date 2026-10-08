@@ -134,7 +134,9 @@ final class FakeLoader: BundleLoader {
         persisted = .some(bundleId)
     }
 
+    /// Every host also records what it loads as the bundle for the next start.
     func loadServedBundle(bundleId: String?) {
+        persistServedBundle(bundleId: bundleId)
         $loaded.mutate { $0.append(bundleId) }
         served = bundleId
     }

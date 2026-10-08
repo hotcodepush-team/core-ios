@@ -150,6 +150,31 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [10])
     }
 
+    func testShouldKeepAHeldInstallForTheNextStartAcrossAHeadlessStart() async throws {
+        let configuration = Fixture.configuration(installStrategy: .immediate)
+        let harness = Harness(configuration: configuration)
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        await harness.core.setRestartAllowed(false)
+        _ = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(harness.loader.persisted, .some("b2"))
+        harness.loader.served = harness.loader.persisted ?? nil
+        harness.restart(configuration: configuration)
+        let headless = await harness.core.handleAppStart(isHeadless: true)
+        XCTAssertNil(headless)
+        XCTAssertEqual(harness.loader.persisted, .some("b2"))
+        XCTAssertEqual(harness.loader.loaded, [])
+        harness.loader.served = harness.loader.persisted ?? nil
+        harness.restart(configuration: configuration)
+        let started = await harness.core.handleAppStart()
+        XCTAssertEqual(started, "b2")
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease?.id, "r1")
+        XCTAssertNil(status.nextRelease)
+    }
+
     func testShouldStillRollBackACrashAtAHeadlessStart() async throws {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
