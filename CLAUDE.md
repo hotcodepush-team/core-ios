@@ -12,7 +12,7 @@ When code and plan disagree, stop and surface it; never improvise.
 ## Layout
 
 ```
-Sources/HotCodePushCore            the package: no framework import, UIKit in DebugScreen.swift alone and behind canImport; HotCodePushCorePrivacy.bundle holds the privacy manifest, which SPM copies as a resource and the pod ships whole through `s.resources`, no generated target
+Sources/HotCodePushCore            the package: no framework import, UIKit in DebugScreen.swift and Platform.swift alone and behind canImport; HotCodePushCorePrivacy.bundle holds the privacy manifest, which SPM copies as a resource and the pod ships whole through `s.resources`, no generated target
 Sources/HotCodePushBspatch         the C target linking libbz2: bspatch.c and its header, byte for byte core-android's, which a CI step compares
 Tests/HotCodePushCoreTests         XCTest on the host; FixtureTests reads node_modules/@hotcodepush/protocol/fixtures after npm ci
 Tests/BspatchFixtures              what BspatchTests reads: the committed inputs old.bin, new.bin and valid.patch, the patch written once by bsdiff 4.3, and the hostile patches make-patches.sh writes with bash, xxd and bzip2
@@ -47,9 +47,10 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - A rollback's `rolledBack` event is stored and announced at every start until the app is up in a run that received it, so the JavaScript that listens only after its start never misses it; `clearUpdates()` and a new binary drop the stored notice with the rest.
 - A batch the events endpoint refuses with a 4xx other than 408 and 429 is dropped, its events gone and the report left unacknowledged for the next one; a 202 takes both, and anything else keeps both for the next sync.
 - Safety is on by default and cannot be switched off: the readiness gate, the local blocklist, the automatic rollback.
+- A readiness signal reported before the core's latest load of a bundle, the start's own load after its timeout included, belongs to the replaced bundle and counts for nothing.
 - The start answers the bundle to serve without awaiting the network, `handleAppStart`; a host in synchronous code asks `handleAppStartBlocking` and waits at most two seconds, then serves the embedded bundle and is reloaded into the right one once the start runs; the cleanup runs after the start, never on its path, and anything the start cannot read answers the embedded bundle.
-- A headless start, `isHeadless: true` from a host that will render no screen, still drops a stale store, rolls back a crash and checks, but applies no waiting release and arms no gate.
-- The readiness timer runs in the foreground alone: the background stops it, the resume starts its full window again.
+- A headless start, `isHeadless: true` from a host that will render no screen, still drops a stale store, rolls back a crash and checks, but applies no waiting release, arms no gate and loads nothing: the host serves the start's answer and every persisted marker stays as it was.
+- The readiness timer runs in the foreground alone: the background stops it, the resume starts its full window again, and a launch into the background starts it paused.
 - A reload the SDK did not perform is reported with `handleAppReload()`: it applies a held or next-start install, gates an unconfirmed release and makes restarts wait for the app again, and is never a crash.
 - A channel id is a UUID: `setChannel`, `sync`, `checkForUpdate()` and `downloadUpdate()` refuse any other with the plain error before fetching; the index's app, channel and platform and the manifest's app and platforms must be the device's, else `INDEX_INVALID` or `MANIFEST_INVALID`.
 - A call joins a running cycle of its own stage and waits for one of another; a download that adopts the running bundle answers `UP_TO_DATE`; a held restart re-checks the cached index before applying.
