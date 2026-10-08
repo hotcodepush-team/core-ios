@@ -2,7 +2,8 @@ import Foundation
 
 /// The state machine every framework shares: three named releases, a readiness gate and one cycle of three stages.
 public actor Core {
-    /// How far a cycle goes: the check alone, the download whatever the strategy says, or the whole sync.
+    /// Which call runs the cycle: the check keeps the download gate closed, the download keeps it open, the sync follows the
+    /// strategy. A call joins a running cycle of its own stage only, so each answers a status of its own result type.
     enum Stage {
         case check, download, sync
     }
@@ -280,16 +281,18 @@ public actor Core {
         return await runCycle(trigger: trigger, stage: .sync, options: options)
     }
 
-    /// The first stage: fetch and evaluate, download nothing.
+    /// `sync()` with the download gate closed: fetch and evaluate, and download, apply and adopt nothing, so a release downloaded
+    /// already answers `AVAILABLE`; never `DOWNLOADED` or `APPLIED`.
     public func checkForUpdate() async throws -> SyncResult {
         try verifyChannelId()
         return await runCycle(trigger: .manual, stage: .check, options: SyncOptions())
     }
 
-    /// The second stage: download and verify the update the check finds, whatever `downloadStrategy` says, then apply per the strategies.
-    public func downloadUpdate() async throws -> SyncResult {
+    /// `sync()` with the download gate open: re-check the index, a conditional GET, so nothing is downloaded from stale state, then
+    /// download and verify whatever `downloadStrategy` says and apply per the apply strategies; never `AVAILABLE`.
+    public func downloadUpdate(options: DownloadUpdateOptions = DownloadUpdateOptions()) async throws -> SyncResult {
         try verifyChannelId()
-        return await runCycle(trigger: .manual, stage: .download, options: SyncOptions())
+        return await runCycle(trigger: .manual, stage: .download, options: SyncOptions(applyStrategy: options.applyStrategy, mandatoryApplyStrategy: options.mandatoryApplyStrategy))
     }
 
     /// One cycle at a time: a call joins the running cycle of its own stage, and waits for one of another stage before it starts its own.
@@ -322,9 +325,7 @@ public actor Core {
 
     private func performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let result = await resolveCycle(trigger: trigger, stage: stage, options: options)
-        if stage != .download {
-            state.lastCheck = LastCheck(at: clock.now, trigger: trigger, result: result)
-        }
+        state.lastCheck = LastCheck(at: clock.now, trigger: trigger, result: result)
         if stage == .sync {
             state.lastSyncAt = clock.now
             scheduleIntervalSync(after: configuration.checkIntervalSeconds)
@@ -402,20 +403,23 @@ public actor Core {
         }
         let strategy = requestedStrategy ?? resolveConfiguredApplyStrategy(isMandatory: isMandatory)
         listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadSizeBytes: target.sizeBytes, trigger: trigger))
-        switch stage {
-        case .check:
+        switch resolveDownloadStrategy(stage: stage, options: options) {
+        case .manual:
             return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
-        case .sync:
-            switch options.downloadStrategy ?? configuration.downloadStrategy {
-            case .manual:
-                return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
-            case .unmetered where loader.isConnectionMetered():
-                return .skipped(release, reason: .connectionMetered)
-            case .auto, .unmetered:
-                return await downloadAndApply(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
-            }
-        case .download:
+        case .unmetered where loader.isConnectionMetered():
+            return .skipped(release, reason: .connectionMetered)
+        case .auto, .unmetered:
             return await downloadAndApply(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
+        }
+    }
+
+    /// The download gate of the cycle: pinned shut by the check and open by the download, the call's own strategy, else the
+    /// configuration's, for a sync.
+    private func resolveDownloadStrategy(stage: Stage, options: SyncOptions) -> DownloadStrategy {
+        switch stage {
+        case .check: return .manual
+        case .download: return .auto
+        case .sync: return options.downloadStrategy ?? configuration.downloadStrategy
         }
     }
 

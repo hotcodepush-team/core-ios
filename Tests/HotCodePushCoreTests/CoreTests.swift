@@ -1356,7 +1356,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.loader.loaded, [])
         let state = await harness.core.getState()
         XCTAssertEqual(state.nextRelease, v2.release.release)
-        XCTAssertEqual(state.lastCheck?.result.status, .available)
+        XCTAssertEqual(state.lastCheck?.result.status, .downloaded)
         let applied = await harness.core.applyUpdate()
         XCTAssertEqual(applied, ApplyResult(status: .applied, release: v2.release.release))
         XCTAssertEqual(harness.loader.loaded, ["b2"])
@@ -1377,6 +1377,45 @@ final class CoreTests: XCTestCase {
         let state = await harness.core.getState()
         XCTAssertEqual(state.currentRelease, v2.release.release)
         XCTAssertNil(state.nextRelease)
+    }
+
+    func testShouldRecheckTheIndexAndDownloadNothingWhenTheReleaseACheckFoundLeftItBeforeTheDownload() async throws {
+        let harness = Harness(configuration: Fixture.configuration(downloadStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1, etag: "\"e1\"")
+        await harness.core.handleAppStart()
+        let checked = try await harness.core.checkForUpdate()
+        XCTAssertEqual(checked.status, .available)
+        harness.publish([], sequence: 2, revoked: ["r1"], etag: "\"e2\"")
+        let downloaded = try await harness.core.downloadUpdate()
+        XCTAssertEqual(downloaded, .upToDate(nil))
+        let indexRequest = try XCTUnwrap(harness.http.requests.last { $0.url.absoluteString == Fixture.indexUrl() })
+        XCTAssertEqual(indexRequest.headers["If-None-Match"], "\"e1\"")
+        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == v2.envelope.pack.url })
+        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
+    }
+
+    func testShouldApplyADownloadOnCallPerTheStrategyTheCallNames() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextStart, downloadStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        let downloaded = try await harness.core.downloadUpdate(options: DownloadUpdateOptions(applyStrategy: .immediate))
+        XCTAssertEqual(downloaded, .applied(v2.release.release, notes: "notes 1"))
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+    }
+
+    func testShouldApplyAMandatoryDownloadOnCallPerTheMandatoryStrategyTheCallNames() async throws {
+        let harness = Harness(configuration: Fixture.configuration(mandatoryApplyStrategy: .immediate, downloadStrategy: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), isMandatory: true)
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        let downloaded = try await harness.core.downloadUpdate(options: DownloadUpdateOptions(applyStrategy: .immediate, mandatoryApplyStrategy: .manual))
+        XCTAssertEqual(downloaded.status, .downloaded)
+        XCTAssertEqual(downloaded.applyAt, .manual)
+        XCTAssertEqual(harness.loader.loaded, [])
     }
 
     func testShouldDownloadOnCallWhateverTheConnectionUnderTheUnmeteredStrategy() async throws {

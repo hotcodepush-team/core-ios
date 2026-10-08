@@ -126,6 +126,17 @@ public struct SyncOptions: Equatable {
     }
 }
 
+/// The apply strategies for one `downloadUpdate()` call, overriding the configuration; the download strategy is pinned to `auto`.
+public struct DownloadUpdateOptions: Equatable {
+    public var applyStrategy: ApplyStrategy?
+    public var mandatoryApplyStrategy: MandatoryApplyStrategy?
+
+    public init(applyStrategy: ApplyStrategy? = nil, mandatoryApplyStrategy: MandatoryApplyStrategy? = nil) {
+        self.applyStrategy = applyStrategy
+        self.mandatoryApplyStrategy = mandatoryApplyStrategy
+    }
+}
+
 private extension KeyedDecodingContainer {
     /// A duration in seconds, the default when the file leaves it out; one below its floor refuses the file, never clamped.
     func decodeSeconds(forKey key: Key, minimum: Double, default defaultSeconds: Double) throws -> Double {
