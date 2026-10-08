@@ -150,6 +150,49 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [10])
     }
 
+    func testShouldConfirmTheReleaseAtTheRenderOfTheReloadedBundleNotOfTheEmbeddedOneWhenTheStartAnsweredTooLate() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.restart()
+        let core = harness.core
+        let release = DispatchSemaphore(value: 0)
+        harness.loader.whileReadingServedBundle = { _ = release.wait(timeout: .now() + 5) }
+        let answer = await Task.detached { core.handleAppStartBlocking(timeout: 0.1) }.value
+        XCTAssertNil(answer)
+        let bundleLoadCountAtEmbeddedRender = core.bundleLoadCount.value
+        release.signal()
+        await core.handleRendered(bundleLoadCountAtSignal: bundleLoadCountAtEmbeddedRender)
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        let embeddedRendered = await core.getState()
+        XCTAssertNil(embeddedRendered.fallbackRelease)
+        await core.handleRendered()
+        let reloadedRendered = await core.getState()
+        XCTAssertEqual(reloadedRendered.fallbackRelease, v2.release.release)
+    }
+
+    func testShouldConfirmNothingAtANotifyReadyOfTheEmbeddedBundleWhenTheStartAnsweredTooLate() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.restart()
+        let core = harness.core
+        let release = DispatchSemaphore(value: 0)
+        harness.loader.whileReadingServedBundle = { _ = release.wait(timeout: .now() + 5) }
+        let answer = await Task.detached { core.handleAppStartBlocking(timeout: 0.1) }.value
+        XCTAssertNil(answer)
+        let bundleLoadCountAtEmbeddedReady = core.bundleLoadCount.value
+        release.signal()
+        let ready = await core.notifyReady(bundleLoadCountAtSignal: bundleLoadCountAtEmbeddedReady)
+        XCTAssertEqual(ready, NotifyReadyResult(currentRelease: v2.release.release, previousRelease: nil, isRolledBack: false, rollbackReason: nil))
+        let status = await core.getState()
+        XCTAssertNil(status.fallbackRelease)
+    }
+
     func testShouldKeepAHeldInstallForTheNextStartAcrossAHeadlessStart() async throws {
         let configuration = Fixture.configuration(installStrategy: .immediate)
         let harness = Harness(configuration: configuration)

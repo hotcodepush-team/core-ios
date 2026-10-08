@@ -49,6 +49,9 @@ public actor Core {
     private var queuedRestart: QueuedRestart?
     /// The app is up in this run: its first render, `notifyReady()` or the readiness timeout settles the start, and every reload the core performs unsettles it.
     private var hasStartSettled = false
+    /// The times the core pointed the host at a bundle in this process, read where a readiness signal is reported: one reported
+    /// before the latest load is the replaced bundle's.
+    nonisolated let bundleLoadCount = BundleLoadCount()
     private var isStartSyncPending = false
     private var isSendingDeviceEvents = false
     /// The events enqueued while a batch is on its way: never part of it, so they stay in the outbox whatever the answer.
@@ -181,8 +184,15 @@ public actor Core {
         return resolveInstallStrategy(isMandatory: next.isMandatory, options: SyncOptions()) == .nextResume
     }
 
-    /// The first render of the run, the readiness signal when `readySignal` is `render`, settles the start whatever it is.
-    public func handleRendered() {
+    /// The first render of the run, the readiness signal when `readySignal` is `render`, settles the start whatever it is. A render
+    /// reported before the core last pointed the host at a bundle is the replaced bundle's, the embedded one a host ran past the
+    /// start's bound among them, and confirms and settles nothing.
+    public nonisolated func handleRendered() async {
+        await handleRendered(bundleLoadCountAtSignal: bundleLoadCount.value)
+    }
+
+    func handleRendered(bundleLoadCountAtSignal: Int) {
+        guard !hasLoadedBundle(since: bundleLoadCountAtSignal) else { return }
         if configuration.readySignal == .render {
             confirmCurrentRelease()
         }
@@ -190,8 +200,16 @@ public actor Core {
     }
 
     /// Ends the gate when `readySignal` is `manual`, settles the start, and tells the app whether this start follows a rollback or a
-    /// switch, `previousRelease` the release that ran before it; each is told once.
-    public func notifyReady() -> NotifyReadyResult {
+    /// switch, `previousRelease` the release that ran before it; each is told once. A call reported before the core last pointed the
+    /// host at a bundle is the replaced bundle's: it confirms, settles and tells nothing, and answers the release that runs.
+    public nonisolated func notifyReady() async -> NotifyReadyResult {
+        await notifyReady(bundleLoadCountAtSignal: bundleLoadCount.value)
+    }
+
+    func notifyReady(bundleLoadCountAtSignal: Int) -> NotifyReadyResult {
+        guard !hasLoadedBundle(since: bundleLoadCountAtSignal) else {
+            return NotifyReadyResult(currentRelease: state.currentRelease, previousRelease: nil, isRolledBack: false, rollbackReason: nil)
+        }
         confirmCurrentRelease()
         let rollback = state.lastRollback
         state.lastRollback = nil
@@ -613,14 +631,24 @@ public actor Core {
     private func loadBundle() {
         let expected = state.currentRelease?.bundleId
         guard loader.servedBundleId() != expected else { return }
-        loader.loadServedBundle(bundleId: expected)
+        loadServedBundle(bundleId: expected)
         unsettleStart()
     }
 
     /// The restart of the web layer: the bundle loads, then the reloaded app goes through the gate.
     private func reloadApp() {
-        loader.loadServedBundle(bundleId: state.currentRelease?.bundleId)
+        loadServedBundle(bundleId: state.currentRelease?.bundleId)
         gateReloadedApp()
+    }
+
+    /// Every load the core asks of the host: a readiness signal reported before it is the replaced bundle's and counts for nothing.
+    private func loadServedBundle(bundleId: String?) {
+        loader.loadServedBundle(bundleId: bundleId)
+        bundleLoadCount.increment()
+    }
+
+    private func hasLoadedBundle(since bundleLoadCountAtSignal: Int) -> Bool {
+        return bundleLoadCount.value != bundleLoadCountAtSignal
     }
 
     /// The reloaded app has to come up again: a rollback it has not come up after is announced, then the gate runs.
@@ -987,6 +1015,24 @@ public actor Core {
 
     private func resolveMonth(of date: Date) -> String {
         return String(Iso8601.format(date).prefix(7))
+    }
+}
+
+/// A count the core raises on its actor and a readiness signal reads where it is reported, before it waits for the actor.
+final class BundleLoadCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
     }
 }
 
