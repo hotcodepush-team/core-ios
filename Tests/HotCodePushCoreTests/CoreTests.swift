@@ -1358,10 +1358,10 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(state.nextRelease, v2.release.release)
         XCTAssertEqual(state.lastCheck?.result.status, .downloaded)
         let applied = await harness.core.applyUpdate()
-        XCTAssertEqual(applied, ApplyResult(status: .applied, release: v2.release.release))
+        XCTAssertEqual(applied, ApplyUpdateResult(status: .applied, release: v2.release.release))
         XCTAssertEqual(harness.loader.loaded, ["b2"])
         let nothing = await harness.core.applyUpdate()
-        XCTAssertEqual(nothing, ApplyResult(status: .nothingToApply, release: v2.release.release))
+        XCTAssertEqual(nothing, ApplyUpdateResult(status: .nothingToApply, release: v2.release.release))
     }
 
     func testShouldAnswerAppliedAndReloadWhenADownloadOnCallIsAppliedImmediately() async throws {
@@ -1715,7 +1715,7 @@ final class CoreTests: XCTestCase {
         harness.publish([], sequence: 2, etag: "\"e2\"")
         _ = try await harness.core.sync(trigger: .manual)
         let result = await harness.core.applyUpdate()
-        XCTAssertEqual(result, ApplyResult(status: .nothingToApply, release: nil))
+        XCTAssertEqual(result, ApplyUpdateResult(status: .nothingToApply, release: nil))
         XCTAssertEqual(harness.loader.loaded, [])
         let status = await harness.core.getState()
         XCTAssertNil(status.nextRelease)
@@ -1820,7 +1820,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         _ = try await harness.core.sync(trigger: .manual)
         let applied = await harness.core.applyUpdate()
-        XCTAssertEqual(applied, ApplyResult(status: .applied, release: v2.release.release))
+        XCTAssertEqual(applied, ApplyUpdateResult(status: .applied, release: v2.release.release))
         XCTAssertEqual(harness.loader.loaded, [])
         let held = await harness.core.getState()
         XCTAssertNil(held.currentRelease)

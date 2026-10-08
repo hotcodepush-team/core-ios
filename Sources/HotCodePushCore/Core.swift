@@ -314,13 +314,13 @@ public actor Core {
     }
 
     /// The third stage: apply the downloaded update and reload the app, now or, before the app is up in this run, once it is.
-    public func applyUpdate() -> ApplyResult {
+    public func applyUpdate() -> ApplyUpdateResult {
         discardNextReleaseThatLeftTheIndex()
         guard let next = state.nextRelease else {
-            return ApplyResult(status: .nothingToApply, release: state.currentRelease)
+            return ApplyUpdateResult(status: .nothingToApply, release: state.currentRelease)
         }
         restartThroughGate(isAskedByApp: true) { [self] in applyNextRelease() }
-        return ApplyResult(status: .applied, release: next.release)
+        return ApplyUpdateResult(status: .applied, release: next.release)
     }
 
     private func performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {

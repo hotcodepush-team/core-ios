@@ -128,7 +128,7 @@ public enum ApplyStatus: String, Codable {
 }
 
 /// What `applyUpdate()` answers: the update is the current release and the reload follows, or nothing waits.
-public struct ApplyResult: Codable, Equatable {
+public struct ApplyUpdateResult: Codable, Equatable {
     public let status: ApplyStatus
     public let release: Release?
 

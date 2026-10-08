@@ -118,7 +118,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         let harness = harnessWithoutEmbeddedBundle()
         await harness.core.handleAppStart()
         let applied = await harness.core.applyUpdate()
-        XCTAssertEqual(applied, ApplyResult(status: .nothingToApply, release: nil))
+        XCTAssertEqual(applied, ApplyUpdateResult(status: .nothingToApply, release: nil))
         let ready = await harness.core.notifyReady()
         XCTAssertEqual(ready, NotifyReadyResult(currentRelease: nil, previousRelease: nil, isRolledBack: false, rollbackReason: nil))
         try await harness.core.rollbackUpdate(detail: nil)

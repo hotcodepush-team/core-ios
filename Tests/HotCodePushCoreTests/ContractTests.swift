@@ -40,8 +40,8 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(try keys(SyncResult.skipped(release, reason: .deviceIncompatible, condition: .os)).keys, ["status", "release", "reason", "condition"])
         XCTAssertEqual(try keys(SyncResult.failed(nil, reason: .deviceOffline, message: "m")).keys, ["status", "release", "reason", "message"])
         XCTAssertEqual(try keys(NotifyReadyResult(currentRelease: nil, previousRelease: nil, isRolledBack: false, rollbackReason: nil)).keys, ["currentRelease", "previousRelease", "isRolledBack"])
-        XCTAssertEqual(try keys(ApplyResult(status: .nothingToApply, release: nil)).keys, ["status", "release"])
-        XCTAssertTrue(try keys(ApplyResult(status: .nothingToApply, release: nil)).object["release"] is NSNull)
+        XCTAssertEqual(try keys(ApplyUpdateResult(status: .nothingToApply, release: nil)).keys, ["status", "release"])
+        XCTAssertTrue(try keys(ApplyUpdateResult(status: .nothingToApply, release: nil)).object["release"] is NSNull)
         XCTAssertEqual(try keys(UpdateAvailableEvent(release: release, notes: nil, downloadSizeBytes: nil, trigger: .manual)).keys, ["release", "notes", "downloadSizeBytes", "trigger"])
         XCTAssertEqual(try keys(UpdateFailedEvent(release: nil, reason: .deviceOffline, message: "m", trigger: .start)).keys, ["release", "reason", "message", "trigger"])
     }
