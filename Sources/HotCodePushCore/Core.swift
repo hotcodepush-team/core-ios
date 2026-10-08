@@ -593,8 +593,11 @@ public actor Core {
         return [state.currentRelease, state.nextRelease].compactMap { $0 }.contains { files.readManifest(bundleId: $0.bundleId) == nil }
     }
 
-    /// A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded bundle runs.
+    /// A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded
+    /// bundle runs. The kept index and its ETag go with them, so the first check fetches unconditionally and takes whatever sequence
+    /// it finds: a store update heals a device a far-future sequence froze.
     private func dropStoredReleases() {
+        state.cachedIndex = nil
         state.currentRelease = nil
         state.nextRelease = nil
         state.fallbackRelease = nil

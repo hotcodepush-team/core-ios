@@ -505,6 +505,21 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.index?.sequence, 4)
     }
 
+    func testShouldTakeTheFetchedIndexWhenTheBinaryChangedUnderAFarFutureSequence() async throws {
+        let harness = Harness()
+        harness.publish([], sequence: 9_999_999_999_999, etag: "\"e9\"")
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.publish([], sequence: 1_759_900_000_000, etag: "\"e1\"")
+        let requestCountBeforeRestart = harness.http.requests.count
+        harness.restart(configuration: Fixture.configuration(builtAt: Fixture.builtAt.addingTimeInterval(86_400)))
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.index?.sequence, 1_759_900_000_000)
+        XCTAssertNil(harness.http.requests[requestCountBeforeRestart].headers["If-None-Match"])
+    }
+
     func testShouldFailOfflineWithoutACachedIndex() async throws {
         let harness = Harness()
         harness.http.isOffline = true
