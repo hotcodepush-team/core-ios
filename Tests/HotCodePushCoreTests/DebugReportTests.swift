@@ -30,7 +30,7 @@ final class DebugReportTests: XCTestCase {
         XCTAssertTrue(auto.contains("Check strategy: auto, every 900 s"), auto)
     }
 
-    func testShouldLogTheDownloadTheInstallAndTheReportOfASync() async throws {
+    func testShouldLogTheDownloadTheApplyAndTheReportOfASync() async throws {
         let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         harness.acknowledgeEvents()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))

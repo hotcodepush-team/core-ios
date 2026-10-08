@@ -160,7 +160,7 @@ public actor Core {
     }
 
     /// A reload the core did not perform — a JavaScript restart, a development reload — runs through the gate like any start: an
-    /// install held or waiting for the next start takes effect, the reloaded app has to come up again before a restart runs, and a
+    /// apply held or waiting for the next start takes effect, the reloaded app has to come up again before a restart runs, and a
     /// release not yet confirmed is gated, its full window again. Unlike a start it takes no unconfirmed release for a crash.
     /// Answers the bundle the host serves, `nil` for the embedded one.
     @discardableResult
@@ -181,9 +181,9 @@ public actor Core {
         return configuration.applyStrategy == .nextStart
     }
 
-    /// A release installs on resume when its strategy is `next-resume`: a mandatory one follows `mandatoryApplyStrategy`, which has
-    /// no `next-resume`, so one the app took over is never installed behind its back.
-    private func shouldInstallOnResume(_ next: Release) -> Bool {
+    /// A release applies on resume when its strategy is `next-resume`: a mandatory one follows `mandatoryApplyStrategy`, which has
+    /// no `next-resume`, so one the app took over is never applied behind its back.
+    private func shouldApplyOnResume(_ next: Release) -> Bool {
         return resolveApplyStrategy(isMandatory: next.isMandatory, options: SyncOptions()) == .nextResume
     }
 
@@ -232,15 +232,15 @@ public actor Core {
         pauseReadyTimer()
     }
 
-    /// A resume starts a paused readiness window again, installs a `next-resume` release after enough time in the background, else
+    /// A resume starts a paused readiness window again, applies a `next-resume` release after enough time in the background, else
     /// checks when the interval has passed.
     public func handleAppResume() {
         let backgroundDuration = backgroundedAt.map { clock.now.timeIntervalSince($0) }
         backgroundedAt = nil
         resumeReadyTimer()
         discardNextReleaseThatLeftTheIndex()
-        if let duration = backgroundDuration, let next = state.nextRelease, shouldInstallOnResume(next), duration >= configuration.applyOnResumeAfterSeconds {
-            installNextRelease()
+        if let duration = backgroundDuration, let next = state.nextRelease, shouldApplyOnResume(next), duration >= configuration.applyOnResumeAfterSeconds {
+            restartIntoNextRelease()
             return
         }
         guard configuration.checkStrategy == .auto else { return }
@@ -378,7 +378,7 @@ public actor Core {
                 revertToEmbedded()
                 return .skipped(nil, reason: .releaseRevoked)
             }
-            let outcome = await install(target, isMandatory: true, strategy: .immediate, trigger: trigger)
+            let outcome = await downloadAndApply(target, isMandatory: true, strategy: .immediate, trigger: trigger)
             return outcome.status == .failed ? outcome : .skipped(target.release, reason: .releaseRevoked)
         case .skipped(let release, let reason, let condition):
             if let release = release {
@@ -414,10 +414,10 @@ public actor Core {
             case .unmetered where loader.isConnectionMetered():
                 return .skipped(release, reason: .connectionMetered)
             case .auto, .unmetered:
-                return await install(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
+                return await downloadAndApply(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
             }
         case .download:
-            return await install(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
+            return await downloadAndApply(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
         }
     }
 
@@ -442,7 +442,7 @@ public actor Core {
         return files.isComplete(manifest, embedded: embedded)
     }
 
-    private func install(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger) async -> SyncResult {
+    private func downloadAndApply(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         do {
             let baseBundleId = state.currentRelease?.bundleId ?? configuration.embeddedBundleId
@@ -470,7 +470,7 @@ public actor Core {
         setNextRelease(release)
         switch strategy {
         case .immediate:
-            installNextRelease()
+            restartIntoNextRelease()
             return .applied(release, notes: notes)
         case .nextStart:
             loader.persistServedBundle(bundleId: release.bundleId)
@@ -612,7 +612,7 @@ public actor Core {
         state.nextRelease = release
     }
 
-    /// A downloaded release that has left the cached index since — revoked, or gone from it — is never installed: it is dropped and the served bundle stays the running one.
+    /// A downloaded release that has left the cached index since — revoked, or gone from it — is never applied: it is dropped and the served bundle stays the running one.
     private func discardNextReleaseThatLeftTheIndex() {
         guard let next = state.nextRelease, let index = state.cachedIndex?.body, hasLeftIndex(next, index) else { return }
         state.nextRelease = nil
@@ -672,8 +672,8 @@ public actor Core {
         queuedRestart = nil
     }
 
-    /// The install the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does.
-    private func installNextRelease() {
+    /// The apply the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does.
+    private func restartIntoNextRelease() {
         if let next = state.nextRelease {
             loader.persistServedBundle(bundleId: next.bundleId)
         }

@@ -1,7 +1,7 @@
 import XCTest
 @testable import HotCodePushCore
 
-/// The protocol's fixture suite, read from the installed `@hotcodepush/protocol` package: the same cases every core runs.
+/// The protocol's fixture suite, read from the `@hotcodepush/protocol` package in `node_modules`: the same cases every core runs.
 final class FixtureTests: XCTestCase {
     private static let fixturesDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

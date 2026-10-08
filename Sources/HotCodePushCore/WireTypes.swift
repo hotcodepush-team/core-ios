@@ -431,7 +431,7 @@ public struct BundleManifest: Codable, Equatable {
     }
 
     /// Whether the manifest names the device's app and lists its platform, signed or not: neither an index pointing at another
-    /// app's bundle nor a cache serving one installs it.
+    /// app's bundle nor a cache serving one puts it on the device.
     public func isForDevice(appId: String, platform: String) -> Bool {
         return self.appId == appId && platforms.contains(platform)
     }
