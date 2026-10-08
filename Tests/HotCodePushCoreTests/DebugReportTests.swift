@@ -5,7 +5,7 @@ final class DebugReportTests: XCTestCase {
     func testShouldCarryTheLastChecksCodeInTheShareText() async throws {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8), conditions: [.binary(range: ">=9.0.0")])
-        harness.publish([v2], sequence: 7)
+        harness.publish([v2], sequence: 1_759_900_000_000)
         await harness.core.handleAppStart()
         _ = try await harness.core.sync(trigger: .manual)
         let snapshot = await harness.core.debugSnapshot()
@@ -13,7 +13,7 @@ final class DebugReportTests: XCTestCase {
         let device = await harness.core.deviceResult()
         XCTAssertTrue(text.contains("Device id: \(device.id)"), text)
         XCTAssertTrue(text.contains("Result: SKIPPED DEVICE_INCOMPATIBLE binary"), text)
-        XCTAssertTrue(text.contains("Sequence: 7"), text)
+        XCTAssertTrue(text.contains("Sequence: 1759900000000"), text)
         XCTAssertTrue(text.contains("Running: the embedded bundle"), text)
         XCTAssertTrue(text.contains("SKIPPED DEVICE_INCOMPATIBLE binary — manual: release #1 (1.1.0) is not taken"), text)
         XCTAssertEqual(DebugReport.sections(of: snapshot).map { $0.title }, ["Device", "Channel", "Releases", "Last check", "Index", "Configuration", "Log"])

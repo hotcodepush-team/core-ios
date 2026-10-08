@@ -6,6 +6,8 @@ public struct ChannelIndex: Codable, Equatable {
     public static let platforms = ["android", "ios"]
 
     public let schema: Int
+    /// What the never-backwards rule compares, the rebuild's time in milliseconds: past 32 bits, so it relies on `Int` being 64 bits,
+    /// as it is on every platform the package builds for.
     public let sequence: Int
     public let appId: String
     public let channelId: String

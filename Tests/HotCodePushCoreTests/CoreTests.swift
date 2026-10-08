@@ -520,6 +520,22 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(harness.http.requests[requestCountBeforeRestart].headers["If-None-Match"])
     }
 
+    func testShouldKeepAMillisecondSequenceThroughTheStoreAndCompareIt() async throws {
+        let harness = Harness()
+        harness.publish([], sequence: 1_759_900_000_000)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.restart()
+        let restored = await harness.core.getState()
+        XCTAssertEqual(restored.index?.sequence, 1_759_900_000_000)
+        harness.publish([], sequence: 1_759_900_000_001, etag: "\"e2\"")
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.publish([], sequence: 1_759_900_000_000, etag: "\"e1\"")
+        _ = try await harness.core.sync(trigger: .manual)
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.index?.sequence, 1_759_900_000_001)
+    }
+
     func testShouldFailOfflineWithoutACachedIndex() async throws {
         let harness = Harness()
         harness.http.isOffline = true
