@@ -96,6 +96,8 @@ public actor Core {
     /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
     /// has not come up after and the gate. Answers the bundle the host serves, `nil` for the embedded one, without awaiting the
     /// network: the start's check and the cleanup run after it returns, so a host waiting on the start never waits on them.
+    /// A reload the core did not perform serves the running bundle and is not interpreted: a `next-start` release applies at the
+    /// next start or through the core's own apply.
     /// A headless start, one the host knows no screen will render for, neither applies a waiting release nor arms the gate, and
     /// loads nothing: the host serves its answer, and a bundle persisted for the next start stays the one the next start finds.
     /// The application's state is read on the main thread first: an app the system launched into the background is in the
@@ -158,21 +160,6 @@ public actor Core {
             }
         }
         return answer.wait(timeout: timeout) ?? nil
-    }
-
-    /// A reload the core did not perform — a JavaScript restart, a development reload — runs through the gate like any start: an
-    /// apply held or waiting for the next start takes effect, the reloaded app has to come up again before a restart runs, and a
-    /// release not yet confirmed is gated, its full window again. Unlike a start it takes no unconfirmed release for a crash.
-    /// Answers the bundle the host serves, `nil` for the embedded one.
-    @discardableResult
-    public func handleAppReload() -> String? {
-        discardNextReleaseThatLeftTheIndex()
-        if let next = state.nextRelease, shouldSwitchAtStart(to: next) {
-            switchToNextRelease()
-        }
-        loadBundle()
-        gateReloadedApp()
-        return state.currentRelease?.bundleId
     }
 
     /// The moment the release carries decides: `next-start` switches, and so does an `immediate` apply this run never got to, a

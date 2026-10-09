@@ -235,7 +235,7 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(harness.scheduler.tasks.isEmpty)
     }
 
-    func testShouldRunAHeldApplyAndGateItWhenTheHostReloadsOnItsOwn() async throws {
+    func testShouldRunAHeldApplyAtTheNextStartAndGateIt() async throws {
         let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
@@ -245,8 +245,9 @@ final class CoreTests: XCTestCase {
         _ = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(harness.loader.loaded, [])
         harness.loader.served = "b2"
-        let reloaded = await harness.core.handleAppReload()
-        XCTAssertEqual(reloaded, "b2")
+        harness.restart()
+        let started = await harness.core.handleAppStart()
+        XCTAssertEqual(started, "b2")
         let status = await harness.core.getState()
         XCTAssertEqual(status.currentRelease?.id, "r1")
         XCTAssertNil(status.nextRelease)
@@ -256,23 +257,6 @@ final class CoreTests: XCTestCase {
         let timedOut = await harness.core.getState()
         XCTAssertNil(timedOut.currentRelease)
         XCTAssertEqual(StateStore(store: harness.store).failedBundleIds, ["b2"])
-    }
-
-    func testShouldTakeNoUnconfirmedReleaseForACrashWhenTheHostReloadsOnItsOwn() async throws {
-        let harness = Harness()
-        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
-        harness.publish([v2], sequence: 1)
-        await harness.core.handleAppStart()
-        _ = try await harness.core.sync(trigger: .manual)
-        harness.loader.served = "b2"
-        harness.restart()
-        await harness.core.handleAppStart()
-        let reloaded = await harness.core.handleAppReload()
-        XCTAssertEqual(reloaded, "b2")
-        XCTAssertTrue(StateStore(store: harness.store).failedBundleIds.isEmpty)
-        await harness.core.handleRendered()
-        let status = await harness.core.getState()
-        XCTAssertEqual(status.fallbackRelease?.id, "r1")
     }
 
     func testShouldDropAHeldApplyWhoseReleaseWasRevokedWhileItWaited() async throws {
