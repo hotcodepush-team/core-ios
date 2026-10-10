@@ -23,13 +23,13 @@ package.json                       private, only the pinned @hotcodepush/protoco
 
 ## Commands
 
-| Command          | Does                                                                            |
-| ---------------- | ------------------------------------------------------------------------------- |
-| `npm ci`         | installs the protocol package the fixtures are read from                        |
-| `npm run lint`   | `swiftlint lint --strict`                                                       |
-| `npm run fmt`    | `swiftlint --fix`                                                               |
-| `npm test`       | `swift test`                                                                    |
-| `npm run verify` | the lint and the tests                                                          |
+| Command          | Does                                                     |
+| ---------------- | -------------------------------------------------------- |
+| `npm ci`         | installs the protocol package the fixtures are read from |
+| `npm run lint`   | `swiftlint lint --strict`                                |
+| `npm run fmt`    | `swiftlint --fix`                                        |
+| `npm test`       | `swift test`                                             |
+| `npm run verify` | the lint and the tests                                   |
 
 `ci.yml` compares the bspatch sources with core-android's, then runs the lint, the tests and an iOS simulator build, on every push to `main` and every pull request.
 No releases yet: the version stays `0.0.0`, and release-please and the tag arrive with the publish decision.
@@ -46,6 +46,7 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - A build whose resource file carries `embeddedBundleManifest: null` — a React Native or Expo debug build, whose build step bundled no JavaScript — and a debug build with `enabledInDebugBuilds` off answer every cycle `SKIPPED` with `BUILD_DEBUG` and send nothing.
 - A rollback's `updateRolledBack` event is stored and announced at every start until the app is up in a run that received it, so the JavaScript that listens only after its start never misses it; `clearUpdates()` and a new binary drop the stored notice with the rest.
 - A batch the events endpoint refuses with a 4xx other than 408 and 429 is dropped, its events gone and the report left unacknowledged for the next one; a 202 takes both, and anything else keeps both for the next sync.
+- A 202's stamp becomes `reportedAt` only when the batch carried the report and either no stamp is held or the acknowledgement falls in a later UTC month than the held one, both months read from the stamps themselves; a batch of events alone never moves it, so a device counted early in the month stays under the cap all month.
 - Safety is on by default and cannot be switched off: the readiness gate, the local blocklist, the automatic rollback.
 - A readiness signal reported before the core's latest load of a bundle, the start's own load after its timeout included, belongs to the replaced bundle and counts for nothing.
 - The start answers the bundle to serve without awaiting the network, `handleAppStart`; a host in synchronous code asks `handleAppStartBlocking` and waits at most two seconds, then serves the embedded bundle and is reloaded into the right one once the start runs; the cleanup runs after the start, never on its path, and anything the start cannot read answers the embedded bundle.
@@ -68,7 +69,7 @@ The fixtures move with `package.json`'s pin: a protocol change is a bump of that
 - `bspatch.c` is FreeBSD's with the lower bound on the old file's offset that FreeBSD dropped in 2019 restored, every change listed under its licence header, and byte for byte core-android's: a change lands in both cores at once, and `ci.yml` fails on a difference.
 - The signature allow-list is pinned and has one entry, `rsa-v1_5-sha256`: the manifest string is verified as received with `SecKeyVerifySignature` under the key its `keyId` names; a value under any other prefix, `ed25519` included, is an unknown scheme.
 - A public key is the resource file's `{ der, keyId }`: the PKCS #1 DER goes to `SecKeyCreateWithData` as it stands, the key id is taken as given, and no ASN.1 is handled and no key format converted here. A key the system refuses is the app's configuration and the message says so; a key under 2048 bits is refused, its size read from the imported key.
-- A download stays on the URL the core pinned and never follows a redirect; a streamed delta the updates host does not serve gives way to the envelope's full pack.
+- A download stays on the URLs the core pinned and never follows a redirect. A device with a base asks for a delta pack whenever a file is missing, one included: the delta the envelope lists for its base, else the pack at `{filesBaseUrl}/apps/{appId}/bundles/{bundleId}/deltas/{baseBundleId}`; its 404 sends the device to the updates host's streamed delta, and whatever else that host answers gives way to the envelope's full pack. A device without a base takes the full pack. Any other refusal fails the download with `DOWNLOAD_FAILED`, retried next cycle.
 - A pack entry is named by ustar's prefix and name fields, `prefix/name` when the prefix is not empty: a content hash is a file entry, its body the stored gzip object, and `patches/{from}/{to}` a patch entry, its body a BSDIFF40 patch from the content of the file `from` to the content of the file `to`. An entry of any other name is skipped with its body, never an error, so a later entry kind does not break a shipped SDK; a header whose checksum does not add up or a cut archive stays an error.
 - A patch applies only to a file of the signed manifest the device lacks, from a base it holds in the file store or the embedded bundle, never past the manifest's size of the target; the store takes the result only when it hashes to the target.
 - A patch that does not apply — no base, a malformed patch, another hash, no memory — leaves its file to the single-file fetch after the pack: an update never fails because of a patch.
