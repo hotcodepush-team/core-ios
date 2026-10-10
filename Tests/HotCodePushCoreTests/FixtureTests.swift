@@ -18,6 +18,27 @@ final class FixtureTests: XCTestCase {
         let device: FixtureDevice
         let expected: Expected
         let verdicts: [ExpectedVerdict]?
+        let acknowledgements: [Acknowledgement]?
+    }
+
+    /// A `202` as `device-events.json` and the evaluation cases write it.
+    private struct Acknowledgement: Decodable {
+        let hasReport: Bool
+        let reportedAt: Date
+
+        var deviceEventsAcknowledgement: DeviceEventsAcknowledgement {
+            return DeviceEventsAcknowledgement(hasReport: hasReport, reportedAt: reportedAt)
+        }
+    }
+
+    private struct DeviceEventsFile: Decodable {
+        struct AcknowledgementCase: Decodable {
+            let name: String
+            let reportedAt: Date?
+            let acknowledgement: Acknowledgement
+            let keptReportedAt: Date?
+        }
+        let acknowledgements: [AcknowledgementCase]
     }
 
     private struct FixtureDevice: Decodable {
@@ -317,9 +338,15 @@ final class FixtureTests: XCTestCase {
         XCTAssertFalse(files.isEmpty, "no evaluation fixtures at \(directory.path)")
         var count = 0
         var verdictCount = 0
+        var acknowledgedCount = 0
         for file in files {
             let fixture = try load("evaluation/\(file)", as: EvaluationFile.self)
             for testCase in fixture.cases {
+                if let acknowledgements = testCase.acknowledgements {
+                    let keptReportedAt = acknowledgements.reduce(nil as Date?) { $1.deviceEventsAcknowledgement.resolveKeptReportedAt(held: $0) }
+                    XCTAssertEqual(keptReportedAt, testCase.device.reportedAt, "\(file): \(testCase.name)")
+                    acknowledgedCount += 1
+                }
                 let evaluation = Evaluator.evaluation(of: testCase.index, device: testCase.device.deviceInfo)
                 XCTAssertEqual(Expected(evaluation.outcome), testCase.expected, "\(file): \(testCase.name)")
                 count += 1
@@ -331,6 +358,15 @@ final class FixtureTests: XCTestCase {
         }
         XCTAssertGreaterThan(count, 50)
         XCTAssertGreaterThanOrEqual(verdictCount, 15)
+        XCTAssertGreaterThanOrEqual(acknowledgedCount, 5)
+    }
+
+    func testShouldMatchEveryAcknowledgementOfTheDeviceEventsFixture() throws {
+        let cases = try load("device-events.json", as: DeviceEventsFile.self).acknowledgements
+        XCTAssertGreaterThanOrEqual(cases.count, 10)
+        for testCase in cases {
+            XCTAssertEqual(testCase.acknowledgement.deviceEventsAcknowledgement.resolveKeptReportedAt(held: testCase.reportedAt), testCase.keptReportedAt, testCase.name)
+        }
     }
 
     func testShouldAcceptEveryAcceptedWireRulesFixture() throws {

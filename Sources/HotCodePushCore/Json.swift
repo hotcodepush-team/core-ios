@@ -44,6 +44,11 @@ public enum Iso8601 {
         return withFractionalSeconds.string(from: date)
     }
 
+    /// The timestamp's month in UTC, `2026-09`, which orders as the months do.
+    public static func resolveUtcMonth(of date: Date) -> String {
+        return String(format(date).prefix(7))
+    }
+
     public static func parse(_ value: String) -> Date? {
         let range = NSRange(value.startIndex..., in: value)
         guard let match = pattern.firstMatch(in: value, range: range), let secondsRange = Range(match.range(at: 1), in: value) else { return nil }

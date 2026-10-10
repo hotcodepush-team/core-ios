@@ -11,10 +11,10 @@ final class ContractTests: XCTestCase {
     func testShouldCarryEveryStateKeyOnAFreshInstall() async throws {
         let harness = Harness()
         let (keys, object) = try keys(await harness.core.getState())
-        XCTAssertEqual(keys, ["currentRelease", "nextRelease", "fallbackRelease", "embeddedBundleId", "lastCheck", "index", "failedBundleIds", "lastReportAt"])
+        XCTAssertEqual(keys, ["currentRelease", "nextRelease", "fallbackRelease", "embeddedBundleId", "lastCheck", "index", "failedBundleIds", "reportedAt"])
         XCTAssertTrue(object["currentRelease"] is NSNull)
         XCTAssertTrue(object["lastCheck"] is NSNull)
-        XCTAssertTrue(object["lastReportAt"] is NSNull)
+        XCTAssertTrue(object["reportedAt"] is NSNull)
         XCTAssertEqual(object["embeddedBundleId"] as? String, "embedded")
     }
 

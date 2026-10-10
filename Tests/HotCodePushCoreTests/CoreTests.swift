@@ -1039,7 +1039,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(state.reportedAt, Iso8601.parse("2023-11-14T23:00:00.000Z"))
         XCTAssertEqual(state.acknowledgedReport?.channelId, Fixture.channelId)
         let status = await harness.core.getState()
-        XCTAssertEqual(status.lastReportAt, state.reportedAt)
+        XCTAssertEqual(status.reportedAt, state.reportedAt)
     }
 
     func testShouldKeepTheOutboxWhenTheEventsEndpointFailsAndRetryAtTheNextSync() async throws {
@@ -1155,6 +1155,54 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.http.posts.count, 3)
         let monthly = try XCTUnwrap(JSONSerialization.jsonObject(with: harness.http.posts[2].body) as? [String: Any])
         XCTAssertNotNil(monthly["report"] as? [String: Any])
+    }
+
+    func testShouldKeepTheMonthsFirstReportStampWhenALaterBatchOfEventsAloneIsAcknowledged() async throws {
+        let harness = Harness()
+        harness.acknowledgeEvents(reportedAt: "2023-11-14T23:00:00.000Z")
+        harness.publish([], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.core.waitForBackgroundWork()
+        harness.acknowledgeEvents(reportedAt: "2023-11-20T12:00:00.000Z")
+        StateStore(store: harness.store).unsentEvents = [.applied(releaseId: "r-old")]
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.core.waitForBackgroundWork()
+        XCTAssertEqual(harness.http.posts.count, 2)
+        let eventsAlone = try XCTUnwrap(JSONSerialization.jsonObject(with: harness.http.posts[1].body) as? [String: Any])
+        XCTAssertTrue(eventsAlone["report"] is NSNull)
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
+        XCTAssertEqual(StateStore(store: harness.store).reportedAt, Iso8601.parse("2023-11-14T23:00:00.000Z"))
+    }
+
+    func testShouldKeepTheMonthsFirstReportStampWhenAReportWithAChangedFactIsAcknowledgedLaterInTheMonth() async throws {
+        let harness = Harness()
+        harness.acknowledgeEvents(reportedAt: "2023-11-14T23:00:00.000Z")
+        harness.publish([], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.core.waitForBackgroundWork()
+        harness.acknowledgeEvents(reportedAt: "2023-11-20T12:00:00.000Z")
+        try await harness.core.setAttributes(["plan": "beta"])
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.core.waitForBackgroundWork()
+        XCTAssertEqual(StateStore(store: harness.store).acknowledgedReport?.attributes, ["plan": "beta"])
+        XCTAssertEqual(StateStore(store: harness.store).reportedAt, Iso8601.parse("2023-11-14T23:00:00.000Z"))
+    }
+
+    func testShouldTakeTheStampOfTheFirstReportAcknowledgedInALaterMonth() async throws {
+        let harness = Harness()
+        harness.acknowledgeEvents(reportedAt: "2023-11-14T23:00:00.000Z")
+        harness.publish([], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.core.waitForBackgroundWork()
+        harness.clock.now = harness.clock.now.addingTimeInterval(40 * 86_400)
+        harness.acknowledgeEvents(reportedAt: "2023-12-24T08:00:00.000Z")
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.core.waitForBackgroundWork()
+        XCTAssertEqual(harness.http.posts.count, 2)
+        XCTAssertEqual(StateStore(store: harness.store).reportedAt, Iso8601.parse("2023-12-24T08:00:00.000Z"))
     }
 
     func testShouldSendNothingWhenLiveUpdatesAreOffInADebugBuild() async throws {

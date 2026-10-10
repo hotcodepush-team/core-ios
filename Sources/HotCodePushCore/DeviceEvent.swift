@@ -163,9 +163,24 @@ public struct DeviceEventsRequest: Encodable {
     }
 }
 
-/// The `202`: the server time the device stores as `reportedAt`.
+/// The `202`: the server time the device keeps as `reportedAt` by `DeviceEventsAcknowledgement.resolveKeptReportedAt`.
 public struct DeviceEventsResponse: Decodable {
     public let reportedAt: Date
+}
+
+/// A `202` as the device reads it: the server time, and whether the acknowledged batch carried the device report.
+struct DeviceEventsAcknowledgement: Equatable {
+    let hasReport: Bool
+    let reportedAt: Date
+
+    /// The `reportedAt` the device keeps after this acknowledgement: the stamp of the first acknowledged batch of a UTC month that
+    /// carried the device report, the month read from the stamp itself. A later acknowledgement replaces it only when it falls in a later
+    /// UTC month, and a batch of events alone never moves it, so the device compares with `cappedAt` the stamp the consumer counted it by.
+    func resolveKeptReportedAt(held heldReportedAt: Date?) -> Date? {
+        guard hasReport else { return heldReportedAt }
+        guard let heldReportedAt = heldReportedAt else { return reportedAt }
+        return Iso8601.resolveUtcMonth(of: reportedAt) > Iso8601.resolveUtcMonth(of: heldReportedAt) ? reportedAt : heldReportedAt
+    }
 }
 
 /// What the events endpoint's answer means for a batch: taken, refused for good, or kept for the next sync.

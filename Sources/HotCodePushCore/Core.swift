@@ -515,7 +515,7 @@ public actor Core {
             lastCheck: state.lastCheck,
             index: state.cachedIndex.map { IndexState(sequence: $0.body.sequence, fetchedAt: $0.fetchedAt) },
             failedBundleIds: state.failedBundleIds,
-            lastReportAt: state.reportedAt)
+            reportedAt: state.reportedAt)
     }
 
     public func channel() -> ChannelResult {
@@ -987,7 +987,7 @@ public actor Core {
         switch answer {
         case .acknowledged(let reportedAt):
             dropBatchEvents()
-            state.reportedAt = reportedAt
+            state.reportedAt = DeviceEventsAcknowledgement(hasReport: report != nil, reportedAt: reportedAt).resolveKeptReportedAt(held: state.reportedAt)
             if let report = report {
                 state.acknowledgedReport = report
             }
@@ -1010,14 +1010,10 @@ public actor Core {
         let channel = channel()
         guard let channelId = channel.id else { return nil }
         let report = DeviceReport(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, channelId: channelId, channelSource: channel.source, embeddedBundleId: configuration.embeddedBundleId, fingerprint: configuration.fingerprint, osVersion: device.osVersion, releaseId: state.currentRelease?.id)
-        if report == state.acknowledgedReport, let reportedAt = state.reportedAt, resolveMonth(of: reportedAt) == resolveMonth(of: clock.now) {
+        if report == state.acknowledgedReport, let reportedAt = state.reportedAt, Iso8601.resolveUtcMonth(of: reportedAt) == Iso8601.resolveUtcMonth(of: clock.now) {
             return nil
         }
         return report
-    }
-
-    private func resolveMonth(of date: Date) -> String {
-        return String(Iso8601.format(date).prefix(7))
     }
 }
 

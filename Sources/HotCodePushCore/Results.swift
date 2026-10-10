@@ -194,10 +194,11 @@ public struct StateResult: Codable, Equatable {
     public let lastCheck: LastCheck?
     public let index: IndexState?
     public let failedBundleIds: [String]
-    public let lastReportAt: Date?
+    /// The server time of the month's first acknowledged report, for the spending cap.
+    public let reportedAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case currentRelease, nextRelease, fallbackRelease, embeddedBundleId, lastCheck, index, failedBundleIds, lastReportAt
+        case currentRelease, nextRelease, fallbackRelease, embeddedBundleId, lastCheck, index, failedBundleIds, reportedAt
     }
 
     /// Every key of the typed contract, `null` when empty, so `result.currentRelease === null` holds in app code.
@@ -210,7 +211,7 @@ public struct StateResult: Codable, Equatable {
         try container.encode(lastCheck, forKey: .lastCheck)
         try container.encode(index, forKey: .index)
         try container.encode(failedBundleIds, forKey: .failedBundleIds)
-        try container.encode(lastReportAt, forKey: .lastReportAt)
+        try container.encode(reportedAt, forKey: .reportedAt)
     }
 }
 

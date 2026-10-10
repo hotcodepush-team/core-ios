@@ -109,7 +109,7 @@ public enum DebugReport {
         return DebugSection(title: "Index", rows: [
             DebugRow(label: "Sequence", value: state.index.map { String($0.sequence) } ?? "none"),
             DebugRow(label: "Fetched at", value: state.index.map { Iso8601.format($0.fetchedAt) } ?? "never"),
-            DebugRow(label: "Last report at", value: state.lastReportAt.map(Iso8601.format) ?? "never")
+            DebugRow(label: "Reported at", value: state.reportedAt.map(Iso8601.format) ?? "never")
         ])
     }
 
