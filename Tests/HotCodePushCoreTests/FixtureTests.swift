@@ -187,6 +187,39 @@ final class FixtureTests: XCTestCase {
         let cases: [Case]
     }
 
+    private struct PackSourcesFile: Decodable {
+        struct Request: Decodable, Equatable {
+            let kind: String
+            let maximumBytes: Int
+            let sizeBytes: Int?
+            let url: String
+
+            init(_ source: PackSource) {
+                self.init(kind: source.kind.rawValue, maximumBytes: source.maximumBytes, sizeBytes: source.sizeBytes, url: source.url)
+            }
+
+            init(kind: String, maximumBytes: Int, sizeBytes: Int?, url: String) {
+                self.kind = kind
+                self.maximumBytes = maximumBytes
+                self.sizeBytes = sizeBytes
+                self.url = url
+            }
+        }
+        struct Case: Decodable {
+            let name: String
+            let appId: String
+            let baseBundleId: String?
+            let filesBaseUrl: String?
+            let updatesBaseUrl: String?
+            let envelope: ManifestEnvelope
+            let missingFileCount: Int
+            let statuses: [Int]
+            let requests: [Request]
+            let packKind: String?
+        }
+        let cases: [Case]
+    }
+
     private struct BoundsFile: Decodable {
         let deviceConditionMaxHashedIds: Int
         let releaseMaxConditions: Int
@@ -367,6 +400,36 @@ final class FixtureTests: XCTestCase {
         for testCase in cases {
             XCTAssertEqual(testCase.acknowledgement.deviceEventsAcknowledgement.resolveKeptReportedAt(held: testCase.reportedAt), testCase.keptReportedAt, testCase.name)
         }
+    }
+
+    func testShouldMatchEveryPackSourcesFixture() throws {
+        let cases = try load("pack-sources.json", as: PackSourcesFile.self).cases
+        XCTAssertGreaterThanOrEqual(cases.count, 16)
+        for testCase in cases {
+            var configuration = Fixture.configuration(filesBaseUrl: testCase.filesBaseUrl, updatesBaseUrl: testCase.updatesBaseUrl)
+            configuration.appId = testCase.appId
+            let outcome = resolveDownloadOutcome(testCase, downloader: DownloaderHarness(configuration: configuration).downloader)
+            XCTAssertEqual(outcome.requests.map(PackSourcesFile.Request.init), testCase.requests, testCase.name)
+            XCTAssertEqual(outcome.packKind?.rawValue, testCase.packKind, testCase.name)
+            XCTAssertTrue(outcome.requests.allSatisfy { configuration.isOnConfiguredHost($0.url) }, testCase.name)
+        }
+    }
+
+    /// The packs a download requests against the case's answers in order, and the kind of the pack that served it: `files` when it
+    /// requests none, `nil` when an answer leaves no pack to turn to — the protocol's own runner, step for step.
+    private func resolveDownloadOutcome(_ testCase: PackSourcesFile.Case, downloader: Downloader) -> (requests: [PackSource], packKind: PackKind?) {
+        guard var source = downloader.resolvePack(testCase.envelope, baseBundleId: testCase.baseBundleId, missingFileCount: testCase.missingFileCount) else { return ([], .files) }
+        var requests: [PackSource] = []
+        for status in testCase.statuses {
+            requests.append(source)
+            if [200, 206].contains(status) {
+                return (requests, source.kind)
+            }
+            guard let fallback = downloader.resolveFallbackPack(after: source, status: status, envelope: testCase.envelope, baseBundleId: testCase.baseBundleId) else { return (requests, nil) }
+            source = fallback
+        }
+        XCTFail("\(testCase.name): the case answers fewer requests than the download makes")
+        return (requests, nil)
     }
 
     func testShouldAcceptEveryAcceptedWireRulesFixture() throws {
@@ -560,7 +623,7 @@ final class FixtureTests: XCTestCase {
             }
             let delta = PackWriter.pack([try patchCase.patchEntry.packEntry()])
             let release = harness.publish(DownloaderHarness.manifest(files: patchCase.manifestFiles), deltas: ["b1": delta])
-            _ = try await harness.download(release, currentBundleId: "b1")
+            _ = try await harness.download(release, baseBundleId: "b1")
             let toSha256 = patchCase.patchEntry.toSha256
             let isFetched = harness.http.requests.contains { $0.url.absoluteString == DownloaderHarness.fileUrl(sha256: toSha256) }
             switch patchCase.outcome {

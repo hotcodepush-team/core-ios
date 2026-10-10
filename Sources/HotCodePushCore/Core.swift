@@ -437,7 +437,7 @@ public actor Core {
         let release = resolveRelease(target, isMandatory: isMandatory)
         do {
             let baseBundleId = state.currentRelease?.bundleId ?? configuration.embeddedBundleId
-            let outcome = try await downloader.downloadRelease(target, currentBundleId: baseBundleId) { [listener] downloaded, total in
+            let outcome = try await downloader.downloadRelease(target, baseBundleId: baseBundleId) { [listener] downloaded, total in
                 listener.downloadProgress(releaseId: target.id, downloadedBytes: downloaded, totalBytes: total)
             }
             try BundleProjection.project(outcome.manifest, from: files, embedded: embedded, into: loader.projectionDirectory(bundleId: target.bundleId))

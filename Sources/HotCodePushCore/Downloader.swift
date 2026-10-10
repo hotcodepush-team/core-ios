@@ -54,16 +54,17 @@ public final class Downloader {
         self.temporaryDirectory = temporaryDirectory
     }
 
-    public func downloadRelease(_ target: IndexRelease, currentBundleId: String?, progress: @escaping (Int, Int) -> Void) async throws -> DownloadOutcome {
+    /// `baseBundleId` is the bundle the device runs, the current release's or the embedded bundle's, `nil` without a base.
+    public func downloadRelease(_ target: IndexRelease, baseBundleId: String?, progress: @escaping (Int, Int) -> Void) async throws -> DownloadOutcome {
         let (envelope, manifest) = try await fetchBundleManifest(target)
         let missing = resolveMissingFiles(manifest)
-        let pack = missing.isEmpty ? nil : resolvePack(envelope, currentBundleId: currentBundleId, missing: missing)
+        let pack = resolvePack(envelope, baseBundleId: baseBundleId, missingFileCount: missing.count)
         try verifyFreeSpace(forBytes: missing.reduce(0) { $0 + $1.sizeBytes } + (pack?.maximumBytes ?? 0))
         var bytes = 0
         var packKind = PackKind.files
         if let pack = pack {
             let wanted = Dictionary(missing.map { ($0.sha256, $0.sizeBytes) }, uniquingKeysWith: { first, _ in first })
-            (bytes, packKind) = try await downloadPack(pack, envelope: envelope, wanted: wanted, progress: progress)
+            (bytes, packKind) = try await downloadPack(pack, envelope: envelope, baseBundleId: baseBundleId, wanted: wanted, progress: progress)
         }
         for file in resolveMissingFiles(manifest) {
             bytes += try await downloadFile(file)
@@ -123,22 +124,47 @@ public final class Downloader {
         return manifest.files.filter { !files.hasFile(sha256: $0.sha256) && !embedded.has(sha256: $0.sha256) }
     }
 
-    /// The delta pack the bucket holds against the running bundle; for any other base the device runs, the delta the updates host
-    /// streams, never larger than the full pack whose entries it shares; without a base the full pack; nothing when one file is cheaper than a pack.
-    func resolvePack(_ envelope: ManifestEnvelope, currentBundleId: String?, missing: [BundleManifest.File]) -> PackSource? {
-        if let currentBundleId = currentBundleId, let delta = envelope.deltas.first(where: { $0.baseBundleId == currentBundleId }) {
+    /// The pack a download requests first, `nil` when no file is missing. A device with a base takes a delta pack for one missing file as
+    /// for ten, so the one file a patch exists for, the main bundle, arrives as a patch: the delta the envelope lists for its base, else
+    /// the delta pack at the URL derived on the files host, never larger than the full pack whose entries it shares. Without a base the full pack.
+    func resolvePack(_ envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int) -> PackSource? {
+        guard missingFileCount > 0 else { return nil }
+        guard let baseBundleId = baseBundleId else { return resolveFullPack(envelope) }
+        if let delta = envelope.deltas.first(where: { $0.baseBundleId == baseBundleId }) {
             return PackSource(url: delta.url, sizeBytes: delta.sizeBytes, maximumBytes: delta.sizeBytes, kind: .delta)
         }
-        guard missing.count > 1 else { return nil }
-        if let currentBundleId = currentBundleId {
-            let url = "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/bundles/\(envelope.bundleId)/deltas/\(currentBundleId)"
-            return PackSource(url: url, sizeBytes: nil, maximumBytes: envelope.pack.sizeBytes, kind: .streamed)
+        let url = "\(configuration.filesBaseUrl)/\(resolveDeltaPackPath(envelope, baseBundleId: baseBundleId))"
+        return PackSource(url: url, sizeBytes: nil, maximumBytes: envelope.pack.sizeBytes, kind: .delta)
+    }
+
+    /// The pack a download requests after `source` answered `status` instead of a 200 or a 206, `nil` when the download fails and waits
+    /// for the next cycle. A delta pack answering 404 is not built yet, and the updates host assembles it; whatever else the updates host
+    /// answers, its redirect to the full pack above twenty objects included, gives way to the full pack, since a download follows no redirect.
+    func resolveFallbackPack(after source: PackSource, status: Int, envelope: ManifestEnvelope, baseBundleId: String?) -> PackSource? {
+        switch source.kind {
+        case .delta:
+            guard status == 404, let baseBundleId = baseBundleId else { return nil }
+            return resolveStreamedPack(envelope, baseBundleId: baseBundleId)
+        case .streamed:
+            return resolveFullPack(envelope)
+        case .files, .full:
+            return nil
         }
-        return resolveFullPack(envelope)
+    }
+
+    /// The delta pack's path below a host, the bucket's key and the updates route alike.
+    private func resolveDeltaPackPath(_ envelope: ManifestEnvelope, baseBundleId: String) -> String {
+        return "apps/\(configuration.appId)/bundles/\(envelope.bundleId)/deltas/\(baseBundleId)"
     }
 
     private func resolveFullPack(_ envelope: ManifestEnvelope) -> PackSource {
         return PackSource(url: envelope.pack.url, sizeBytes: envelope.pack.sizeBytes, maximumBytes: envelope.pack.sizeBytes, kind: .full)
+    }
+
+    /// The delta pack the updates host assembles on request, of a length known only as it arrives.
+    private func resolveStreamedPack(_ envelope: ManifestEnvelope, baseBundleId: String) -> PackSource {
+        let url = "\(configuration.updatesBaseUrl)/v1/\(resolveDeltaPackPath(envelope, baseBundleId: baseBundleId))"
+        return PackSource(url: url, sizeBytes: nil, maximumBytes: envelope.pack.sizeBytes, kind: .streamed)
     }
 
     /// The download needs its bytes on disk at its peak: every missing file and the pack they arrive in.
@@ -147,14 +173,16 @@ public final class Downloader {
         throw DownloadFailure.downloadFailed("The download needs \(requiredBytes) bytes and \(availableBytes) are free")
     }
 
-    /// The pack's wanted entries in the store and how they arrived. A streamed delta the updates host does not serve — its redirect
-    /// to the full pack above twenty objects or for a base the bucket no longer knows, a limit, an error — gives way to the full pack: slower, never failed.
-    func downloadPack(_ source: PackSource, envelope: ManifestEnvelope, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> (bytes: Int, kind: PackKind) {
+    /// The pack's wanted entries in the store and how they arrived. An answer other than a 200 or a 206 turns to the pack
+    /// `resolveFallbackPack` names, and fails the download when it names none.
+    func downloadPack(_ source: PackSource, envelope: ManifestEnvelope, baseBundleId: String?, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> (bytes: Int, kind: PackKind) {
         do {
             return (try await downloadPackEntries(source, bundleId: envelope.bundleId, wanted: wanted, progress: progress), source.kind)
         } catch let refusal as HttpStatusError {
-            guard source.kind == .streamed else { throw DownloadFailure.downloadFailed("HTTP \(refusal.status) for the pack") }
-            return try await downloadPack(resolveFullPack(envelope), envelope: envelope, wanted: wanted, progress: progress)
+            guard let fallback = resolveFallbackPack(after: source, status: refusal.status, envelope: envelope, baseBundleId: baseBundleId) else {
+                throw DownloadFailure.downloadFailed("HTTP \(refusal.status) for the pack")
+            }
+            return try await downloadPack(fallback, envelope: envelope, baseBundleId: baseBundleId, wanted: wanted, progress: progress)
         }
     }
 
