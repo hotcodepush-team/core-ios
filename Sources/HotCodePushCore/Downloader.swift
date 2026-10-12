@@ -64,7 +64,7 @@ public final class Downloader {
         var packKind = PackKind.files
         if let pack = pack {
             let wanted = Dictionary(missing.map { ($0.sha256, $0.sizeBytes) }, uniquingKeysWith: { first, _ in first })
-            (bytes, packKind) = try await downloadPack(pack, envelope: envelope, baseBundleId: baseBundleId, wanted: wanted, progress: progress)
+            (bytes, packKind) = try await downloadPack(pack, envelope: envelope, wanted: wanted, progress: progress)
         }
         for file in resolveMissingFiles(manifest) {
             bytes += try await downloadFile(file)
@@ -125,45 +125,37 @@ public final class Downloader {
     }
 
     /// The pack a download requests first, `nil` when no file is missing. A device with a base takes a delta pack for one missing file as
-    /// for ten, so the one file a patch exists for, the main bundle, arrives as a patch: the delta the envelope lists for its base, else
-    /// the delta pack at the URL derived on the files host, never larger than the full pack whose entries it shares. Without a base the full pack.
+    /// for ten, so the one file a patch exists for, the main bundle, arrives as a patch. The envelope's deltas are the delta packs that
+    /// exist: the one it lists for the device's base, else the streamed pack the updates host assembles, never a URL guessed on the files
+    /// host. Without a base the full pack.
     func resolvePack(_ envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int) -> PackSource? {
         guard missingFileCount > 0 else { return nil }
         guard let baseBundleId = baseBundleId else { return resolveFullPack(envelope) }
-        if let delta = envelope.deltas.first(where: { $0.baseBundleId == baseBundleId }) {
-            return PackSource(url: delta.url, sizeBytes: delta.sizeBytes, maximumBytes: delta.sizeBytes, kind: .delta)
-        }
-        let url = "\(configuration.filesBaseUrl)/\(resolveDeltaPackPath(envelope, baseBundleId: baseBundleId))"
-        return PackSource(url: url, sizeBytes: nil, maximumBytes: envelope.pack.sizeBytes, kind: .delta)
+        guard let listedDelta = envelope.deltas.first(where: { $0.baseBundleId == baseBundleId }) else { return resolveStreamedPack(envelope, baseBundleId: baseBundleId) }
+        return PackSource(url: listedDelta.url, sizeBytes: listedDelta.sizeBytes, maximumBytes: listedDelta.sizeBytes, kind: .delta)
     }
 
-    /// The pack a download requests after `source` answered `status` instead of a 200 or a 206, `nil` when the download fails and waits
-    /// for the next cycle. A delta pack answering 404 is not built yet, and the updates host assembles it; whatever else the updates host
-    /// answers, its redirect to the full pack above twenty objects included, gives way to the full pack, since a download follows no redirect.
-    func resolveFallbackPack(after source: PackSource, status: Int, envelope: ManifestEnvelope, baseBundleId: String?) -> PackSource? {
+    /// The pack a download requests after `source` answered anything but a 200 or a 206, `nil` when the download fails and waits for the
+    /// next cycle. Only the streamed pack gives way: whatever the updates host answers, its redirect to the full pack above twenty objects
+    /// included, reads as the full pack, since a download follows no redirect. A listed delta that does not answer fails like the full
+    /// pack, its 404 included.
+    func resolveFallbackPack(after source: PackSource, envelope: ManifestEnvelope) -> PackSource? {
         switch source.kind {
-        case .delta:
-            guard status == 404, let baseBundleId = baseBundleId else { return nil }
-            return resolveStreamedPack(envelope, baseBundleId: baseBundleId)
+        case .delta, .files, .full:
+            return nil
         case .streamed:
             return resolveFullPack(envelope)
-        case .files, .full:
-            return nil
         }
-    }
-
-    /// The delta pack's path below a host, the bucket's key and the updates route alike.
-    private func resolveDeltaPackPath(_ envelope: ManifestEnvelope, baseBundleId: String) -> String {
-        return "apps/\(configuration.appId)/bundles/\(envelope.bundleId)/deltas/\(baseBundleId)"
     }
 
     private func resolveFullPack(_ envelope: ManifestEnvelope) -> PackSource {
         return PackSource(url: envelope.pack.url, sizeBytes: envelope.pack.sizeBytes, maximumBytes: envelope.pack.sizeBytes, kind: .full)
     }
 
-    /// The delta pack the updates host assembles on request, of a length known only as it arrives.
+    /// The delta pack the updates host assembles on request, of a length known only as it arrives, never larger than the full pack whose
+    /// entries it shares.
     private func resolveStreamedPack(_ envelope: ManifestEnvelope, baseBundleId: String) -> PackSource {
-        let url = "\(configuration.updatesBaseUrl)/v1/\(resolveDeltaPackPath(envelope, baseBundleId: baseBundleId))"
+        let url = "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/bundles/\(envelope.bundleId)/deltas/\(baseBundleId)"
         return PackSource(url: url, sizeBytes: nil, maximumBytes: envelope.pack.sizeBytes, kind: .streamed)
     }
 
@@ -175,14 +167,14 @@ public final class Downloader {
 
     /// The pack's wanted entries in the store and how they arrived. An answer other than a 200 or a 206 turns to the pack
     /// `resolveFallbackPack` names, and fails the download when it names none.
-    func downloadPack(_ source: PackSource, envelope: ManifestEnvelope, baseBundleId: String?, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> (bytes: Int, kind: PackKind) {
+    func downloadPack(_ source: PackSource, envelope: ManifestEnvelope, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> (bytes: Int, kind: PackKind) {
         do {
             return (try await downloadPackEntries(source, bundleId: envelope.bundleId, wanted: wanted, progress: progress), source.kind)
         } catch let refusal as HttpStatusError {
-            guard let fallback = resolveFallbackPack(after: source, status: refusal.status, envelope: envelope, baseBundleId: baseBundleId) else {
+            guard let fallback = resolveFallbackPack(after: source, envelope: envelope) else {
                 throw DownloadFailure.downloadFailed("HTTP \(refusal.status) for the pack")
             }
-            return try await downloadPack(fallback, envelope: envelope, baseBundleId: baseBundleId, wanted: wanted, progress: progress)
+            return try await downloadPack(fallback, envelope: envelope, wanted: wanted, progress: progress)
         }
     }
 

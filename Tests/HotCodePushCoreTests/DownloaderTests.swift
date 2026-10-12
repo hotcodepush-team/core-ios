@@ -166,11 +166,10 @@ final class DownloaderTests: XCTestCase {
         XCTAssertNil(failure)
     }
 
-    func testShouldTakeTheDeltaPackAtItsDerivedUrlWhenTheDeviceHoldingABaseLacksASingleFile() async throws {
+    func testShouldTakeTheDeltaTheEnvelopeListsWhenTheDeviceHoldingABaseLacksASingleFile() async throws {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml])
-        harness.http.stub(DownloaderHarness.deltaUrl(baseBundleId: "b1"), body: bundle.pack)
-        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack), baseBundleId: "b1")
+        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": bundle.pack]), baseBundleId: "b1")
         XCTAssertEqual(outcome.packKind, .delta)
         XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1")])
         XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
@@ -184,42 +183,34 @@ final class DownloaderTests: XCTestCase {
         XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.packUrl])
     }
 
-    func testShouldAskTheUpdatesHostWhenTheDeltaPacksDerivedUrlAnswers404() async throws {
+    func testShouldAskTheUpdatesHostDirectlyWhenTheEnvelopeListsNoDeltaForTheBase() async throws {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         harness.http.stub(DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1"), body: bundle.pack)
-        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack), baseBundleId: "b1")
+        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b0": bundle.pack]), baseBundleId: "b1")
         XCTAssertEqual(outcome.packKind, .streamed)
         XCTAssertEqual(outcome.bytes, bundle.pack.count)
-        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1"), DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1")])
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1")])
         XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(appJs)))
     }
 
-    func testShouldAskTheUpdatesHostWhenTheDeltaTheEnvelopeListsAnswers404() async throws {
+    func testShouldFailTheDownloadWhenTheDeltaTheEnvelopeListsAnswers404() async {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let release = harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": bundle.pack])
         harness.http.stub(DownloaderHarness.deltaUrl(baseBundleId: "b1"), status: 404, body: Data())
         harness.http.stub(DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1"), body: bundle.pack)
-        let outcome = try await harness.download(release, baseBundleId: "b1")
-        XCTAssertEqual(outcome.packKind, .streamed)
-        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1"), DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1")])
-    }
-
-    func testShouldFailTheDownloadWhenTheDeltaPackAnswersAnErrorOtherThan404() async {
-        let harness = DownloaderHarness()
-        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
-        harness.http.stub(DownloaderHarness.deltaUrl(baseBundleId: "b1"), status: 503, body: Data())
-        let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack), baseBundleId: "b1")
+        let failure = await harness.downloadFailure(release, baseBundleId: "b1")
         XCTAssertEqual(failure?.reason, .downloadFailed)
         XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1")])
     }
 
-    func testShouldFailTheDownloadWhenTheDeltaPackAnswersARedirect() async {
+    func testShouldFailTheDownloadWhenTheDeltaTheEnvelopeListsAnswersARedirect() async {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let release = harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": bundle.pack])
         harness.http.stub(DownloaderHarness.deltaUrl(baseBundleId: "b1"), status: 302, headers: ["Location": DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1")], body: Data())
-        let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack), baseBundleId: "b1")
+        let failure = await harness.downloadFailure(release, baseBundleId: "b1")
         XCTAssertEqual(failure?.reason, .downloadFailed)
         XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1")])
     }

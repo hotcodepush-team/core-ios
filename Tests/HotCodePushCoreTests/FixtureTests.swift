@@ -425,7 +425,7 @@ final class FixtureTests: XCTestCase {
             if [200, 206].contains(status) {
                 return (requests, source.kind)
             }
-            guard let fallback = downloader.resolveFallbackPack(after: source, status: status, envelope: testCase.envelope, baseBundleId: testCase.baseBundleId) else { return (requests, nil) }
+            guard let fallback = downloader.resolveFallbackPack(after: source, envelope: testCase.envelope) else { return (requests, nil) }
             source = fallback
         }
         XCTFail("\(testCase.name): the case answers fewer requests than the download makes")
