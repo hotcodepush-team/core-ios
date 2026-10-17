@@ -8,21 +8,21 @@ public struct DeviceEvent: Codable, Equatable {
     public let status: String?
     public let reason: String?
     public let condition: ConditionType?
-    public let bytes: Int?
+    public let downloadSizeBytes: Int?
     public let packKind: String?
     public let fromReleaseId: String?
     public let toReleaseId: String?
     /// The app's `rollback({ reason })` on `APP_REQUESTED`: printable, at most 256 characters.
     public let detail: String?
 
-    private init(type: String, releaseId: String? = nil, bundleId: String? = nil, status: String? = nil, reason: String? = nil, condition: ConditionType? = nil, bytes: Int? = nil, packKind: String? = nil, fromReleaseId: String? = nil, toReleaseId: String? = nil, detail: String? = nil) {
+    private init(type: String, releaseId: String? = nil, bundleId: String? = nil, status: String? = nil, reason: String? = nil, condition: ConditionType? = nil, downloadSizeBytes: Int? = nil, packKind: String? = nil, fromReleaseId: String? = nil, toReleaseId: String? = nil, detail: String? = nil) {
         self.type = type
         self.releaseId = releaseId
         self.bundleId = bundleId
         self.status = status
         self.reason = reason
         self.condition = condition
-        self.bytes = bytes
+        self.downloadSizeBytes = downloadSizeBytes
         self.packKind = packKind
         self.fromReleaseId = fromReleaseId
         self.toReleaseId = toReleaseId
@@ -30,7 +30,7 @@ public struct DeviceEvent: Codable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, releaseId, bundleId, status, reason, condition, bytes, packKind, fromReleaseId, toReleaseId, detail
+        case type, releaseId, bundleId, status, reason, condition, downloadSizeBytes, packKind, fromReleaseId, toReleaseId, detail
     }
 
     /// The keys the wire's schema names for the event's type, and no other: a required one is always written, as `null` where it is
@@ -48,7 +48,7 @@ public struct DeviceEvent: Codable, Equatable {
         case "downloaded":
             try container.encode(releaseId, forKey: .releaseId)
             try container.encode(bundleId, forKey: .bundleId)
-            try container.encode(bytes, forKey: .bytes)
+            try container.encode(downloadSizeBytes, forKey: .downloadSizeBytes)
             try container.encode(packKind, forKey: .packKind)
         case "failed":
             try container.encode(releaseId, forKey: .releaseId)
@@ -66,8 +66,8 @@ public struct DeviceEvent: Codable, Equatable {
         return DeviceEvent(type: "checked", releaseId: releaseId, status: status.rawValue, reason: reason?.rawValue, condition: condition)
     }
 
-    public static func downloaded(releaseId: String, bundleId: String, bytes: Int, packKind: PackKind) -> DeviceEvent {
-        return DeviceEvent(type: "downloaded", releaseId: releaseId, bundleId: bundleId, bytes: bytes, packKind: packKind.rawValue)
+    public static func downloaded(releaseId: String, bundleId: String, downloadSizeBytes: Int, packKind: PackKind) -> DeviceEvent {
+        return DeviceEvent(type: "downloaded", releaseId: releaseId, bundleId: bundleId, downloadSizeBytes: downloadSizeBytes, packKind: packKind.rawValue)
     }
 
     public static func applied(releaseId: String) -> DeviceEvent {

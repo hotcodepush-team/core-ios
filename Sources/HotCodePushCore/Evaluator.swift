@@ -126,7 +126,7 @@ public enum Evaluator {
             let reason: SkippedReason = (type == .attribute || type == .device) ? .deviceNotTargeted : .deviceIncompatible
             return ReleaseVerdict(release: release, isEligible: false, reason: reason, condition: type)
         }
-        if Hashing.rolloutBucket(deviceId: device.deviceId, releaseId: release.id) >= release.rollout {
+        if Hashing.rolloutBucket(deviceId: device.deviceId, releaseId: release.id) >= release.rolloutPercentage {
             return ReleaseVerdict(release: release, isEligible: false, reason: .deviceNotInRollout, condition: nil)
         }
         return ReleaseVerdict(release: release, isEligible: true, reason: nil, condition: nil)
@@ -142,8 +142,8 @@ public enum Evaluator {
             return VersionRange.isVersionInRange(version, range) == true
         case .device(let hashedIds):
             return hashedIds.contains(Hashing.deviceIdHash(device.deviceId))
-        case .fingerprint(let hash):
-            return device.fingerprint == hash
+        case .fingerprint(let fingerprint):
+            return device.fingerprint == fingerprint
         case .os(let range):
             guard let version = VersionRange.parseVersion(device.osVersion) else { return false }
             return VersionRange.isVersionInRange(version, range) == true

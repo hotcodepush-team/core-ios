@@ -34,7 +34,7 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(try keys(SyncResult.upToDate(nil)).keys, ["status", "release"])
         XCTAssertTrue(try keys(SyncResult.upToDate(nil)).object["release"] is NSNull)
         XCTAssertEqual(try keys(SyncResult.available(release, notes: nil, downloadSizeBytes: nil)).keys, ["status", "release", "notes", "downloadSizeBytes"])
-        XCTAssertEqual(try keys(SyncResult.downloaded(release, notes: nil, applyAt: .manual)).keys, ["status", "release", "notes", "applyAt"])
+        XCTAssertEqual(try keys(SyncResult.downloaded(release, notes: nil, applyStrategy: .manual)).keys, ["status", "release", "notes", "applyStrategy"])
         XCTAssertEqual(try keys(SyncResult.applied(release, notes: nil)).keys, ["status", "release", "notes"])
         XCTAssertEqual(try keys(SyncResult.skipped(nil, reason: .channelPaused)).keys, ["status", "release", "reason"])
         XCTAssertEqual(try keys(SyncResult.skipped(release, reason: .deviceIncompatible, condition: .os)).keys, ["status", "release", "reason", "condition"])

@@ -25,7 +25,7 @@ public struct LogEntry: Equatable {
     static func ofDeviceEvent(_ event: DeviceEvent, at: Date) -> LogEntry? {
         switch event.type {
         case "downloaded":
-            return LogEntry(at: at, code: "DOWNLOADED", message: "release \(event.releaseId ?? ""): \(event.bytes ?? 0) bytes as \(event.packKind ?? "") pack")
+            return LogEntry(at: at, code: "DOWNLOADED", message: "release \(event.releaseId ?? ""): \(event.downloadSizeBytes ?? 0) bytes as \(event.packKind ?? "") pack")
         case "applied":
             return LogEntry(at: at, code: "APPLIED", message: "release \(event.releaseId ?? "") is the running release")
         case "confirmed":
@@ -58,8 +58,8 @@ public struct LogEntry: Equatable {
         switch result.status {
         case .upToDate: return "\(release ?? "the embedded bundle") is current"
         case .available: return "\(release ?? "a release") is available"
-        case .downloaded where result.applyAt == .manual: return "\(release ?? "a release") is downloaded and waits for applyUpdate()"
-        case .downloaded: return "\(release ?? "a release") is downloaded and applies at \(result.applyAt?.rawValue ?? "")"
+        case .downloaded where result.applyStrategy == .manual: return "\(release ?? "a release") is downloaded and waits for applyUpdate()"
+        case .downloaded: return "\(release ?? "a release") is downloaded and applies at \(result.applyStrategy?.rawValue ?? "")"
         case .applied: return "\(release ?? "a release") is applied and the app reloads"
         case .skipped: return "\(release ?? "the newest release") is not taken"
         case .failed: return result.message ?? ""

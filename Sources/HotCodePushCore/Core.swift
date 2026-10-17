@@ -167,7 +167,7 @@ public actor Core {
     /// A bundle the WebView already serves is adopted.
     private func shouldSwitchAtStart(to next: NextRelease) -> Bool {
         if loader.servedBundleId() == next.release.bundleId { return true }
-        return next.applyAt == .nextStart || next.applyAt == .immediate
+        return next.applyStrategy == .nextStart || next.applyStrategy == .immediate
     }
 
     /// The first render of the run, the readiness signal when `readySignal` is `render`, settles the start whatever it is. A render
@@ -199,7 +199,7 @@ public actor Core {
         confirmCurrentRelease()
         let rollback = state.lastRollback
         state.lastRollback = nil
-        let previousRelease = rollback?.from ?? releaseBeforeSwitch
+        let previousRelease = rollback?.fromRelease ?? releaseBeforeSwitch
         releaseBeforeSwitch = nil
         let result = NotifyReadyResult(currentRelease: state.currentRelease, previousRelease: previousRelease, isRolledBack: rollback != nil, rollbackReason: rollback?.reason)
         settleStart()
@@ -223,7 +223,7 @@ public actor Core {
         backgroundedAt = nil
         resumeReadyTimer()
         discardNextReleaseThatLeftTheIndex()
-        if let duration = backgroundDuration, state.nextRelease?.applyAt == .nextResume, duration >= configuration.applyOnResumeAfterSeconds {
+        if let duration = backgroundDuration, state.nextRelease?.applyStrategy == .nextResume, duration >= configuration.nextResumeMinimumBackgroundSeconds {
             restartIntoNextRelease()
             return
         }
@@ -312,7 +312,7 @@ public actor Core {
 
     private func performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let result = await resolveCycle(trigger: trigger, stage: stage, options: options)
-        state.lastCheck = LastCheck(at: clock.now, trigger: trigger, result: result)
+        state.lastCheck = LastCheck(checkedAt: clock.now, trigger: trigger, result: result)
         if stage == .sync {
             state.lastSyncAt = clock.now
             scheduleIntervalSync(after: configuration.checkIntervalSeconds)
@@ -386,7 +386,7 @@ public actor Core {
             if stage == .check {
                 return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
             }
-            return applyDownloaded(release, notes: target.notes, strategy: requestedStrategy ?? downloaded.applyAt)
+            return applyDownloaded(release, notes: target.notes, strategy: requestedStrategy ?? downloaded.applyStrategy)
         }
         let strategy = requestedStrategy ?? resolveConfiguredApplyStrategy(isMandatory: isMandatory)
         listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadSizeBytes: target.sizeBytes, trigger: trigger))
@@ -437,11 +437,11 @@ public actor Core {
         let release = resolveRelease(target, isMandatory: isMandatory)
         do {
             let baseBundleId = state.currentRelease?.bundleId ?? configuration.embeddedBundleId
-            let outcome = try await downloader.downloadRelease(target, baseBundleId: baseBundleId) { [listener] downloaded, total in
-                listener.downloadProgress(releaseId: target.id, downloadedBytes: downloaded, totalBytes: total)
+            let outcome = try await downloader.downloadRelease(target, baseBundleId: baseBundleId) { [listener] progressBytes, downloadSizeBytes in
+                listener.downloadProgress(releaseId: target.id, progressBytes: progressBytes, downloadSizeBytes: downloadSizeBytes)
             }
             try BundleProjection.project(outcome.manifest, from: files, embedded: embedded, into: loader.projectionDirectory(bundleId: target.bundleId))
-            enqueueDeviceEvent(.downloaded(releaseId: target.id, bundleId: target.bundleId, bytes: outcome.bytes, packKind: outcome.packKind))
+            enqueueDeviceEvent(.downloaded(releaseId: target.id, bundleId: target.bundleId, downloadSizeBytes: outcome.downloadSizeBytes, packKind: outcome.packKind))
         } catch let failure as DownloadFailure {
             enqueueDeviceEvent(.failed(releaseId: target.id, reason: failure.reason.rawValue))
             return .failed(release, reason: failure.reason, message: failure.message)
@@ -450,7 +450,7 @@ public actor Core {
             return .failed(release, reason: .downloadFailed, message: error.localizedDescription)
         }
         if strategy != .immediate {
-            listener.updateDownloaded(UpdateDownloadedEvent(release: release, applyAt: strategy, trigger: trigger))
+            listener.updateDownloaded(UpdateDownloadedEvent(release: release, applyStrategy: strategy, trigger: trigger))
         }
         return applyDownloaded(release, notes: target.notes, strategy: strategy)
     }
@@ -458,7 +458,7 @@ public actor Core {
     /// Choosing and applying are two acts: the strategy is a policy over the four functions, its moment stored with the release.
     /// `APPLIED` when the apply happens now, the reload following, else `DOWNLOADED` with the moment it waits for.
     private func applyDownloaded(_ release: Release, notes: String?, strategy: ApplyStrategy) -> SyncResult {
-        setNextRelease(NextRelease(release: release, applyAt: strategy))
+        setNextRelease(NextRelease(release: release, applyStrategy: strategy))
         switch strategy {
         case .immediate:
             restartIntoNextRelease()
@@ -468,7 +468,7 @@ public actor Core {
         case .nextResume, .manual:
             break
         }
-        return .downloaded(release, notes: notes, applyAt: strategy)
+        return .downloaded(release, notes: notes, applyStrategy: strategy)
     }
 
     /// Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event.
@@ -499,8 +499,8 @@ public actor Core {
         }
     }
 
-    public func setRestartAllowed(_ allowed: Bool) {
-        isRestartAllowed = allowed
+    public func setRestartAllowed(_ isAllowed: Bool) {
+        isRestartAllowed = isAllowed
         runQueuedRestart()
     }
 
@@ -747,8 +747,8 @@ public actor Core {
         let fallback = resolveFallbackRelease()
         state.currentRelease = fallback
         state.nextRelease = nil
-        state.lastRollback = LastRollback(from: current, to: fallback, reason: reason)
-        state.pendingRollbackEvent = UpdateRolledBackEvent(from: current, to: fallback, reason: reason)
+        state.lastRollback = LastRollback(fromRelease: current, toRelease: fallback, reason: reason)
+        state.pendingRollbackEvent = UpdateRolledBackEvent(fromRelease: current, toRelease: fallback, reason: reason)
         hasAnnouncedRollback = false
         enqueueDeviceEvent(.failed(releaseId: current.id, reason: reason.rawValue, detail: detail))
         enqueueDeviceEvent(.rolledBack(fromReleaseId: current.id, toReleaseId: fallback?.id))
@@ -927,7 +927,7 @@ public actor Core {
 
     /// Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`.
     private var isDisabledInThisBuild: Bool {
-        return configuration.embeddedBundleManifest == nil || (device.isDebugBuild && !configuration.enabledInDebugBuilds)
+        return configuration.embeddedBundleManifest == nil || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
     }
 
     private func deviceInfo() -> DeviceInfo {

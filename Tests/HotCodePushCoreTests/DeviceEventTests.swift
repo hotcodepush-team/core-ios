@@ -11,7 +11,7 @@ final class DeviceEventTests: XCTestCase {
       "events": [
         { "condition": "binary", "reason": "DEVICE_INCOMPATIBLE", "releaseId": "r2", "status": "SKIPPED", "type": "checked" },
         { "releaseId": "r3", "status": "AVAILABLE", "type": "checked" },
-        { "bundleId": "b1", "bytes": 4096, "packKind": "delta", "releaseId": "r1", "type": "downloaded" },
+        { "bundleId": "b1", "downloadSizeBytes": 4096, "packKind": "delta", "releaseId": "r1", "type": "downloaded" },
         { "releaseId": "r1", "type": "applied" },
         { "releaseId": "r1", "type": "confirmed" },
         { "reason": "READINESS_TIMED_OUT", "releaseId": "r1", "type": "failed" },
@@ -39,7 +39,7 @@ final class DeviceEventTests: XCTestCase {
     private static let events: [DeviceEvent] = [
         .checked(releaseId: "r2", status: .skipped, reason: .deviceIncompatible, condition: .binary),
         .checked(releaseId: "r3", status: .available),
-        .downloaded(releaseId: "r1", bundleId: "b1", bytes: 4096, packKind: .delta),
+        .downloaded(releaseId: "r1", bundleId: "b1", downloadSizeBytes: 4096, packKind: .delta),
         .applied(releaseId: "r1"),
         .confirmed(releaseId: "r1"),
         .failed(releaseId: "r1", reason: RollbackReason.readinessTimedOut.rawValue),

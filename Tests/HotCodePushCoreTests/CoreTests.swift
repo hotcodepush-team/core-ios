@@ -18,7 +18,7 @@ final class CoreTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyAt: .nextStart))
+        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .nextStart))
         XCTAssertEqual(harness.loader.persisted, .some("b2"))
         XCTAssertEqual(harness.loader.loaded, [])
         XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
@@ -654,7 +654,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleRendered()
         await harness.core.setRestartAllowed(false)
         let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyAt: .manual))
+        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .manual))
         _ = await harness.core.applyUpdate()
         XCTAssertEqual(harness.loader.loaded, ["b2"])
         let status = await harness.core.getState()
@@ -722,7 +722,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         await harness.core.handleRendered()
         let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyAt: .nextResume))
+        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .nextResume))
         await harness.core.handleAppPause()
         harness.clock.now = harness.clock.now.addingTimeInterval(300)
         await harness.core.handleAppResume()
@@ -741,7 +741,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleRendered()
         let result = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.status, .downloaded)
-        XCTAssertEqual(result.applyAt, .manual)
+        XCTAssertEqual(result.applyStrategy, .manual)
         await harness.core.handleAppPause()
         harness.clock.now = harness.clock.now.addingTimeInterval(300)
         await harness.core.handleAppResume()
@@ -773,7 +773,7 @@ final class CoreTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .nextResume))
-        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyAt: .nextResume))
+        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .nextResume))
         harness.restart()
         await harness.core.handleAppStart()
         await harness.core.handleRendered()
@@ -807,8 +807,8 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .nextResume))
         let interval = try await harness.core.sync(trigger: .interval)
-        XCTAssertEqual(interval, .downloaded(v2.release.release, notes: "notes 1", applyAt: .nextResume))
-        XCTAssertEqual(StateStore(store: harness.store).nextRelease?.applyAt, .nextResume)
+        XCTAssertEqual(interval, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .nextResume))
+        XCTAssertEqual(StateStore(store: harness.store).nextRelease?.applyStrategy, .nextResume)
         harness.restart()
         await harness.core.handleAppStart()
         let started = await harness.core.getState()
@@ -823,7 +823,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         await harness.core.handleRendered()
         let downloaded = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1", applyAt: .nextStart))
+        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .nextStart))
         let applied = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .immediate))
         XCTAssertEqual(applied, .applied(v2.release.release, notes: "notes 1"))
         XCTAssertEqual(harness.loader.loaded, ["b2"])
@@ -1206,7 +1206,7 @@ final class CoreTests: XCTestCase {
     }
 
     func testShouldSendNothingWhenLiveUpdatesAreOffInADebugBuild() async throws {
-        let harness = Harness(configuration: Fixture.configuration(enabledInDebugBuilds: false), isDebugBuild: true)
+        let harness = Harness(configuration: Fixture.configuration(isEnabledInDebugBuilds: false), isDebugBuild: true)
         harness.acknowledgeEvents()
         harness.publish([], sequence: 1)
         await harness.core.handleAppStart()
@@ -1382,9 +1382,9 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
         XCTAssertEqual(harness.listener.updateAvailable.count, 1)
         let downloaded = try await harness.core.downloadUpdate()
-        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1", applyAt: .manual))
+        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .manual))
         XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
-        XCTAssertEqual(harness.listener.updateDownloaded.map { $0.applyAt }, [.manual])
+        XCTAssertEqual(harness.listener.updateDownloaded.map { $0.applyStrategy }, [.manual])
         XCTAssertEqual(harness.loader.loaded, [])
         let state = await harness.core.getState()
         XCTAssertEqual(state.nextRelease, v2.release.release)
@@ -1446,7 +1446,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleRendered()
         let downloaded = try await harness.core.downloadUpdate(options: DownloadUpdateOptions(applyStrategy: .immediate, mandatoryApplyStrategy: .manual))
         XCTAssertEqual(downloaded.status, .downloaded)
-        XCTAssertEqual(downloaded.applyAt, .manual)
+        XCTAssertEqual(downloaded.applyStrategy, .manual)
         XCTAssertEqual(harness.loader.loaded, [])
     }
 
@@ -1459,8 +1459,8 @@ final class CoreTests: XCTestCase {
         let skipped = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(skipped, .skipped(v2.release.release, reason: .connectionMetered))
         let downloaded = try await harness.core.downloadUpdate()
-        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1", applyAt: .nextStart))
-        XCTAssertEqual(harness.listener.updateDownloaded.map { $0.applyAt }, [.nextStart])
+        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .nextStart))
+        XCTAssertEqual(harness.listener.updateDownloaded.map { $0.applyStrategy }, [.nextStart])
     }
 
     func testShouldApplyAMandatoryReleaseAtOnceWhateverTheApplyStrategy() async throws {
@@ -1482,7 +1482,7 @@ final class CoreTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyAt: .manual))
+        XCTAssertEqual(result, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .manual))
         XCTAssertEqual(harness.listener.updateDownloaded.map { $0.release.isMandatory }, [true])
         XCTAssertEqual(harness.loader.loaded, [])
         harness.loader.served = nil
@@ -1503,7 +1503,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(result.release?.id, "r2")
         XCTAssertEqual(result.release?.isMandatory, true)
         XCTAssertEqual(result.status, .downloaded)
-        XCTAssertEqual(result.applyAt, .manual)
+        XCTAssertEqual(result.applyStrategy, .manual)
     }
 
     func testShouldCarryTheAppsRollbackReasonOnTheFailureEvent() async throws {
@@ -1743,7 +1743,7 @@ final class CoreTests: XCTestCase {
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
         let downloaded = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1", applyAt: .manual))
+        XCTAssertEqual(downloaded, .downloaded(v2.release.release, notes: "notes 1", applyStrategy: .manual))
         harness.publish([], sequence: 2, etag: "\"e2\"")
         _ = try await harness.core.sync(trigger: .manual)
         let result = await harness.core.applyUpdate()

@@ -41,13 +41,13 @@ final class StoreTests: XCTestCase {
 
     func testShouldStoreTheNextReleaseWithItsApplyMoment() throws {
         let store = InMemoryStore()
-        let next = NextRelease(release: Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false), applyAt: .nextResume)
+        let next = NextRelease(release: Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false), applyStrategy: .nextResume)
         StateStore(store: store).nextRelease = next
         XCTAssertEqual(StateStore(store: store).nextRelease, next)
         let stored = try XCTUnwrap(store.string(forKey: "hotcodepush.nextRelease"))
         let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(stored.utf8)) as? [String: Any])
-        XCTAssertEqual(Set(object.keys), ["release", "applyAt"])
-        XCTAssertEqual(object["applyAt"] as? String, "next-resume")
+        XCTAssertEqual(Set(object.keys), ["release", "applyStrategy"])
+        XCTAssertEqual(object["applyStrategy"] as? String, "next-resume")
     }
 
     func testShouldGenerateAStableDeviceIdOnce() {
@@ -61,7 +61,7 @@ final class StoreTests: XCTestCase {
     func testShouldDropTheCacheWhenAValueDoesNotParse() {
         let store = InMemoryStore()
         let state = StateStore(store: store)
-        state.nextRelease = NextRelease(release: Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false), applyAt: .nextStart)
+        state.nextRelease = NextRelease(release: Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false), applyStrategy: .nextStart)
         store.set("not json", forKey: "hotcodepush.currentRelease")
         XCTAssertNil(state.currentRelease)
         XCTAssertNil(state.nextRelease)

@@ -54,7 +54,7 @@ final class MissingChannelTests: XCTestCase {
     }
 
     func testShouldSkipAnExplicitSyncWithDebugBuildWhenTheBuildIsDisabledAndTheDeviceHasNoChannel() async throws {
-        let harness = Harness(configuration: Fixture.configuration(enabledInDebugBuilds: false, channelId: nil), isDebugBuild: true)
+        let harness = Harness(configuration: Fixture.configuration(isEnabledInDebugBuilds: false, channelId: nil), isDebugBuild: true)
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))

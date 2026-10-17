@@ -42,22 +42,22 @@ public struct CachedIndex: Codable, Equatable {
 /// it here, never in the configuration, so a per-call strategy holds until the release is applied.
 public struct NextRelease: Codable, Equatable {
     public let release: Release
-    public let applyAt: ApplyStrategy
+    public let applyStrategy: ApplyStrategy
 
-    public init(release: Release, applyAt: ApplyStrategy) {
+    public init(release: Release, applyStrategy: ApplyStrategy) {
         self.release = release
-        self.applyAt = applyAt
+        self.applyStrategy = applyStrategy
     }
 }
 
 public struct LastRollback: Codable, Equatable {
-    public let from: Release
-    public let to: Release?
+    public let fromRelease: Release
+    public let toRelease: Release?
     public let reason: RollbackReason
 
-    public init(from: Release, to: Release?, reason: RollbackReason) {
-        self.from = from
-        self.to = to
+    public init(fromRelease: Release, toRelease: Release?, reason: RollbackReason) {
+        self.fromRelease = fromRelease
+        self.toRelease = toRelease
         self.reason = reason
     }
 }

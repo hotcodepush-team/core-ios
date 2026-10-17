@@ -190,17 +190,17 @@ final class FixtureTests: XCTestCase {
     private struct PackSourcesFile: Decodable {
         struct Request: Decodable, Equatable {
             let kind: String
-            let maximumBytes: Int
+            let packBytesLimit: Int
             let sizeBytes: Int?
             let url: String
 
             init(_ source: PackSource) {
-                self.init(kind: source.kind.rawValue, maximumBytes: source.maximumBytes, sizeBytes: source.sizeBytes, url: source.url)
+                self.init(kind: source.kind.rawValue, packBytesLimit: source.packBytesLimit, sizeBytes: source.sizeBytes, url: source.url)
             }
 
-            init(kind: String, maximumBytes: Int, sizeBytes: Int?, url: String) {
+            init(kind: String, packBytesLimit: Int, sizeBytes: Int?, url: String) {
                 self.kind = kind
-                self.maximumBytes = maximumBytes
+                self.packBytesLimit = packBytesLimit
                 self.sizeBytes = sizeBytes
                 self.url = url
             }
@@ -221,8 +221,8 @@ final class FixtureTests: XCTestCase {
     }
 
     private struct BoundsFile: Decodable {
-        let deviceConditionMaxHashedIds: Int
-        let releaseMaxConditions: Int
+        let deviceConditionHashedIdCountLimit: Int
+        let releaseConditionCountLimit: Int
     }
 
     private struct PackFile: Decodable {
@@ -505,10 +505,10 @@ final class FixtureTests: XCTestCase {
         XCTAssertEqual(staging.downloadStrategy, .unmetered)
         XCTAssertEqual(staging.applyStrategy, .nextResume)
         XCTAssertEqual(staging.mandatoryApplyStrategy, .manual)
-        XCTAssertEqual(staging.applyOnResumeAfterSeconds, 300)
+        XCTAssertEqual(staging.nextResumeMinimumBackgroundSeconds, 300)
         XCTAssertEqual(staging.readySignal, .manual)
         XCTAssertEqual(staging.readyTimeoutSeconds, 10)
-        XCTAssertFalse(staging.enabledInDebugBuilds)
+        XCTAssertFalse(staging.isEnabledInDebugBuilds)
         XCTAssertEqual(staging.filesBaseUrl, "https://files.staging.hotcodepush.com")
         XCTAssertEqual(staging.updatesBaseUrl, "https://updates.staging.hotcodepush.com")
     }
@@ -528,10 +528,10 @@ final class FixtureTests: XCTestCase {
             XCTAssertEqual(options.downloadStrategy, defaults.downloadStrategy, testCase.name)
             XCTAssertEqual(options.applyStrategy, defaults.applyStrategy, testCase.name)
             XCTAssertEqual(options.mandatoryApplyStrategy, defaults.mandatoryApplyStrategy, testCase.name)
-            XCTAssertEqual(options.applyOnResumeAfterSeconds, defaults.applyOnResumeAfterSeconds, testCase.name)
+            XCTAssertEqual(options.nextResumeMinimumBackgroundSeconds, defaults.nextResumeMinimumBackgroundSeconds, testCase.name)
             XCTAssertEqual(options.readySignal, defaults.readySignal, testCase.name)
             XCTAssertEqual(options.readyTimeoutSeconds, defaults.readyTimeoutSeconds, testCase.name)
-            XCTAssertEqual(options.enabledInDebugBuilds, defaults.enabledInDebugBuilds, testCase.name)
+            XCTAssertEqual(options.isEnabledInDebugBuilds, defaults.isEnabledInDebugBuilds, testCase.name)
         }
     }
 
@@ -575,8 +575,8 @@ final class FixtureTests: XCTestCase {
     /// The bounds are the writer's: a reader takes a release with more conditions, and a device condition with more ids, than the API accepts.
     func testShouldReadPastTheWriterBoundsFixture() throws {
         let bounds = try load("bounds.json", as: BoundsFile.self)
-        let hashedIds = (0...bounds.deviceConditionMaxHashedIds).map { Hashing.sha256Hex("device-\($0)") }
-        let conditions = (0...bounds.releaseMaxConditions).map { _ in Condition.device(hashedIds: hashedIds) }
+        let hashedIds = (0...bounds.deviceConditionHashedIdCountLimit).map { Hashing.sha256Hex("device-\($0)") }
+        let conditions = (0...bounds.releaseConditionCountLimit).map { _ in Condition.device(hashedIds: hashedIds) }
         let release = IndexRelease(id: "r1", number: 1, createdAt: Fixture.builtAt, conditions: conditions, bundleId: "b1", bundleVersion: "1.0.0", manifestUrl: "\(Fixture.filesBaseUrl)/manifest.json", manifestSha256: Hashing.sha256Hex("manifest"), sizeBytes: 1)
         let index = Fixture.index(sequence: 1, releases: [release])
         XCTAssertEqual(try Json.decoder.decode(ChannelIndex.self, from: Json.encoder.encode(index)), index)

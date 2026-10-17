@@ -76,7 +76,7 @@ public struct IndexRelease: Codable, Equatable {
     public let createdAt: Date
     public let isMandatory: Bool
     public let notes: String?
-    public let rollout: Int
+    public let rolloutPercentage: Int
     public let conditions: [Condition]
     public let bundleId: String
     public let bundleVersion: String
@@ -85,16 +85,16 @@ public struct IndexRelease: Codable, Equatable {
     public let sizeBytes: Int
 
     enum CodingKeys: String, CodingKey {
-        case id, number, createdAt, isMandatory, notes, rollout, conditions, bundleId, bundleVersion, manifestUrl, manifestSha256, sizeBytes
+        case id, number, createdAt, isMandatory, notes, rolloutPercentage, conditions, bundleId, bundleVersion, manifestUrl, manifestSha256, sizeBytes
     }
 
-    public init(id: String, number: Int, createdAt: Date, isMandatory: Bool = false, notes: String? = nil, rollout: Int = 100, conditions: [Condition] = [], bundleId: String, bundleVersion: String, manifestUrl: String, manifestSha256: String, sizeBytes: Int) {
+    public init(id: String, number: Int, createdAt: Date, isMandatory: Bool = false, notes: String? = nil, rolloutPercentage: Int = 100, conditions: [Condition] = [], bundleId: String, bundleVersion: String, manifestUrl: String, manifestSha256: String, sizeBytes: Int) {
         self.id = id
         self.number = number
         self.createdAt = createdAt
         self.isMandatory = isMandatory
         self.notes = notes
-        self.rollout = rollout
+        self.rolloutPercentage = rolloutPercentage
         self.conditions = conditions
         self.bundleId = bundleId
         self.bundleVersion = bundleVersion
@@ -110,7 +110,7 @@ public struct IndexRelease: Codable, Equatable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         isMandatory = try container.decode(Bool.self, forKey: .isMandatory)
         notes = try container.decodeNullable(String.self, forKey: .notes)
-        rollout = try container.decodeInt(forKey: .rollout, minimum: 0, maximum: 100)
+        rolloutPercentage = try container.decodeInt(forKey: .rolloutPercentage, minimum: 0, maximum: 100)
         conditions = try container.decode([Condition].self, forKey: .conditions)
         bundleId = try container.decode(.identifier, forKey: .bundleId)
         bundleVersion = try container.decode(String.self, forKey: .bundleVersion)
@@ -126,7 +126,7 @@ public struct IndexRelease: Codable, Equatable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(isMandatory, forKey: .isMandatory)
         try container.encode(notes, forKey: .notes)
-        try container.encode(rollout, forKey: .rollout)
+        try container.encode(rolloutPercentage, forKey: .rolloutPercentage)
         try container.encode(conditions, forKey: .conditions)
         try container.encode(bundleId, forKey: .bundleId)
         try container.encode(bundleVersion, forKey: .bundleVersion)
@@ -147,14 +147,14 @@ public enum ConditionType: String, Codable {
 /// A condition of an index entry; a type this SDK does not know is kept and fails closed.
 public enum Condition: Codable, Equatable {
     case binary(range: String)
-    case fingerprint(hash: String)
+    case fingerprint(fingerprint: String)
     case os(range: String)
     case device(hashedIds: [String])
     case attribute(key: String, valueSha256: String)
     case unknown(type: String)
 
     enum CodingKeys: String, CodingKey {
-        case type, range, hash, hashedIds, key, valueSha256
+        case type, range, fingerprint, hashedIds, key, valueSha256
     }
 
     public init(from decoder: Decoder) throws {
@@ -162,7 +162,7 @@ public enum Condition: Codable, Equatable {
         let type = try container.decode(String.self, forKey: .type)
         switch type {
         case "binary": self = .binary(range: try container.decode(.nonEmpty, forKey: .range))
-        case "fingerprint": self = .fingerprint(hash: try container.decode(.nonEmpty, forKey: .hash))
+        case "fingerprint": self = .fingerprint(fingerprint: try container.decode(.nonEmpty, forKey: .fingerprint))
         case "os": self = .os(range: try container.decode(.nonEmpty, forKey: .range))
         case "device": self = .device(hashedIds: try container.decode([String].self, forKey: .hashedIds))
         case "attribute": self = .attribute(key: try container.decode(.nonEmpty, forKey: .key), valueSha256: try container.decode(.sha256, forKey: .valueSha256))
@@ -176,9 +176,9 @@ public enum Condition: Codable, Equatable {
         case .binary(let range):
             try container.encode("binary", forKey: .type)
             try container.encode(range, forKey: .range)
-        case .fingerprint(let hash):
+        case .fingerprint(let fingerprint):
             try container.encode("fingerprint", forKey: .type)
-            try container.encode(hash, forKey: .hash)
+            try container.encode(fingerprint, forKey: .fingerprint)
         case .os(let range):
             try container.encode("os", forKey: .type)
             try container.encode(range, forKey: .range)

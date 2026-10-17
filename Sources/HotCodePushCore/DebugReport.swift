@@ -94,9 +94,9 @@ public enum DebugReport {
         guard let check = snapshot.state.lastCheck else {
             return DebugSection(title: "Last check", rows: [DebugRow(label: "When", value: "never")])
         }
-        let entry = LogEntry.ofCycle(check.result, trigger: check.trigger, at: check.at)
+        let entry = LogEntry.ofCycle(check.result, trigger: check.trigger, at: check.checkedAt)
         return DebugSection(title: "Last check", rows: [
-            DebugRow(label: "When", value: Iso8601.format(check.at)),
+            DebugRow(label: "When", value: Iso8601.format(check.checkedAt)),
             DebugRow(label: "Trigger", value: check.trigger.rawValue),
             DebugRow(label: "Result", value: entry.code),
             DebugRow(label: "Release", value: describe(check.result.release) ?? "none"),
@@ -124,7 +124,7 @@ public enum DebugReport {
             DebugRow(label: "Check strategy", value: configuration.checkStrategy == .auto ? "auto, every \(Int(configuration.checkIntervalSeconds)) s" : "manual"),
             DebugRow(label: "Strategies", value: "download \(configuration.downloadStrategy.rawValue), apply \(configuration.applyStrategy.rawValue), mandatory \(configuration.mandatoryApplyStrategy.rawValue)"),
             DebugRow(label: "Ready signal", value: "\(configuration.readySignal.rawValue), \(Int(configuration.readyTimeoutSeconds)) s"),
-            DebugRow(label: "Debug builds", value: configuration.enabledInDebugBuilds ? "enabled" : "disabled"),
+            DebugRow(label: "Debug builds", value: configuration.isEnabledInDebugBuilds ? "enabled" : "disabled"),
             DebugRow(label: "Public keys", value: String(configuration.publicKeys.count))
         ])
     }

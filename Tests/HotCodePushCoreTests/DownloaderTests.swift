@@ -68,7 +68,7 @@ final class DownloaderTests: XCTestCase {
         XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(large)))
         harness.http.stub(DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(large)), body: large)
         let outcome = try await harness.download(harness.publish(manifest, pack: DownloaderHarness.emptyPack))
-        XCTAssertEqual(outcome.bytes, DownloaderHarness.emptyPack.count + large.count)
+        XCTAssertEqual(outcome.downloadSizeBytes, DownloaderHarness.emptyPack.count + large.count)
         XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(large)))
     }
 
@@ -189,7 +189,7 @@ final class DownloaderTests: XCTestCase {
         harness.http.stub(DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1"), body: bundle.pack)
         let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b0": bundle.pack]), baseBundleId: "b1")
         XCTAssertEqual(outcome.packKind, .streamed)
-        XCTAssertEqual(outcome.bytes, bundle.pack.count)
+        XCTAssertEqual(outcome.downloadSizeBytes, bundle.pack.count)
         XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1")])
         XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(appJs)))
     }

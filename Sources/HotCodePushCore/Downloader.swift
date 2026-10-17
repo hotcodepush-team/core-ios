@@ -24,7 +24,7 @@ public enum DownloadFailure: Error, Equatable {
 
 public struct DownloadOutcome: Equatable {
     public let manifest: BundleManifest
-    public let bytes: Int
+    public let downloadSizeBytes: Int
     public let packKind: PackKind
 }
 
@@ -32,7 +32,7 @@ public struct DownloadOutcome: Equatable {
 struct PackSource: Equatable {
     let url: String
     let sizeBytes: Int?
-    let maximumBytes: Int
+    let packBytesLimit: Int
     let kind: PackKind
 }
 
@@ -59,18 +59,18 @@ public final class Downloader {
         let (envelope, manifest) = try await fetchBundleManifest(target)
         let missing = resolveMissingFiles(manifest)
         let pack = resolvePack(envelope, baseBundleId: baseBundleId, missingFileCount: missing.count)
-        try verifyFreeSpace(forBytes: missing.reduce(0) { $0 + $1.sizeBytes } + (pack?.maximumBytes ?? 0))
-        var bytes = 0
+        try verifyFreeSpace(forBytes: missing.reduce(0) { $0 + $1.sizeBytes } + (pack?.packBytesLimit ?? 0))
+        var downloadSizeBytes = 0
         var packKind = PackKind.files
         if let pack = pack {
             let wanted = Dictionary(missing.map { ($0.sha256, $0.sizeBytes) }, uniquingKeysWith: { first, _ in first })
-            (bytes, packKind) = try await downloadPack(pack, envelope: envelope, wanted: wanted, progress: progress)
+            (downloadSizeBytes, packKind) = try await downloadPack(pack, envelope: envelope, wanted: wanted, progress: progress)
         }
         for file in resolveMissingFiles(manifest) {
-            bytes += try await downloadFile(file)
+            downloadSizeBytes += try await downloadFile(file)
         }
         try files.writeManifest(manifest, bundleId: envelope.bundleId)
-        return DownloadOutcome(manifest: manifest, bytes: bytes, packKind: packKind)
+        return DownloadOutcome(manifest: manifest, downloadSizeBytes: downloadSizeBytes, packKind: packKind)
     }
 
     /// The envelope with its manifest decoded, once the manifest's bytes match the index, the envelope names the release's bundle
@@ -132,7 +132,7 @@ public final class Downloader {
         guard missingFileCount > 0 else { return nil }
         guard let baseBundleId = baseBundleId else { return resolveFullPack(envelope) }
         guard let listedDelta = envelope.deltas.first(where: { $0.baseBundleId == baseBundleId }) else { return resolveStreamedPack(envelope, baseBundleId: baseBundleId) }
-        return PackSource(url: listedDelta.url, sizeBytes: listedDelta.sizeBytes, maximumBytes: listedDelta.sizeBytes, kind: .delta)
+        return PackSource(url: listedDelta.url, sizeBytes: listedDelta.sizeBytes, packBytesLimit: listedDelta.sizeBytes, kind: .delta)
     }
 
     /// The pack a download requests after `source` answered anything but a 200 or a 206, `nil` when the download fails and waits for the
@@ -149,14 +149,14 @@ public final class Downloader {
     }
 
     private func resolveFullPack(_ envelope: ManifestEnvelope) -> PackSource {
-        return PackSource(url: envelope.pack.url, sizeBytes: envelope.pack.sizeBytes, maximumBytes: envelope.pack.sizeBytes, kind: .full)
+        return PackSource(url: envelope.pack.url, sizeBytes: envelope.pack.sizeBytes, packBytesLimit: envelope.pack.sizeBytes, kind: .full)
     }
 
     /// The delta pack the updates host assembles on request, of a length known only as it arrives, never larger than the full pack whose
     /// entries it shares.
     private func resolveStreamedPack(_ envelope: ManifestEnvelope, baseBundleId: String) -> PackSource {
         let url = "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/bundles/\(envelope.bundleId)/deltas/\(baseBundleId)"
-        return PackSource(url: url, sizeBytes: nil, maximumBytes: envelope.pack.sizeBytes, kind: .streamed)
+        return PackSource(url: url, sizeBytes: nil, packBytesLimit: envelope.pack.sizeBytes, kind: .streamed)
     }
 
     /// The download needs its bytes on disk at its peak: every missing file and the pack they arrive in.
@@ -186,7 +186,7 @@ public final class Downloader {
         let url = try resolvePinnedUrl(source.url)
         let file = temporaryDirectory.appendingPathComponent("\(bundleId)-\(Hashing.sha256Hex(source.url).prefix(16)).pack")
         do {
-            try await http.download(url, to: file, maximumBytes: source.maximumBytes, progress: progress)
+            try await http.download(url, to: file, maximumBytes: source.packBytesLimit, progress: progress)
         } catch let failure as DownloadFailure {
             throw failure
         } catch let refusal as HttpStatusError {

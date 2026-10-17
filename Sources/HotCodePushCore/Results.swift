@@ -44,7 +44,7 @@ public enum RollbackReason: String, Codable {
 }
 
 /// One shape for `SyncResult`, `CheckForUpdateResult` and `DownloadUpdateResult`: the status says which fields are set.
-/// `AVAILABLE` when the download is the app's, `DOWNLOADED` when the apply is scheduled or the app's, `applyAt` saying which,
+/// `AVAILABLE` when the download is the app's, `DOWNLOADED` when the apply is scheduled or the app's, `applyStrategy` saying which,
 /// and `APPLIED` when it happened now, the reload following the result.
 public struct SyncResult: Codable, Equatable {
     public let status: SyncStatus
@@ -53,23 +53,23 @@ public struct SyncResult: Codable, Equatable {
     public let condition: ConditionType?
     public let notes: String?
     /// `next-start`, `next-resume` or `manual` on `DOWNLOADED`, never `immediate`, which answers `APPLIED`.
-    public let applyAt: ApplyStrategy?
+    public let applyStrategy: ApplyStrategy?
     public let downloadSizeBytes: Int?
     public let message: String?
 
-    private init(status: SyncStatus, release: Release?, reason: String? = nil, condition: ConditionType? = nil, notes: String? = nil, applyAt: ApplyStrategy? = nil, downloadSizeBytes: Int? = nil, message: String? = nil) {
+    private init(status: SyncStatus, release: Release?, reason: String? = nil, condition: ConditionType? = nil, notes: String? = nil, applyStrategy: ApplyStrategy? = nil, downloadSizeBytes: Int? = nil, message: String? = nil) {
         self.status = status
         self.release = release
         self.reason = reason
         self.condition = condition
         self.notes = notes
-        self.applyAt = applyAt
+        self.applyStrategy = applyStrategy
         self.downloadSizeBytes = downloadSizeBytes
         self.message = message
     }
 
     enum CodingKeys: String, CodingKey {
-        case status, release, reason, condition, notes, applyAt, downloadSizeBytes, message
+        case status, release, reason, condition, notes, applyStrategy, downloadSizeBytes, message
     }
 
     /// The discriminated union's keys per status; a nullable field is an explicit `null`, an optional one absent.
@@ -85,7 +85,7 @@ public struct SyncResult: Codable, Equatable {
             try container.encode(downloadSizeBytes, forKey: .downloadSizeBytes)
         case .downloaded:
             try container.encode(notes, forKey: .notes)
-            try container.encode(applyAt, forKey: .applyAt)
+            try container.encode(applyStrategy, forKey: .applyStrategy)
         case .applied:
             try container.encode(notes, forKey: .notes)
         case .skipped:
@@ -105,8 +105,8 @@ public struct SyncResult: Codable, Equatable {
         return SyncResult(status: .available, release: release, notes: notes, downloadSizeBytes: downloadSizeBytes)
     }
 
-    public static func downloaded(_ release: Release, notes: String?, applyAt: ApplyStrategy) -> SyncResult {
-        return SyncResult(status: .downloaded, release: release, notes: notes, applyAt: applyAt)
+    public static func downloaded(_ release: Release, notes: String?, applyStrategy: ApplyStrategy) -> SyncResult {
+        return SyncResult(status: .downloaded, release: release, notes: notes, applyStrategy: applyStrategy)
     }
 
     public static func applied(_ release: Release, notes: String?) -> SyncResult {
@@ -175,7 +175,7 @@ public struct NotifyReadyResult: Codable, Equatable {
 }
 
 public struct LastCheck: Codable, Equatable {
-    public let at: Date
+    public let checkedAt: Date
     public let trigger: SyncTrigger
     public let result: SyncResult
 }
@@ -288,10 +288,10 @@ public struct UpdateAvailableEvent: Codable, Equatable {
     }
 }
 
-/// The download completed; `applyAt` says when the update is applied, `manual` meaning the app's `applyUpdate()`.
+/// The download completed; `applyStrategy` says when the update is applied, `manual` meaning the app's `applyUpdate()`.
 public struct UpdateDownloadedEvent: Codable, Equatable {
     public let release: Release
-    public let applyAt: ApplyStrategy
+    public let applyStrategy: ApplyStrategy
     public let trigger: SyncTrigger
 }
 
@@ -315,20 +315,20 @@ public struct UpdateFailedEvent: Codable, Equatable {
     }
 }
 
-/// At each start that follows a rollback until the app is up after one, before the readiness gate; `to` is `null` for the embedded bundle.
+/// At each start that follows a rollback until the app is up after one, before the readiness gate; `toRelease` is `null` for the embedded bundle.
 public struct UpdateRolledBackEvent: Codable, Equatable {
-    public let from: Release
-    public let to: Release?
+    public let fromRelease: Release
+    public let toRelease: Release?
     public let reason: RollbackReason
 
     enum CodingKeys: String, CodingKey {
-        case from, to, reason
+        case fromRelease, toRelease, reason
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(from, forKey: .from)
-        try container.encode(to, forKey: .to)
+        try container.encode(fromRelease, forKey: .fromRelease)
+        try container.encode(toRelease, forKey: .toRelease)
         try container.encode(reason, forKey: .reason)
     }
 }

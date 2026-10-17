@@ -162,7 +162,7 @@ final class FakeListener: CoreListener {
     @Locked var updateFailed: [UpdateFailedEvent] = []
     @Locked var updateRolledBack: [UpdateRolledBackEvent] = []
 
-    func downloadProgress(releaseId: String, downloadedBytes: Int, totalBytes: Int) { $downloadProgress.mutate { $0.append((releaseId, downloadedBytes, totalBytes)) } }
+    func downloadProgress(releaseId: String, progressBytes: Int, downloadSizeBytes: Int) { $downloadProgress.mutate { $0.append((releaseId, progressBytes, downloadSizeBytes)) } }
     func updateAvailable(_ event: UpdateAvailableEvent) { $updateAvailable.mutate { $0.append(event) } }
     func updateDownloaded(_ event: UpdateDownloadedEvent) { $updateDownloaded.mutate { $0.append(event) } }
     func updateFailed(_ event: UpdateFailedEvent) { $updateFailed.mutate { $0.append(event) } }
@@ -238,7 +238,7 @@ struct Fixture {
         return EmbeddedBundleManifest(appId: appId, bundleVersion: "1.0.0", files: [.init(path: "index.html", sha256: Hashing.sha256Hex(embeddedIndexHtml), sizeBytes: embeddedIndexHtml.count)], platforms: ["ios"])
     }
 
-    static func configuration(applyStrategy: ApplyStrategy = .nextStart, mandatoryApplyStrategy: MandatoryApplyStrategy = .immediate, downloadStrategy: DownloadStrategy = .auto, checkStrategy: CheckStrategy = .manual, readySignal: ReadySignal = .render, publicKeys: [DevicePublicKey] = [], fingerprint: String? = "fp1:abc", builtAt: Date = Fixture.builtAt, enabledInDebugBuilds: Bool = true, channelId: String? = Fixture.channelId, hasEmbeddedBundle: Bool = true, filesBaseUrl: String? = Fixture.filesBaseUrl, updatesBaseUrl: String? = Fixture.updatesBaseUrl) -> Configuration {
+    static func configuration(applyStrategy: ApplyStrategy = .nextStart, mandatoryApplyStrategy: MandatoryApplyStrategy = .immediate, downloadStrategy: DownloadStrategy = .auto, checkStrategy: CheckStrategy = .manual, readySignal: ReadySignal = .render, publicKeys: [DevicePublicKey] = [], fingerprint: String? = "fp1:abc", builtAt: Date = Fixture.builtAt, isEnabledInDebugBuilds: Bool = true, channelId: String? = Fixture.channelId, hasEmbeddedBundle: Bool = true, filesBaseUrl: String? = Fixture.filesBaseUrl, updatesBaseUrl: String? = Fixture.updatesBaseUrl) -> Configuration {
         var json: [String: Any] = [
             "appId": appId,
             "channelId": channelId as Any,
@@ -247,10 +247,10 @@ struct Fixture {
             "downloadStrategy": downloadStrategy.rawValue,
             "applyStrategy": applyStrategy.rawValue,
             "mandatoryApplyStrategy": mandatoryApplyStrategy.rawValue,
-            "applyOnResumeAfterSeconds": 300,
+            "nextResumeMinimumBackgroundSeconds": 300,
             "readySignal": readySignal.rawValue,
             "readyTimeoutSeconds": 10,
-            "enabledInDebugBuilds": enabledInDebugBuilds,
+            "isEnabledInDebugBuilds": isEnabledInDebugBuilds,
             "publicKeys": publicKeys.map { ["der": $0.der, "keyId": $0.keyId] },
             "builtAt": Iso8601.format(builtAt),
             "fingerprint": fingerprint as Any,
@@ -270,7 +270,7 @@ struct Fixture {
         return "\(updatesBaseUrl)/v1/apps/\(appId)/events"
     }
 
-    static func release(number: Int, bundleId: String, content: Data, createdAt: Date = builtAt.addingTimeInterval(60), rollout: Int = 100, conditions: [Condition] = [], isMandatory: Bool = false) -> (release: IndexRelease, manifest: BundleManifest, envelope: ManifestEnvelope, pack: Data) {
+    static func release(number: Int, bundleId: String, content: Data, createdAt: Date = builtAt.addingTimeInterval(60), rolloutPercentage: Int = 100, conditions: [Condition] = [], isMandatory: Bool = false) -> (release: IndexRelease, manifest: BundleManifest, envelope: ManifestEnvelope, pack: Data) {
         let sha256 = Hashing.sha256Hex(content)
         let js = Data("js-\(bundleId)".utf8)
         let pack = PackWriter.pack([
@@ -280,7 +280,7 @@ struct Fixture {
         let manifest = BundleManifest(appId: appId, bundleVersion: "1.\(number).0", files: [.init(path: "index.html", sha256: sha256, sizeBytes: content.count), .init(path: "assets/app.js", sha256: Hashing.sha256Hex(js), sizeBytes: js.count)], platforms: ["ios"])
         let manifestJson = String(bytes: try! Json.encoder.encode(manifest), encoding: .utf8) ?? ""
         let envelope = ManifestEnvelope(bundleId: bundleId, createdAt: createdAt, manifest: manifestJson, pack: .init(url: "\(filesBaseUrl)/apps/\(appId)/bundles/\(bundleId)/pack", sizeBytes: pack.count))
-        let release = IndexRelease(id: "r\(number)", number: number, createdAt: createdAt, isMandatory: isMandatory, notes: "notes \(number)", rollout: rollout, conditions: conditions, bundleId: bundleId, bundleVersion: manifest.bundleVersion, manifestUrl: "\(filesBaseUrl)/apps/\(appId)/bundles/\(bundleId)/manifest.json", manifestSha256: Hashing.sha256Hex(manifestJson), sizeBytes: content.count)
+        let release = IndexRelease(id: "r\(number)", number: number, createdAt: createdAt, isMandatory: isMandatory, notes: "notes \(number)", rolloutPercentage: rolloutPercentage, conditions: conditions, bundleId: bundleId, bundleVersion: manifest.bundleVersion, manifestUrl: "\(filesBaseUrl)/apps/\(appId)/bundles/\(bundleId)/manifest.json", manifestSha256: Hashing.sha256Hex(manifestJson), sizeBytes: content.count)
         return (release, manifest, envelope, pack)
     }
 

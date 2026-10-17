@@ -61,10 +61,10 @@ public struct Configuration: Codable, Equatable {
     public var applyStrategy: ApplyStrategy
     public var mandatoryApplyStrategy: MandatoryApplyStrategy
     /// The least time in the background before a `next-resume` apply.
-    public var applyOnResumeAfterSeconds: Double
+    public var nextResumeMinimumBackgroundSeconds: Double
     public var readySignal: ReadySignal
     public var readyTimeoutSeconds: Double
-    public var enabledInDebugBuilds: Bool
+    public var isEnabledInDebugBuilds: Bool
     public var publicKeys: [DevicePublicKey]
     public var builtAt: Date
     public var fingerprint: String?
@@ -76,7 +76,7 @@ public struct Configuration: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case appId, channelId, checkStrategy, checkIntervalSeconds, downloadStrategy, applyStrategy, mandatoryApplyStrategy
-        case applyOnResumeAfterSeconds, readySignal, readyTimeoutSeconds, enabledInDebugBuilds, publicKeys, builtAt
+        case nextResumeMinimumBackgroundSeconds, readySignal, readyTimeoutSeconds, isEnabledInDebugBuilds, publicKeys, builtAt
         case fingerprint, embeddedBundleManifest, embeddedBundleId, filesBaseUrl, updatesBaseUrl
     }
 
@@ -89,10 +89,10 @@ public struct Configuration: Codable, Equatable {
         downloadStrategy = try container.decodeIfPresent(DownloadStrategy.self, forKey: .downloadStrategy) ?? .auto
         applyStrategy = try container.decodeIfPresent(ApplyStrategy.self, forKey: .applyStrategy) ?? .nextStart
         mandatoryApplyStrategy = try container.decodeIfPresent(MandatoryApplyStrategy.self, forKey: .mandatoryApplyStrategy) ?? .immediate
-        applyOnResumeAfterSeconds = try container.decodeSeconds(forKey: .applyOnResumeAfterSeconds, minimum: 0, default: 300)
+        nextResumeMinimumBackgroundSeconds = try container.decodeSeconds(forKey: .nextResumeMinimumBackgroundSeconds, minimum: 0, default: 300)
         readySignal = try container.decodeIfPresent(ReadySignal.self, forKey: .readySignal) ?? .render
         readyTimeoutSeconds = try container.decodeSeconds(forKey: .readyTimeoutSeconds, minimum: Configuration.minimumReadyTimeoutSeconds, default: 10)
-        enabledInDebugBuilds = try container.decodeIfPresent(Bool.self, forKey: .enabledInDebugBuilds) ?? true
+        isEnabledInDebugBuilds = try container.decodeIfPresent(Bool.self, forKey: .isEnabledInDebugBuilds) ?? true
         publicKeys = try container.decodeIfPresent([DevicePublicKey].self, forKey: .publicKeys) ?? []
         builtAt = try container.decode(Date.self, forKey: .builtAt)
         fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint)
