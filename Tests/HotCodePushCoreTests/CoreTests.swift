@@ -709,23 +709,106 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.currentRelease, embedded.release.release)
     }
 
-    func testShouldDownloadAReleaseOfTheEmbeddedBundleWhenTheDeviceRunsAnotherBundle() async throws {
+    func testShouldSwitchWithoutTheGateAndBlocklistNothingWhenAnImmediateReleaseCarriesTheEmbeddedBundleWhileAnotherBundleRuns() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
+        let v5 = Fixture.release(number: 1, bundleId: "b5", content: Data("<html>v5</html>".utf8))
+        harness.publish([v5], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.core.handleRendered()
+        let embedded = Fixture.release(number: 2, bundleId: "embedded", content: Fixture.embeddedIndexHtml)
+        harness.publish([v5, embedded], sequence: 2, etag: "\"e2\"")
+        let scheduledCount = harness.scheduler.tasks.count
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .applied(embedded.release.release, notes: "notes 2"))
+        XCTAssertEqual(harness.scheduler.tasks.count, scheduledCount)
+        await harness.scheduler.fire()
+        await harness.core.waitForBackgroundWork()
+        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == embedded.release.manifestUrl })
+        XCTAssertNil(harness.files.readManifest(bundleId: "embedded"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: harness.loader.projectionDirectory(bundleId: "embedded").path))
+        XCTAssertEqual(harness.loader.loaded, ["b5", nil])
+        XCTAssertEqual(harness.loader.persisted, .some(nil))
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease, embedded.release.release)
+        XCTAssertEqual(status.fallbackRelease, embedded.release.release)
+        XCTAssertNil(status.nextRelease)
+        XCTAssertEqual(status.failedBundleIds, [])
+        XCTAssertTrue(harness.listener.updateRolledBack.isEmpty)
+        let events = StateStore(store: harness.store).unsentEvents
+        XCTAssertEqual(events.filter { $0.releaseId == "r2" }.map { $0.type }, ["checked", "applied", "confirmed"])
+        XCTAssertFalse(events.contains { $0.type == "failed" || $0.type == "rolledBack" })
+    }
+
+    func testShouldSwitchWithoutTheGateAndBlocklistNothingAtTheNextStartWhenANextStartReleaseCarriesTheEmbeddedBundleWhileAnotherBundleRuns() async throws {
         let harness = Harness()
-        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
-        harness.publish([v2], sequence: 1)
+        let v5 = Fixture.release(number: 1, bundleId: "b5", content: Data("<html>v5</html>".utf8))
+        harness.publish([v5], sequence: 1)
         await harness.core.handleAppStart()
         _ = try await harness.core.sync(trigger: .manual)
-        harness.loader.served = "b2"
+        harness.loader.served = "b5"
         harness.restart()
         await harness.core.handleAppStart()
         _ = await harness.core.notifyReady()
         let embedded = Fixture.release(number: 2, bundleId: "embedded", content: Fixture.embeddedIndexHtml)
-        harness.publish([v2, embedded], sequence: 2, etag: "\"e2\"")
+        harness.publish([v5, embedded], sequence: 2, etag: "\"e2\"")
         let result = try await harness.core.sync(trigger: .manual)
+        let again = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result, .downloaded(embedded.release.release, notes: "notes 2", applyStrategy: .nextStart))
-        XCTAssertTrue(harness.http.requests.contains { $0.url.absoluteString == embedded.release.manifestUrl })
+        XCTAssertEqual(again, result)
+        XCTAssertEqual(harness.listener.updateDownloaded.filter { $0.release.id == "r2" }.count, 1)
+        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == embedded.release.manifestUrl })
+        XCTAssertNil(harness.files.readManifest(bundleId: "embedded"))
+        XCTAssertEqual(harness.loader.persisted, .some(nil))
+        let waiting = await harness.core.getState()
+        XCTAssertEqual(waiting.currentRelease, v5.release.release)
+        XCTAssertEqual(waiting.nextRelease, embedded.release.release)
+
+        harness.loader.served = nil
+        harness.restart()
+        let scheduledCount = harness.scheduler.tasks.count
+        let served = await harness.core.handleAppStart()
+        XCTAssertNil(served)
+        XCTAssertEqual(harness.scheduler.tasks.count, scheduledCount)
+        await harness.scheduler.fire()
+        await harness.core.waitForBackgroundWork()
+        XCTAssertEqual(harness.loader.loaded, [])
         let status = await harness.core.getState()
-        XCTAssertEqual(status.currentRelease, v2.release.release)
+        XCTAssertEqual(status.currentRelease, embedded.release.release)
+        XCTAssertEqual(status.fallbackRelease, embedded.release.release)
+        XCTAssertNil(status.nextRelease)
+        XCTAssertEqual(status.failedBundleIds, [])
+        XCTAssertTrue(harness.listener.updateRolledBack.isEmpty)
+        let events = StateStore(store: harness.store).unsentEvents
+        XCTAssertEqual(events.filter { $0.releaseId == "r2" }.map { $0.type }, ["checked", "applied", "confirmed"])
+        XCTAssertFalse(events.contains { $0.type == "failed" || $0.type == "rolledBack" })
+    }
+
+    func testShouldGateAndBlocklistAReleaseOfAThirdBundleThatNeverRendersWhileAnotherBundleRuns() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
+        let v5 = Fixture.release(number: 1, bundleId: "b5", content: Data("<html>v5</html>".utf8))
+        harness.publish([v5], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.core.handleRendered()
+        let v6 = Fixture.release(number: 2, bundleId: "b6", content: Data("<html>v6</html>".utf8))
+        harness.publish([v5, v6], sequence: 2, etag: "\"e2\"")
+        let scheduledCount = harness.scheduler.tasks.count
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .applied(v6.release.release, notes: "notes 2"))
+        XCTAssertEqual(harness.scheduler.tasks.count, scheduledCount + 1)
+        await harness.scheduler.fire()
+        await harness.core.waitForBackgroundWork()
+        XCTAssertEqual(harness.loader.loaded, ["b5", "b6", "b5"])
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease, v5.release.release)
+        XCTAssertEqual(status.failedBundleIds, ["b6"])
+        let events = StateStore(store: harness.store).unsentEvents
+        XCTAssertEqual(events.filter { $0.releaseId == "r2" }.map { $0.type }, ["checked", "downloaded", "applied", "failed"])
+        XCTAssertEqual(events.last { $0.type == "failed" }?.reason, RollbackReason.readinessTimedOut.rawValue)
+        XCTAssertEqual(events.last?.toReleaseId, "r1")
     }
 
     func testShouldRollBackNothingWhenTheCurrentReleaseCarriesTheEmbeddedBundle() async throws {

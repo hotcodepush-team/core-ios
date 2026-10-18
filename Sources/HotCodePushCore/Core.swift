@@ -427,20 +427,19 @@ public actor Core {
         return isMandatory ? ApplyStrategy(configuration.mandatoryApplyStrategy) : configuration.applyStrategy
     }
 
-    /// The next release when it is the target and every file it lists is on disk.
+    /// The next release when it is the target and every file it lists is on disk or in the binary.
     private func readDownloadedRelease(_ target: IndexRelease) -> NextRelease? {
-        guard let next = state.nextRelease, next.release.bundleId == target.bundleId, hasEveryFileOnDisk(next.release) else { return nil }
+        guard let next = state.nextRelease, next.release.bundleId == target.bundleId, hasEveryFile(of: next.release) else { return nil }
         return next
     }
 
+    /// A release of the embedded bundle downloads nothing and lays out no tree: its files are the binary's.
     private func downloadAndApply(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         do {
-            let outcome = try await downloader.downloadRelease(target, baseBundleId: runningBundleId) { [listener] progressBytes, downloadSizeBytes in
-                listener.downloadProgress(releaseId: target.id, progressBytes: progressBytes, downloadSizeBytes: downloadSizeBytes)
+            if !isCarryingEmbeddedBundle(release) {
+                try await downloadBundle(of: target)
             }
-            try BundleProjection.project(outcome.manifest, from: files, embedded: embedded, into: loader.projectionDirectory(bundleId: target.bundleId))
-            enqueueDeviceEvent(.downloaded(releaseId: target.id, bundleId: target.bundleId, downloadSizeBytes: outcome.downloadSizeBytes, packKind: outcome.packKind))
         } catch let failure as DownloadFailure {
             enqueueDeviceEvent(.failed(releaseId: target.id, reason: failure.reason.rawValue))
             return .failed(release, reason: failure.reason, message: failure.message)
@@ -452,6 +451,15 @@ public actor Core {
             listener.updateDownloaded(UpdateDownloadedEvent(release: release, applyStrategy: strategy, trigger: trigger))
         }
         return applyDownloaded(release, notes: target.notes, strategy: strategy)
+    }
+
+    /// Fetches and verifies the release's files, lays its tree out for the host and records how the bytes arrived.
+    private func downloadBundle(of target: IndexRelease) async throws {
+        let outcome = try await downloader.downloadRelease(target, baseBundleId: runningBundleId) { [listener] progressBytes, downloadSizeBytes in
+            listener.downloadProgress(releaseId: target.id, progressBytes: progressBytes, downloadSizeBytes: downloadSizeBytes)
+        }
+        try BundleProjection.project(outcome.manifest, from: files, embedded: embedded, into: loader.projectionDirectory(bundleId: target.bundleId))
+        enqueueDeviceEvent(.downloaded(releaseId: target.id, bundleId: target.bundleId, downloadSizeBytes: outcome.downloadSizeBytes, packKind: outcome.packKind))
     }
 
     /// Choosing and applying are two acts: the strategy is a policy over the four functions, its moment stored with the release.
@@ -615,6 +623,9 @@ public actor Core {
         return index.revokedReleaseIds.contains(release.id) || !index.releases.contains { $0.id == release.id }
     }
 
+    /// The next release becomes the current one, unconfirmed, so the reload that follows runs the gate. A release of the embedded
+    /// bundle is confirmed at once, like a revert to the embedded bundle: the binary's bundle is never gated, so it is never rolled
+    /// back and never blocklisted.
     private func switchToNextRelease() {
         guard let next = state.nextRelease?.release else { return }
         releaseBeforeSwitch = state.currentRelease
@@ -622,6 +633,9 @@ public actor Core {
         state.nextRelease = nil
         persistServedBundle(of: next)
         enqueueDeviceEvent(.applied(releaseId: next.id))
+        if isCarryingEmbeddedBundle(next) {
+            confirmCurrentRelease()
+        }
     }
 
     /// The bundle the device runs: the current release's, else the embedded one.
@@ -790,13 +804,16 @@ public actor Core {
         guard let fallback = state.fallbackRelease,
               !state.failedBundleIds.contains(fallback.bundleId),
               !(state.cachedIndex?.body.revokedReleaseIds.contains(fallback.id) ?? false),
-              isCarryingEmbeddedBundle(fallback) || hasEveryFileOnDisk(fallback) else {
+              hasEveryFile(of: fallback) else {
             return nil
         }
         return fallback
     }
 
-    private func hasEveryFileOnDisk(_ release: Release) -> Bool {
+    /// Every file the release lists is on disk or in the binary; a release of the embedded bundle runs from the binary and needs no
+    /// manifest of ours.
+    private func hasEveryFile(of release: Release) -> Bool {
+        guard !isCarryingEmbeddedBundle(release) else { return true }
         guard let manifest = files.readManifest(bundleId: release.bundleId) else { return false }
         return files.isComplete(manifest, embedded: embedded)
     }
