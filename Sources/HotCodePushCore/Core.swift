@@ -138,7 +138,7 @@ public actor Core {
             startAutomaticCycle(trigger: .start)
         }
         unusedFilesDeletion = startBackgroundWork { self.deleteUnusedFiles() }
-        return state.currentRelease?.bundleId
+        return resolveServedBundleId(of: state.currentRelease)
     }
 
     /// The start for a host that resolves its bundle in synchronous code before its WebView or JavaScript loads: `handleAppStart()`'s
@@ -166,7 +166,7 @@ public actor Core {
     /// mandatory release's included; `next-resume` and `manual` wait, so a mandatory release the app took over waits across starts.
     /// A bundle the WebView already serves is adopted.
     private func shouldSwitchAtStart(to next: NextRelease) -> Bool {
-        if loader.servedBundleId() == next.release.bundleId { return true }
+        if loader.servedBundleId() == resolveServedBundleId(of: next.release) { return true }
         return next.applyStrategy == .nextStart || next.applyStrategy == .immediate
     }
 
@@ -268,8 +268,8 @@ public actor Core {
         return await runCycle(trigger: trigger, stage: .sync, options: options)
     }
 
-    /// `sync()` with the download gate closed: fetch and evaluate, and download, apply and adopt nothing, so a release downloaded
-    /// already answers `AVAILABLE`; never `DOWNLOADED` or `APPLIED`.
+    /// `sync()` with the download gate closed: fetch and evaluate, and download and apply nothing, so a release downloaded already
+    /// answers `AVAILABLE`; never `DOWNLOADED` or `APPLIED`. A release that carries the running bundle is adopted, as at every stage.
     public func checkForUpdate() async throws -> SyncResult {
         try verifyChannelId()
         return await runCycle(trigger: .manual, stage: .check, options: SyncOptions())
@@ -372,12 +372,13 @@ public actor Core {
         }
     }
 
-    /// A release the device qualifies for: adopted in place when it carries the running bundle, else announced and taken as far as the
-    /// stage goes. An adoption answers `UP_TO_DATE`, since nothing waits and nothing reloads. The apply moment is the call's strategy,
-    /// else the one a release downloaded already carries, else the configuration's, so an automatic cycle never overrides the app's.
+    /// A release the device qualifies for: adopted in place when it carries the running bundle, the embedded one included, else
+    /// announced and taken as far as the stage goes. An adoption answers `UP_TO_DATE`, since nothing waits and nothing reloads. The
+    /// apply moment is the call's strategy, else the one a release downloaded already carries, else the configuration's, so an
+    /// automatic cycle never overrides the app's.
     private func update(to target: IndexRelease, isMandatory: Bool, trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
-        if stage != .check, let current = state.currentRelease, current.bundleId == target.bundleId {
+        if target.bundleId == runningBundleId {
             adoptInPlace(release)
             return .upToDate(release)
         }
@@ -428,16 +429,14 @@ public actor Core {
 
     /// The next release when it is the target and every file it lists is on disk.
     private func readDownloadedRelease(_ target: IndexRelease) -> NextRelease? {
-        guard let next = state.nextRelease, next.release.bundleId == target.bundleId,
-              let manifest = files.readManifest(bundleId: next.release.bundleId), files.isComplete(manifest, embedded: embedded) else { return nil }
+        guard let next = state.nextRelease, next.release.bundleId == target.bundleId, hasEveryFileOnDisk(next.release) else { return nil }
         return next
     }
 
     private func downloadAndApply(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         do {
-            let baseBundleId = state.currentRelease?.bundleId ?? configuration.embeddedBundleId
-            let outcome = try await downloader.downloadRelease(target, baseBundleId: baseBundleId) { [listener] progressBytes, downloadSizeBytes in
+            let outcome = try await downloader.downloadRelease(target, baseBundleId: runningBundleId) { [listener] progressBytes, downloadSizeBytes in
                 listener.downloadProgress(releaseId: target.id, progressBytes: progressBytes, downloadSizeBytes: downloadSizeBytes)
             }
             try BundleProjection.project(outcome.manifest, from: files, embedded: embedded, into: loader.projectionDirectory(bundleId: target.bundleId))
@@ -464,7 +463,7 @@ public actor Core {
             restartIntoNextRelease()
             return .applied(release, notes: notes)
         case .nextStart:
-            loader.persistServedBundle(bundleId: release.bundleId)
+            persistServedBundle(of: release)
         case .nextResume, .manual:
             break
         }
@@ -472,11 +471,12 @@ public actor Core {
     }
 
     /// Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event.
+    /// The embedded bundle, a release that carries it included, has nothing to roll back to.
     public func rollbackUpdate(detail: String?) throws {
         if let detail = detail {
             try AttributeRules.validate(value: detail)
         }
-        guard state.currentRelease != nil else { return }
+        guard let current = state.currentRelease, !isCarryingEmbeddedBundle(current) else { return }
         rollbackCurrentRelease(reason: .appRequested, detail: detail)
     }
 
@@ -494,7 +494,7 @@ public actor Core {
                 loader.deleteProjection(bundleId: bundleId)
             }
             files.deleteEverything()
-            loader.persistServedBundle(bundleId: nil)
+            persistServedBundle(of: nil)
             reloadApp()
         }
     }
@@ -579,9 +579,10 @@ public actor Core {
 
     // MARK: The four functions and the gate
 
-    /// A restored phone brings the store's keys back without its files: a current or next release with no manifest on disk names a tree that is not there.
+    /// A restored phone brings the store's keys back without its files: a current or next release with no manifest on disk names a tree
+    /// that is not there. A release that carries the embedded bundle runs from the binary and needs none.
     private func hasReleaseWithoutManifest() -> Bool {
-        return [state.currentRelease, state.nextRelease?.release].compactMap { $0 }.contains { files.readManifest(bundleId: $0.bundleId) == nil }
+        return [state.currentRelease, state.nextRelease?.release].compactMap { $0 }.contains { !isCarryingEmbeddedBundle($0) && files.readManifest(bundleId: $0.bundleId) == nil }
     }
 
     /// A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded
@@ -596,7 +597,7 @@ public actor Core {
         state.lastRollback = nil
         state.pendingRollbackEvent = nil
         state.lastBuiltAt = configuration.builtAt
-        loader.persistServedBundle(bundleId: nil)
+        persistServedBundle(of: nil)
     }
 
     private func setNextRelease(_ next: NextRelease) {
@@ -607,7 +608,7 @@ public actor Core {
     private func discardNextReleaseThatLeftTheIndex() {
         guard let next = state.nextRelease, let index = state.cachedIndex?.body, hasLeftIndex(next.release, index) else { return }
         state.nextRelease = nil
-        loader.persistServedBundle(bundleId: state.currentRelease?.bundleId)
+        persistServedBundle(of: state.currentRelease)
     }
 
     private func hasLeftIndex(_ release: Release, _ index: ChannelIndex) -> Bool {
@@ -619,28 +620,47 @@ public actor Core {
         releaseBeforeSwitch = state.currentRelease
         state.currentRelease = next
         state.nextRelease = nil
-        loader.persistServedBundle(bundleId: next.bundleId)
+        persistServedBundle(of: next)
         enqueueDeviceEvent(.applied(releaseId: next.id))
+    }
+
+    /// The bundle the device runs: the current release's, else the embedded one.
+    private var runningBundleId: String? {
+        return state.currentRelease?.bundleId ?? configuration.embeddedBundleId
+    }
+
+    private func isCarryingEmbeddedBundle(_ release: Release) -> Bool {
+        return release.bundleId == configuration.embeddedBundleId
+    }
+
+    /// The bundle the host serves for a release, `nil` for the embedded bundle: a release that carries it runs from the binary,
+    /// never from a tree of ours.
+    private func resolveServedBundleId(of release: Release?) -> String? {
+        guard let release = release, !isCarryingEmbeddedBundle(release) else { return nil }
+        return release.bundleId
+    }
+
+    private func persistServedBundle(of release: Release?) {
+        loader.persistServedBundle(bundleId: resolveServedBundleId(of: release))
     }
 
     /// Points the host at the current bundle when it serves another: a reload the core performs, so a render of the bundle it
     /// replaced — the embedded one a host served past the start's bound — settles nothing after it.
     private func loadBundle() {
-        let expected = state.currentRelease?.bundleId
-        guard loader.servedBundleId() != expected else { return }
-        loadServedBundle(bundleId: expected)
+        guard loader.servedBundleId() != resolveServedBundleId(of: state.currentRelease) else { return }
+        loadServedBundle(of: state.currentRelease)
         unsettleStart()
     }
 
     /// The restart of the web layer: the bundle loads, then the reloaded app goes through the gate.
     private func reloadApp() {
-        loadServedBundle(bundleId: state.currentRelease?.bundleId)
+        loadServedBundle(of: state.currentRelease)
         gateReloadedApp()
     }
 
     /// Every load the core asks of the host: a readiness signal reported before it is the replaced bundle's and counts for nothing.
-    private func loadServedBundle(bundleId: String?) {
-        loader.loadServedBundle(bundleId: bundleId)
+    private func loadServedBundle(of release: Release?) {
+        loader.loadServedBundle(bundleId: resolveServedBundleId(of: release))
         bundleLoadCount.increment()
     }
 
@@ -666,7 +686,7 @@ public actor Core {
     /// The apply the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does.
     private func restartIntoNextRelease() {
         if let next = state.nextRelease {
-            loader.persistServedBundle(bundleId: next.release.bundleId)
+            persistServedBundle(of: next.release)
         }
         restartThroughGate(isAskedByApp: false) { [self] in applyNextRelease() }
     }
@@ -711,13 +731,16 @@ public actor Core {
         listener.updateRolledBack(event)
     }
 
+    /// The release becomes the current one, confirmed when the one it replaces was, and a release waiting to apply is dropped: the
+    /// cycle chose the adopted one over it, so it never switches after.
     private func adoptInPlace(_ release: Release) {
         let wasConfirmed = !isCurrentReleaseUnconfirmed()
         state.currentRelease = release
+        state.nextRelease = nil
         if wasConfirmed {
             state.fallbackRelease = release
         }
-        loader.persistServedBundle(bundleId: release.bundleId)
+        persistServedBundle(of: release)
     }
 
     private func isCurrentReleaseUnconfirmed() -> Bool {
@@ -752,7 +775,7 @@ public actor Core {
         hasAnnouncedRollback = false
         enqueueDeviceEvent(.failed(releaseId: current.id, reason: reason.rawValue, detail: detail))
         enqueueDeviceEvent(.rolledBack(fromReleaseId: current.id, toReleaseId: fallback?.id))
-        loader.persistServedBundle(bundleId: fallback?.bundleId)
+        persistServedBundle(of: fallback)
         switch reason {
         case .appCrashed, .appRequested:
             reloadApp()
@@ -761,23 +784,28 @@ public actor Core {
         }
     }
 
-    /// The release to fall back to right now: the last confirmed one while it can still run, else the embedded bundle.
+    /// The release to fall back to right now: the last confirmed one while it can still run, its files on disk or in the binary, else
+    /// the embedded bundle.
     private func resolveFallbackRelease() -> Release? {
         guard let fallback = state.fallbackRelease,
               !state.failedBundleIds.contains(fallback.bundleId),
               !(state.cachedIndex?.body.revokedReleaseIds.contains(fallback.id) ?? false),
-              let manifest = files.readManifest(bundleId: fallback.bundleId),
-              files.isComplete(manifest, embedded: embedded) else {
+              isCarryingEmbeddedBundle(fallback) || hasEveryFileOnDisk(fallback) else {
             return nil
         }
         return fallback
+    }
+
+    private func hasEveryFileOnDisk(_ release: Release) -> Bool {
+        guard let manifest = files.readManifest(bundleId: release.bundleId) else { return false }
+        return files.isComplete(manifest, embedded: embedded)
     }
 
     private func revertToEmbedded() {
         stopReadyTimer()
         state.currentRelease = nil
         state.nextRelease = nil
-        loader.persistServedBundle(bundleId: nil)
+        persistServedBundle(of: nil)
         restartThroughGate(isAskedByApp: false) { [self] in reloadApp() }
     }
 
