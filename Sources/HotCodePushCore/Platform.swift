@@ -55,13 +55,19 @@ public protocol Scheduler {
     func schedule(after seconds: TimeInterval, _ block: @escaping () async -> Void) -> ScheduledTask
 }
 
+/// The time and the pauses, which the tests replace so that nothing they run waits.
 public protocol Clock {
     var now: Date { get }
+    func sleep(seconds: TimeInterval) async throws
 }
 
 public struct SystemClock: Clock {
     public init() {}
     public var now: Date { Date() }
+
+    public func sleep(seconds: TimeInterval) async throws {
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    }
 }
 
 /// Whether the app runs in the background, which the start cannot learn from a notification: the system launching the app straight

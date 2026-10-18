@@ -38,6 +38,10 @@ struct PackSource: Equatable {
 
 /// Manifest, signature, missing files, pack, verification, files to disk — each step one function.
 public final class Downloader {
+    /// The pauses before the second and the third attempt of a fetch.
+    static let retryPausesSeconds: [TimeInterval] = [1, 3]
+
+    private let clock: Clock
     private let configuration: Configuration
     private let embedded: EmbeddedBundle
     private let files: FileStore
@@ -45,7 +49,8 @@ public final class Downloader {
     private let platform: String
     private let temporaryDirectory: URL
 
-    public init(configuration: Configuration, platform: String, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, temporaryDirectory: URL) {
+    public init(configuration: Configuration, platform: String, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, clock: Clock, temporaryDirectory: URL) {
+        self.clock = clock
         self.configuration = configuration
         self.platform = platform
         self.files = files
@@ -79,11 +84,16 @@ public final class Downloader {
         let url = try resolvePinnedUrl(target.manifestUrl)
         let response: HttpResponse
         do {
-            response = try await http.get(url, headers: [:])
+            response = try await fetchWithRetries {
+                let fetchedResponse = try await http.get(url, headers: [:])
+                guard fetchedResponse.status == 200 else { throw HttpStatusError(status: fetchedResponse.status) }
+                return fetchedResponse
+            }
+        } catch let refusal as HttpStatusError {
+            throw DownloadFailure.downloadFailed("HTTP \(refusal.status) for the manifest")
         } catch {
             throw DownloadFailure.downloadFailed("The manifest could not be fetched: \(error.localizedDescription)")
         }
-        guard response.status == 200 else { throw DownloadFailure.downloadFailed("HTTP \(response.status) for the manifest") }
         guard let envelope = try? Json.decoder.decode(ManifestEnvelope.self, from: response.body), let manifest = try? envelope.decodeManifest() else {
             throw DownloadFailure.manifestInvalid("The manifest could not be parsed")
         }
@@ -178,7 +188,7 @@ public final class Downloader {
         }
     }
 
-    /// Streams the pack to disk, resuming what an earlier cycle left — the file is named by bundle and URL for that, and the core's one
+    /// Streams the pack to disk, resuming what an earlier attempt or cycle left — the file is named by bundle and URL for that, and the core's one
     /// running cycle keeps two downloads from ever sharing it — and never past its bound, then inflates each
     /// wanted file entry up to its file's size, an entry always the gzip bytes the bucket serves, and applies each patch
     /// entry to a wanted file. A patch that does not apply leaves its file missing, fetched whole after the pack.
@@ -186,7 +196,7 @@ public final class Downloader {
         let url = try resolvePinnedUrl(source.url)
         let file = temporaryDirectory.appendingPathComponent("\(bundleId)-\(Hashing.sha256Hex(source.url).prefix(16)).pack")
         do {
-            try await http.download(url, to: file, maximumBytes: source.packBytesLimit, progress: progress)
+            try await fetchWithRetries { try await http.download(url, to: file, maximumBytes: source.packBytesLimit, progress: progress) }
         } catch let failure as DownloadFailure {
             throw failure
         } catch let refusal as HttpStatusError {
@@ -265,7 +275,11 @@ public final class Downloader {
         let temporary = temporaryDirectory.appendingPathComponent("\(UUID().uuidString).file")
         defer { try? FileManager.default.removeItem(at: temporary) }
         do {
-            try await http.download(url, to: temporary, maximumBytes: file.sizeBytes) { _, _ in }
+            try await fetchWithRetries {
+                // The body arrives decoded, so a range of the gzip the bucket serves would not continue it: every attempt starts over.
+                try? FileManager.default.removeItem(at: temporary)
+                try await http.download(url, to: temporary, maximumBytes: file.sizeBytes) { _, _ in }
+            }
         } catch let failure as DownloadFailure {
             throw failure
         } catch {
@@ -280,5 +294,31 @@ public final class Downloader {
             throw DownloadFailure.contentMismatched("The file \(file.path) did not match its hash")
         }
         return bytes
+    }
+
+    /// A fetch tried three times inside the check: a network error, a timeout, a short read or a 5xx pauses one second, then three,
+    /// before the next attempt, and the last attempt's failure is the fetch's; any other answer is final at once, a 404 or a 410
+    /// since the object will not appear.
+    private func fetchWithRetries<Fetched>(_ attempt: () async throws -> Fetched) async throws -> Fetched {
+        for pauseSeconds in Downloader.retryPausesSeconds {
+            do {
+                return try await attempt()
+            } catch where Downloader.isTransient(error) {
+                try await clock.sleep(seconds: pauseSeconds)
+            }
+        }
+        return try await attempt()
+    }
+
+    /// A failure the next attempt may not meet: the connection's, a dropped one cutting the body short included, or the host's
+    /// 5xx; never a cancellation.
+    private static func isTransient(_ error: Error) -> Bool {
+        if let refusal = error as? HttpStatusError {
+            return (500...599).contains(refusal.status)
+        }
+        if let failure = error as? URLError {
+            return failure.code != .cancelled
+        }
+        return false
     }
 }

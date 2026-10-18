@@ -263,6 +263,36 @@ final class DownloaderTests: XCTestCase {
         XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
     }
 
+    func testShouldFailAtOnceWithoutAPauseWhenThePackAnswers404() async {
+        let harness = DownloaderHarness()
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let failure = await harness.downloadFailure(harness.publish(bundle.manifest))
+        XCTAssertEqual(failure, .downloadFailed("HTTP 404 for the pack"))
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.packUrl])
+        XCTAssertTrue(harness.clock.sleptSeconds.isEmpty)
+    }
+
+    func testShouldDownloadWhenTheManifestFetchDropsTwiceAndTheThirdAttemptArrives() async throws {
+        let harness = DownloaderHarness()
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let release = harness.publish(bundle.manifest, pack: bundle.pack)
+        harness.http.droppedRequestCounts[release.manifestUrl] = 2
+        _ = try await harness.download(release)
+        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
+        XCTAssertEqual(harness.http.requests.map { $0.url.lastPathComponent }, ["manifest.json", "manifest.json", "manifest.json", "pack"])
+        XCTAssertEqual(harness.clock.sleptSeconds, [1, 3])
+    }
+
+    func testShouldStoreASingleFileWhenItsDownloadDropsTwiceAndTheThirdAttemptArrives() async throws {
+        let harness = DownloaderHarness()
+        let fileUrl = DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(indexHtml))
+        harness.http.stub(fileUrl, body: indexHtml)
+        harness.http.droppedRequestCounts[fileUrl] = 2
+        _ = try await harness.download(harness.publish(DownloaderHarness.manifest(files: [.init(path: "index.html", sha256: Hashing.sha256Hex(indexHtml), sizeBytes: indexHtml.count)]), pack: DownloaderHarness.emptyPack))
+        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.packUrl, fileUrl, fileUrl, fileUrl])
+    }
+
     func testShouldApplyAPatchToAFileOfTheEmbeddedBundle() async throws {
         let harness = DownloaderHarness()
         let old = try BspatchFixture.data("old.bin")
@@ -300,12 +330,13 @@ final class DownloaderHarness {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("hotcodepush-tests-\(UUID().uuidString)")
     let http = FakeHttpClient()
     let embedded = InMemoryEmbeddedBundle()
+    let clock = FixedClock(now: Fixture.builtAt)
     let files: FileStore
     let downloader: Downloader
 
     init(configuration: Configuration = Fixture.configuration()) {
         files = FileStore(rootDirectory: root.appendingPathComponent("store"))
-        downloader = Downloader(configuration: configuration, platform: "ios", files: files, embedded: embedded, http: http, temporaryDirectory: root.appendingPathComponent("tmp"))
+        downloader = Downloader(configuration: configuration, platform: "ios", files: files, embedded: embedded, http: http, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
     /// The manifest of these files and the pack that carries them, each entry the gzip bytes the bucket serves.

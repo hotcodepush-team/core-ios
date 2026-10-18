@@ -76,7 +76,7 @@ public actor Core {
         self.state = StateStore(store: store)
         self.files = files
         self.embedded = embedded
-        self.downloader = Downloader(configuration: configuration, platform: device.platform, files: files, embedded: embedded, http: http, temporaryDirectory: temporaryDirectory)
+        self.downloader = Downloader(configuration: configuration, platform: device.platform, files: files, embedded: embedded, http: http, clock: clock, temporaryDirectory: temporaryDirectory)
         self.http = http
         self.loader = loader
         self.listener = listener

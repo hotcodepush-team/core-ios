@@ -45,6 +45,8 @@ final class FakeHttpClient: HttpClient {
     @Locked var requests: [(url: URL, headers: [String: String])] = []
     @Locked var posts: [(url: URL, headers: [String: String], body: Data)] = []
     @Locked var isOffline = false
+    /// How many of the next GETs and downloads of a URL drop their connection before its stub answers.
+    @Locked var droppedRequestCounts: [String: Int] = [:]
     /// Runs once inside the next post, before it answers: what the app does while a batch is on its way.
     @Locked var whilePosting: (() async -> Void)?
 
@@ -59,6 +61,7 @@ final class FakeHttpClient: HttpClient {
     func get(_ url: URL, headers: [String: String]) async throws -> HttpResponse {
         $requests.mutate { $0.append((url, headers)) }
         if isOffline { throw URLError(.notConnectedToInternet) }
+        try dropIfAsked(url)
         guard let stub = stubs[url.absoluteString] else { return HttpResponse(status: 404, headers: [:], body: Data()) }
         return HttpResponse(status: stub.status, headers: stub.headers, body: stub.body)
     }
@@ -78,11 +81,22 @@ final class FakeHttpClient: HttpClient {
     func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws {
         $requests.mutate { $0.append((url, [:])) }
         if isOffline { throw URLError(.notConnectedToInternet) }
+        try dropIfAsked(url)
         guard let stub = stubs[url.absoluteString], stub.status == 200 else { throw HttpStatusError(status: stubs[url.absoluteString]?.status ?? 404) }
         guard stub.body.count <= maximumBytes else { throw DownloadFailure.downloadFailed("\(url.lastPathComponent) is larger than its \(maximumBytes) bytes") }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try stub.body.write(to: file)
         progress(stub.body.count, stub.body.count)
+    }
+
+    private func dropIfAsked(_ url: URL) throws {
+        var isDropped = false
+        $droppedRequestCounts.mutate { counts in
+            guard let count = counts[url.absoluteString], count > 0 else { return }
+            counts[url.absoluteString] = count - 1
+            isDropped = true
+        }
+        if isDropped { throw URLError(.networkConnectionLost) }
     }
 }
 
@@ -205,9 +219,15 @@ final class FakeApplicationState: ApplicationState, @unchecked Sendable {
 
 final class FixedClock: Clock {
     @Locked var now: Date
+    /// The pauses asked for, in order, each over at once.
+    @Locked var sleptSeconds: [TimeInterval] = []
 
     init(now: Date) {
         self.now = now
+    }
+
+    func sleep(seconds: TimeInterval) async throws {
+        $sleptSeconds.mutate { $0.append(seconds) }
     }
 }
 

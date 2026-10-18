@@ -1718,6 +1718,33 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents.first { $0.type == "downloaded" }?.packKind, PackKind.delta.rawValue)
     }
 
+    func testShouldDownloadWithNoFailedEventWhenThePackFetchFailsTwiceAndTheThirdAttemptArrives() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        harness.http.droppedRequestCounts[v2.envelope.pack.url] = 2
+        await harness.core.handleAppStart()
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.status, .downloaded)
+        XCTAssertEqual(harness.http.requests.filter { $0.url.absoluteString == v2.envelope.pack.url }.count, 3)
+        XCTAssertTrue(harness.listener.updateFailed.isEmpty)
+        XCTAssertFalse(StateStore(store: harness.store).unsentEvents.contains { $0.type == "failed" })
+    }
+
+    func testShouldReportDownloadFailedOnceAfterTheThirdAttemptWhenThePackAnswers5xxThreeTimes() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        harness.http.stub(v2.envelope.pack.url, status: 503, body: Data())
+        await harness.core.handleAppStart()
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.reason, FailedReason.downloadFailed.rawValue)
+        XCTAssertEqual(harness.http.requests.filter { $0.url.absoluteString == v2.envelope.pack.url }.count, 3)
+        XCTAssertEqual(harness.clock.sleptSeconds, [1, 3])
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.downloadFailed])
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.filter { $0.type == "failed" }.map { $0.reason }, [FailedReason.downloadFailed.rawValue])
+    }
+
     func testShouldDiscardADownloadedReleaseRevokedBeforeTheStartThatWouldApplyIt() async throws {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
