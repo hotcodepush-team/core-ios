@@ -785,6 +785,47 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(events.contains { $0.type == "failed" || $0.type == "rolledBack" })
     }
 
+    func testShouldSwitchToAReleaseOfTheEmbeddedBundleOnAMeteredConnectionUnderTheUnmeteredStrategy() async throws {
+        let configuration = Fixture.configuration(downloadStrategy: .unmetered)
+        let harness = Harness()
+        try await startOnAConfirmedRelease(harness, configuration: configuration)
+        harness.loader.isMetered = true
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        let embedded = Fixture.release(number: 2, bundleId: "embedded", content: Fixture.embeddedIndexHtml)
+        harness.publish([v2, embedded], sequence: 2, etag: "\"e2\"")
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .downloaded(embedded.release.release, notes: "notes 2", applyStrategy: .nextStart))
+        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == embedded.release.manifestUrl })
+        harness.restart(configuration: configuration)
+        let served = await harness.core.handleAppStart()
+        XCTAssertNil(served)
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease, embedded.release.release)
+    }
+
+    func testShouldTakeAReleaseOfTheEmbeddedBundleToItsApplyMomentUnderTheManualDownloadStrategyAndOnlyAnnounceItAtACheck() async throws {
+        let configuration = Fixture.configuration(downloadStrategy: .manual)
+        let harness = Harness()
+        try await startOnAConfirmedRelease(harness, configuration: configuration)
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        let embedded = Fixture.release(number: 2, bundleId: "embedded", content: Fixture.embeddedIndexHtml)
+        harness.publish([v2, embedded], sequence: 2, etag: "\"e2\"")
+        let checked = try await harness.core.checkForUpdate()
+        XCTAssertEqual(checked, .available(embedded.release.release, notes: "notes 2", downloadSizeBytes: embedded.release.sizeBytes))
+        let afterCheck = await harness.core.getState()
+        XCTAssertNil(afterCheck.nextRelease)
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .downloaded(embedded.release.release, notes: "notes 2", applyStrategy: .nextStart))
+        let afterSync = await harness.core.getState()
+        XCTAssertEqual(afterSync.nextRelease, embedded.release.release)
+        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == embedded.release.manifestUrl })
+        harness.restart(configuration: configuration)
+        let served = await harness.core.handleAppStart()
+        XCTAssertNil(served)
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease, embedded.release.release)
+    }
+
     func testShouldGateAndBlocklistAReleaseOfAThirdBundleThatNeverRendersWhileAnotherBundleRuns() async throws {
         let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v5 = Fixture.release(number: 1, bundleId: "b5", content: Data("<html>v5</html>".utf8))

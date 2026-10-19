@@ -396,7 +396,7 @@ public actor Core {
         }
         let strategy = requestedStrategy ?? resolveConfiguredApplyStrategy(isMandatory: isMandatory)
         listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadSizeBytes: target.sizeBytes, trigger: trigger))
-        switch resolveDownloadStrategy(stage: stage, options: options) {
+        switch resolveDownloadStrategy(of: release, stage: stage, options: options) {
         case .manual:
             return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
         case .unmetered where loader.isConnectionMetered():
@@ -407,12 +407,13 @@ public actor Core {
     }
 
     /// The download gate of the cycle: pinned shut by the check and open by the download, the call's own strategy, else the
-    /// configuration's, for a sync.
-    private func resolveDownloadStrategy(stage: Stage, options: SyncOptions) -> DownloadStrategy {
+    /// configuration's, for a sync. A release of the embedded bundle downloads nothing and passes it, `unmetered` and `manual`
+    /// alike, at every stage but the check, whose gate stays shut.
+    private func resolveDownloadStrategy(of release: Release, stage: Stage, options: SyncOptions) -> DownloadStrategy {
         switch stage {
         case .check: return .manual
         case .download: return .auto
-        case .sync: return options.downloadStrategy ?? configuration.downloadStrategy
+        case .sync: return isCarryingEmbeddedBundle(release) ? .auto : options.downloadStrategy ?? configuration.downloadStrategy
         }
     }
 
