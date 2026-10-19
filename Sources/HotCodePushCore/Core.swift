@@ -556,13 +556,8 @@ public actor Core {
     /// The channel id a cycle would fetch by, the runtime one or the build's: one stored by an earlier version, or a resource file
     /// written by hand, is refused like the app's own; a name resolves through the channels index, which checks its id there.
     private func verifyChannelId() throws {
-        switch state.channel {
-        case .id(let id): try verifyChannelId(id)
-        case .name: return
-        case nil:
-            if let id = configuration.channelId {
-                try verifyChannelId(id)
-            }
+        if let id = channel().id {
+            try verifyChannelId(id)
         }
     }
 
@@ -907,31 +902,27 @@ public actor Core {
 
     /// The runtime choice, then the configured id; a name resolves through the channels index, offline being offline and not an unknown name.
     private func resolveChannelId() async -> ChannelResolution {
-        switch state.channel {
-        case nil: return configuration.channelId.map { .id($0) } ?? .missing
-        case .id(let id): return .id(id)
-        case .name(let name):
-            if let resolved = resolvedChannelName, resolved.name == name { return .id(resolved.id) }
-            guard let url = URL(string: "\(configuration.filesBaseUrl)/apps/\(configuration.appId)/channels/v1/index.json") else {
-                return .invalid("Invalid channels index URL")
+        if let id = channel().id { return .id(id) }
+        guard case .name(let name) = state.channel else { return .missing }
+        guard let url = URL(string: "\(configuration.filesBaseUrl)/apps/\(configuration.appId)/channels/v1/index.json") else {
+            return .invalid("Invalid channels index URL")
+        }
+        guard let response = try? await http.get(url, headers: [:]) else { return .offline }
+        switch response.status {
+        case 200:
+            guard let index = try? Json.decoder.decode(ChannelsIndex.self, from: response.body) else {
+                return .invalid("The channels index could not be parsed")
             }
-            guard let response = try? await http.get(url, headers: [:]) else { return .offline }
-            switch response.status {
-            case 200:
-                guard let index = try? Json.decoder.decode(ChannelsIndex.self, from: response.body) else {
-                    return .invalid("The channels index could not be parsed")
-                }
-                guard let entry = index.channels.first(where: { $0.name == name }) else { return .unknown }
-                guard WireRule.uuid.accepts(entry.id) else {
-                    return .invalid("The channels index names the channel \(name) by an id that is not a UUID")
-                }
-                resolvedChannelName = (name, entry.id)
-                return .id(entry.id)
-            case 404:
-                return .unknown
-            default:
-                return .offline
+            guard let entry = index.channels.first(where: { $0.name == name }) else { return .unknown }
+            guard WireRule.uuid.accepts(entry.id) else {
+                return .invalid("The channels index names the channel \(name) by an id that is not a UUID")
             }
+            resolvedChannelName = (name, entry.id)
+            return .id(entry.id)
+        case 404:
+            return .unknown
+        default:
+            return .offline
         }
     }
 
