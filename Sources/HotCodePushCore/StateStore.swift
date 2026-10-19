@@ -39,18 +39,6 @@ public struct NextRelease: Codable, Equatable {
     public let applyStrategy: ApplyStrategy
 }
 
-public struct LastRollback: Codable, Equatable {
-    public let fromRelease: Release
-    public let toRelease: Release?
-    public let reason: RollbackReason
-
-    public init(fromRelease: Release, toRelease: Release?, reason: RollbackReason) {
-        self.fromRelease = fromRelease
-        self.toRelease = toRelease
-        self.reason = reason
-    }
-}
-
 /// The SDK's keys, `hotcodepush.<name>` each: three identity keys kept for the install's life,
 /// the rest a cache under `stateVersion` that is dropped and rebuilt when unreadable.
 public final class StateStore {
@@ -143,7 +131,7 @@ public final class StateStore {
         set { write("checkedReleaseIds", newValue) }
     }
 
-    public var lastRollback: LastRollback? {
+    public var lastRollback: UpdateRolledBackEvent? {
         get { return read("lastRollback") }
         set { write("lastRollback", newValue) }
     }

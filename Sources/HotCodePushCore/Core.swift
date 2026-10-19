@@ -792,8 +792,9 @@ public actor Core {
         let fallback = resolveFallbackRelease()
         state.currentRelease = fallback
         state.nextRelease = nil
-        state.lastRollback = LastRollback(fromRelease: current, toRelease: fallback, reason: reason)
-        state.pendingRollbackEvent = UpdateRolledBackEvent(fromRelease: current, toRelease: fallback, reason: reason)
+        let rollback = UpdateRolledBackEvent(fromRelease: current, toRelease: fallback, reason: reason)
+        state.lastRollback = rollback
+        state.pendingRollbackEvent = rollback
         hasAnnouncedRollback = false
         enqueueDeviceEvent(.failed(releaseId: current.id, reason: reason.rawValue, detail: detail))
         enqueueDeviceEvent(.rolledBack(fromReleaseId: current.id, toReleaseId: fallback?.id))
