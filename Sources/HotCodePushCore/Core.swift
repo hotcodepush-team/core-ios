@@ -325,24 +325,25 @@ public actor Core {
         return result
     }
 
+    /// A result names a release only once one was evaluated: a cycle that stops before the evaluation answers none.
     private func resolveCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let current = state.currentRelease
         if isDisabledInThisBuild {
-            return .skipped(current, reason: .buildDebug)
+            return .skipped(nil, reason: .buildDebug)
         }
         let channelId: String
         switch await resolveChannelId() {
         case .id(let id): channelId = id
-        case .offline: return .failed(current, reason: .deviceOffline, message: "The channels index could not be fetched to resolve the channel name")
-        case .unknown: return .failed(current, reason: .channelUnknown, message: "The channel set at runtime is not in the app's channels index")
-        case .invalid(let message): return .failed(current, reason: .indexInvalid, message: message)
-        case .missing: return .failed(current, reason: .channelUnknown, message: Core.missingChannelMessage)
+        case .offline: return .failed(nil, reason: .deviceOffline, message: "The channels index could not be fetched to resolve the channel name")
+        case .unknown: return .failed(nil, reason: .channelUnknown, message: "The channel set at runtime is not in the app's channels index")
+        case .invalid(let message): return .failed(nil, reason: .indexInvalid, message: message)
+        case .missing: return .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage)
         }
         let index: ChannelIndex
         switch await fetchChannelIndex(channelId: channelId) {
         case .index(let fetched): index = fetched
-        case .offline: return .failed(current, reason: .deviceOffline, message: "The channel index could not be fetched and no cached copy exists")
-        case .invalid(let message): return .failed(current, reason: .indexInvalid, message: message)
+        case .offline: return .failed(nil, reason: .deviceOffline, message: "The channel index could not be fetched and no cached copy exists")
+        case .invalid(let message): return .failed(nil, reason: .indexInvalid, message: message)
         case .absent: return .upToDate(current)
         case .gone:
             state.channel = nil

@@ -282,6 +282,10 @@ struct Fixture {
         return try! Configuration.decode(try! JSONSerialization.data(withJSONObject: json))
     }
 
+    static func channelsIndexUrl() -> String {
+        return "\(filesBaseUrl)/apps/\(appId)/channels/v1/index.json"
+    }
+
     static func indexUrl() -> String {
         return "\(filesBaseUrl)/apps/\(appId)/channels/\(channelId)/ios/v1/index.json"
     }

@@ -1079,7 +1079,7 @@ final class CoreTests: XCTestCase {
 
     func testShouldResolveAChannelNameThroughTheChannelsIndex() async throws {
         let harness = Harness()
-        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: Fixture.stagingChannelId, name: "staging")]))
+        harness.http.stubJson(Fixture.channelsIndexUrl(), ChannelsIndex(channels: [.init(id: Fixture.stagingChannelId, name: "staging")]))
         harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/\(Fixture.stagingChannelId)/ios/v1/index.json", ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: Fixture.stagingChannelId, platform: "ios", releases: []))
         try await harness.core.setChannel(.name("staging"))
         let result = try await harness.core.sync(trigger: .manual)
@@ -1093,7 +1093,7 @@ final class CoreTests: XCTestCase {
 
     func testShouldAnswerNoIdForARuntimeNameBeforeASyncResolvedItAndTheIdAfter() async throws {
         let harness = Harness()
-        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: Fixture.stagingChannelId, name: "staging")]))
+        harness.http.stubJson(Fixture.channelsIndexUrl(), ChannelsIndex(channels: [.init(id: Fixture.stagingChannelId, name: "staging")]))
         harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/\(Fixture.stagingChannelId)/ios/v1/index.json", ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: Fixture.stagingChannelId, platform: "ios", releases: []))
         try await harness.core.setChannel(.name("staging"))
         let unresolved = await harness.core.channel()
@@ -1163,7 +1163,7 @@ final class CoreTests: XCTestCase {
 
     func testShouldFailWithInvalidIndexWhenTheChannelsIndexNamesTheChannelByAnIdThatIsNotAUuid() async throws {
         let harness = Harness()
-        harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/v1/index.json", ChannelsIndex(channels: [.init(id: "../evil", name: "staging")]))
+        harness.http.stubJson(Fixture.channelsIndexUrl(), ChannelsIndex(channels: [.init(id: "../evil", name: "staging")]))
         try await harness.core.setChannel(.name("staging"))
         let result = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.reason, FailedReason.indexInvalid.rawValue)
@@ -1977,6 +1977,7 @@ final class CoreTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.reason, FailedReason.downloadFailed.rawValue)
+        XCTAssertEqual(result.release, v2.release.release)
         XCTAssertEqual(harness.http.requests.filter { $0.url.absoluteString == v2.envelope.pack.url }.count, 3)
         XCTAssertEqual(harness.clock.sleptSeconds, [1, 3])
         XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.downloadFailed])
@@ -2338,6 +2339,67 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(started.nextRelease)
     }
 
+    func testShouldAnswerNoReleaseWithDebugBuildWhileAReleaseRuns() async throws {
+        let harness = Harness(isDebugBuild: true)
+        try await startOnAConfirmedRelease(harness, configuration: Fixture.configuration(isEnabledInDebugBuilds: false))
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
+    }
+
+    func testShouldAnswerNoReleaseWithDeviceOfflineWhenTheChannelsIndexCannotBeFetchedWhileAReleaseRuns() async throws {
+        let harness = Harness()
+        try await startOnAConfirmedRelease(harness)
+        try await harness.core.setChannel(.name("staging"))
+        harness.http.isOffline = true
+        let result = try await harness.core.sync(trigger: .manual)
+        assertFailedWithoutRelease(result, reason: .deviceOffline, in: harness)
+    }
+
+    func testShouldAnswerNoReleaseWithChannelUnknownWhenTheChannelsIndexLacksTheNameWhileAReleaseRuns() async throws {
+        let harness = Harness()
+        try await startOnAConfirmedRelease(harness)
+        harness.http.stubJson(Fixture.channelsIndexUrl(), ChannelsIndex(channels: [.init(id: Fixture.stagingChannelId, name: "staging")]))
+        try await harness.core.setChannel(.name("nowhere"))
+        let result = try await harness.core.sync(trigger: .manual)
+        assertFailedWithoutRelease(result, reason: .channelUnknown, in: harness)
+    }
+
+    func testShouldAnswerNoReleaseWithIndexInvalidWhenTheChannelsIndexNamesTheChannelByAnIdThatIsNotAUuidWhileAReleaseRuns() async throws {
+        let harness = Harness()
+        try await startOnAConfirmedRelease(harness)
+        harness.http.stubJson(Fixture.channelsIndexUrl(), ChannelsIndex(channels: [.init(id: "../evil", name: "staging")]))
+        try await harness.core.setChannel(.name("staging"))
+        let result = try await harness.core.sync(trigger: .manual)
+        assertFailedWithoutRelease(result, reason: .indexInvalid, in: harness)
+    }
+
+    func testShouldAnswerNoReleaseWithChannelUnknownWhenABuildWithoutChannelClearsItsRuntimeChoiceWhileAReleaseRuns() async throws {
+        let configuration = Fixture.configuration(channelId: nil)
+        let harness = Harness(configuration: configuration)
+        try await harness.core.setChannel(.id(Fixture.channelId))
+        try await startOnAConfirmedRelease(harness, configuration: configuration)
+        try await harness.core.setChannel(nil)
+        let result = try await harness.core.sync(trigger: .manual)
+        assertFailedWithoutRelease(result, reason: .channelUnknown, in: harness)
+    }
+
+    func testShouldAnswerNoReleaseWithDeviceOfflineWhenTheChannelIndexCannotBeFetchedWhileAReleaseRuns() async throws {
+        let harness = Harness()
+        try await startOnAConfirmedRelease(harness)
+        try await harness.core.setChannel(.id(Fixture.stagingChannelId))
+        harness.http.isOffline = true
+        let result = try await harness.core.sync(trigger: .manual)
+        assertFailedWithoutRelease(result, reason: .deviceOffline, in: harness)
+    }
+
+    func testShouldAnswerNoReleaseWithIndexInvalidWhenTheChannelIndexNamesAnotherChannelWhileAReleaseRuns() async throws {
+        let harness = Harness()
+        try await startOnAConfirmedRelease(harness)
+        harness.http.stubJson(Fixture.indexUrl(), ChannelIndex(sequence: 2, appId: Fixture.appId, channelId: Fixture.stagingChannelId, platform: "ios", releases: []))
+        let result = try await harness.core.sync(trigger: .manual)
+        assertFailedWithoutRelease(result, reason: .indexInvalid, in: harness)
+    }
+
     /// A batch the endpoint refuses loses its events and leaves the report unacknowledged, so the next sync sends the report alone.
     private func assertBatchRefused(status: Int, file: StaticString = #filePath, line: UInt = #line) async throws {
         let harness = Harness()
@@ -2357,6 +2419,13 @@ final class CoreTests: XCTestCase {
         let next = try XCTUnwrap(JSONSerialization.jsonObject(with: harness.http.posts[1].body) as? [String: Any], file: file, line: line)
         XCTAssertEqual((next["events"] as? [Any])?.count, 0, file: file, line: line)
         XCTAssertNotNil(next["report"] as? [String: Any], file: file, line: line)
+    }
+
+    /// A failure before any release was evaluated names none, in the result and in the event.
+    private func assertFailedWithoutRelease(_ result: SyncResult, reason: FailedReason, in harness: Harness, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(result.reason, reason.rawValue, file: file, line: line)
+        XCTAssertNil(result.release, file: file, line: line)
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.release }, [nil], file: file, line: line)
     }
 
     /// A run that applies v2 at once after the first render and has not confirmed it: its readiness timer is the one scheduled.
@@ -2388,5 +2457,13 @@ final class CoreTests: XCTestCase {
         _ = try await harness.core.sync(trigger: .manual, options: SyncOptions(applyStrategy: .immediate))
         await harness.core.handleRendered()
         harness.restart(configuration: configuration)
+    }
+
+    /// The next start on the confirmed v2, the release a result names only when a release was evaluated.
+    private func startOnAConfirmedRelease(_ harness: Harness, configuration: Configuration = Fixture.configuration()) async throws {
+        try await restartOnAConfirmedRelease(harness, configuration: configuration)
+        await harness.core.handleAppStart()
+        let started = await harness.core.getState()
+        XCTAssertEqual(started.currentRelease?.bundleId, "b2")
     }
 }
