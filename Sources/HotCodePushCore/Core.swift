@@ -462,7 +462,7 @@ public actor Core {
     /// Fetches and verifies the release's files, lays its tree out for the host and records how the bytes arrived.
     private func downloadBundle(of target: IndexRelease) async throws {
         let outcome = try await downloader.downloadRelease(target, baseBundleId: runningBundleId) { [listener] progressBytes, downloadSizeBytes in
-            listener.downloadProgress(releaseId: target.id, progressBytes: progressBytes, downloadSizeBytes: downloadSizeBytes)
+            listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes: downloadSizeBytes, progressBytes: progressBytes, releaseId: target.id))
         }
         try BundleProjection.project(outcome.manifest, from: files, embedded: embedded, into: loader.projectionDirectory(bundleId: target.bundleId))
         enqueueDeviceEvent(.downloaded(releaseId: target.id, bundleId: target.bundleId, downloadSizeBytes: outcome.downloadSizeBytes, packKind: outcome.packKind))

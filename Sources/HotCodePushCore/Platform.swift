@@ -43,7 +43,7 @@ public protocol CoreListener: AnyObject {
     func updateAvailable(_ event: UpdateAvailableEvent)
     func updateDownloaded(_ event: UpdateDownloadedEvent)
     func updateFailed(_ event: UpdateFailedEvent)
-    func downloadProgress(releaseId: String, progressBytes: Int, downloadSizeBytes: Int)
+    func downloadProgress(_ event: DownloadProgressEvent)
     func updateRolledBack(_ event: UpdateRolledBackEvent)
 }
 

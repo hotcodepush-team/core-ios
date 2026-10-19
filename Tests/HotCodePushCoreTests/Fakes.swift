@@ -170,13 +170,13 @@ final class FakeLoader: BundleLoader {
 
 /// Records every event under its own name.
 final class FakeListener: CoreListener {
-    @Locked var downloadProgress: [(String, Int, Int)] = []
+    @Locked var downloadProgress: [DownloadProgressEvent] = []
     @Locked var updateAvailable: [UpdateAvailableEvent] = []
     @Locked var updateDownloaded: [UpdateDownloadedEvent] = []
     @Locked var updateFailed: [UpdateFailedEvent] = []
     @Locked var updateRolledBack: [UpdateRolledBackEvent] = []
 
-    func downloadProgress(releaseId: String, progressBytes: Int, downloadSizeBytes: Int) { $downloadProgress.mutate { $0.append((releaseId, progressBytes, downloadSizeBytes)) } }
+    func downloadProgress(_ event: DownloadProgressEvent) { $downloadProgress.mutate { $0.append(event) } }
     func updateAvailable(_ event: UpdateAvailableEvent) { $updateAvailable.mutate { $0.append(event) } }
     func updateDownloaded(_ event: UpdateDownloadedEvent) { $updateDownloaded.mutate { $0.append(event) } }
     func updateFailed(_ event: UpdateFailedEvent) { $updateFailed.mutate { $0.append(event) } }

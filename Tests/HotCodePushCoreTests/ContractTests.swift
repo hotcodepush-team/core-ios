@@ -44,5 +44,11 @@ final class ContractTests: XCTestCase {
         XCTAssertTrue(try keys(ApplyUpdateResult(status: .nothingToApply, release: nil)).object["release"] is NSNull)
         XCTAssertEqual(try keys(UpdateAvailableEvent(release: release, notes: nil, downloadSizeBytes: nil, trigger: .manual)).keys, ["release", "notes", "downloadSizeBytes", "trigger"])
         XCTAssertEqual(try keys(UpdateFailedEvent(release: nil, reason: .deviceOffline, message: "m", trigger: .start)).keys, ["release", "reason", "message", "trigger"])
+        XCTAssertEqual(try keys(DownloadProgressEvent(downloadSizeBytes: 400, progressBytes: 100, releaseId: "r1")).keys, ["downloadSizeBytes", "progress", "progressBytes", "releaseId"])
+    }
+
+    func testShouldCarryTheShareOfTheBytesThatArrivedAsTheDownloadsProgress() {
+        XCTAssertEqual(DownloadProgressEvent(downloadSizeBytes: 400, progressBytes: 100, releaseId: "r1").progress, 0.25)
+        XCTAssertEqual(DownloadProgressEvent(downloadSizeBytes: 0, progressBytes: 0, releaseId: "r1").progress, 0)
     }
 }

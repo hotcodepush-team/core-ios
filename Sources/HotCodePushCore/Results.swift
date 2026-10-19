@@ -315,6 +315,21 @@ public struct UpdateFailedEvent: Codable, Equatable {
     }
 }
 
+/// While a pack downloads: `progressBytes` of its `downloadSizeBytes` have arrived, `progress` their share from 0 to 1.
+public struct DownloadProgressEvent: Codable, Equatable {
+    public let downloadSizeBytes: Int
+    public let progress: Double
+    public let progressBytes: Int
+    public let releaseId: String
+
+    init(downloadSizeBytes: Int, progressBytes: Int, releaseId: String) {
+        self.downloadSizeBytes = downloadSizeBytes
+        self.progress = downloadSizeBytes > 0 ? Double(progressBytes) / Double(downloadSizeBytes) : 0
+        self.progressBytes = progressBytes
+        self.releaseId = releaseId
+    }
+}
+
 /// At each start that follows a rollback until the app is up after one, before the readiness gate; `toRelease` is `null` for the embedded bundle.
 public struct UpdateRolledBackEvent: Codable, Equatable {
     public let fromRelease: Release

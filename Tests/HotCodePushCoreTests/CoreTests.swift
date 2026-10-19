@@ -43,6 +43,16 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(harness.scheduler.tasks[0].isCancelled)
     }
 
+    func testShouldEmitTheDownloadProgressOfThePackForTheRelease() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(harness.listener.downloadProgress, [DownloadProgressEvent(downloadSizeBytes: v2.pack.count, progressBytes: v2.pack.count, releaseId: "r1")])
+        XCTAssertEqual(harness.listener.downloadProgress.first?.progress, 1)
+    }
+
     func testShouldNameTheReleaseASwitchReplacedAsPreviousReleaseOnce() async throws {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
