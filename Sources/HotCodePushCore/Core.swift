@@ -359,6 +359,10 @@ public actor Core {
             if stage == .check {
                 return .skipped(release?.release, reason: .releaseRevoked)
             }
+            if (release?.bundleId ?? configuration.embeddedBundleId) == runningBundleId {
+                adoptInPlace(release?.release)
+                return .skipped(release?.release, reason: .releaseRevoked)
+            }
             guard let target = release else {
                 revertToEmbedded()
                 return .skipped(nil, reason: .releaseRevoked)
@@ -752,9 +756,9 @@ public actor Core {
         listener.updateRolledBack(event)
     }
 
-    /// The release becomes the current one, confirmed when the one it replaces was, and a release waiting to apply is dropped: the
-    /// cycle chose the adopted one over it, so it never switches after.
-    private func adoptInPlace(_ release: Release) {
+    /// The release becomes the current one, `nil` for the embedded bundle a revoked release of it leaves, confirmed when the one it
+    /// replaces was, and a release waiting to apply is dropped: the cycle chose the adopted one over it, so it never switches after.
+    private func adoptInPlace(_ release: Release?) {
         let wasConfirmed = !isCurrentReleaseUnconfirmed()
         state.currentRelease = release
         state.nextRelease = nil
