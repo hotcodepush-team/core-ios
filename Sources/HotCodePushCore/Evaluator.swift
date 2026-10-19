@@ -30,16 +30,6 @@ public struct DeviceInfo: Equatable {
     }
 }
 
-public struct Skip: Equatable {
-    public let reason: SkippedReason
-    public let condition: ConditionType?
-
-    public init(reason: SkippedReason, condition: ConditionType? = nil) {
-        self.reason = reason
-        self.condition = condition
-    }
-}
-
 /// The per-release verdict, the explanation behind the outcome and the probe's output.
 public struct ReleaseVerdict: Equatable {
     public let release: IndexRelease

@@ -354,7 +354,7 @@ public actor Core {
         case .upToDate:
             return .upToDate(current)
         case .available(let target, let isMandatory):
-            recordChecked(target, in: index, status: .available, skip: nil)
+            recordChecked(target, in: index, status: .available)
             return await update(to: target, isMandatory: isMandatory, trigger: trigger, stage: stage, options: options)
         case .skipped(let release, .releaseRevoked, _):
             if (release?.bundleId ?? configuration.embeddedBundleId) == runningBundleId {
@@ -372,7 +372,7 @@ public actor Core {
             return outcome.status == .failed ? outcome : .skipped(target.release, reason: .releaseRevoked)
         case .skipped(let release, let reason, let condition):
             if let release = release {
-                recordChecked(release, in: index, status: .skipped, skip: Skip(reason: reason, condition: condition))
+                recordChecked(release, in: index, status: .skipped, reason: reason, condition: condition)
             }
             return .skipped(release?.release, reason: reason, condition: condition)
         }
@@ -981,7 +981,7 @@ public actor Core {
 
     // MARK: Events
 
-    private func recordChecked(_ release: IndexRelease, in index: ChannelIndex, status: SyncStatus, skip: Skip?) {
+    private func recordChecked(_ release: IndexRelease, in index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = nil, condition: ConditionType? = nil) {
         var checked = state.checkedReleaseIds.filter { id in index.releases.contains { $0.id == id } }
         guard !checked.contains(release.id) else {
             state.checkedReleaseIds = checked
@@ -989,7 +989,7 @@ public actor Core {
         }
         checked.append(release.id)
         state.checkedReleaseIds = checked
-        enqueueDeviceEvent(.checked(releaseId: release.id, status: status, reason: skip?.reason, condition: skip?.condition))
+        enqueueDeviceEvent(.checked(releaseId: release.id, status: status, reason: reason, condition: condition))
     }
 
     private func enqueueDeviceEvent(_ event: DeviceEvent) {
