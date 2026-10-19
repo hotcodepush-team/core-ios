@@ -269,7 +269,8 @@ public actor Core {
     }
 
     /// `sync()` with the download gate closed: fetch and evaluate, and download and apply nothing, so a release downloaded already
-    /// answers `AVAILABLE`; never `DOWNLOADED` or `APPLIED`. A release that carries the running bundle is adopted, as at every stage.
+    /// answers `AVAILABLE`; never `DOWNLOADED` or `APPLIED`. A release that carries the running bundle is adopted, as at every stage,
+    /// the fallback of a revoked release included.
     public func checkForUpdate() async throws -> SyncResult {
         try verifyChannelId()
         return await runCycle(trigger: .manual, stage: .check, options: SyncOptions())
@@ -356,11 +357,11 @@ public actor Core {
             recordChecked(target, in: index, status: .available, skip: nil)
             return await update(to: target, isMandatory: isMandatory, trigger: trigger, stage: stage, options: options)
         case .skipped(let release, .releaseRevoked, _):
-            if stage == .check {
-                return .skipped(release?.release, reason: .releaseRevoked)
-            }
             if (release?.bundleId ?? configuration.embeddedBundleId) == runningBundleId {
                 adoptInPlace(release?.release)
+                return .skipped(release?.release, reason: .releaseRevoked)
+            }
+            if stage == .check {
                 return .skipped(release?.release, reason: .releaseRevoked)
             }
             guard let target = release else {

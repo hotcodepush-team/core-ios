@@ -1010,6 +1010,30 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents.filter { $0.type == "applied" }.map { $0.releaseId }, ["r1"])
     }
 
+    func testShouldAdoptAnOlderReleaseOfTheRunningBundleInPlaceAtACheckWhenTheRunningReleaseIsRevoked() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        _ = try await harness.core.sync(trigger: .manual)
+        _ = await harness.core.notifyReady()
+        let rerelease = Fixture.release(number: 2, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2, rerelease], sequence: 2, etag: "\"e2\"")
+        let adopted = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(adopted, .upToDate(rerelease.release.release))
+        harness.publish([v2, rerelease], sequence: 3, revoked: ["r2"], etag: "\"e3\"")
+        let requestCount = harness.http.requests.count
+        let result = try await harness.core.checkForUpdate()
+        XCTAssertEqual(result, .skipped(v2.release.release, reason: .releaseRevoked))
+        XCTAssertEqual(harness.http.requests.dropFirst(requestCount).map { $0.url.absoluteString }, [Fixture.indexUrl()])
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.currentRelease, v2.release.release)
+        XCTAssertEqual(status.fallbackRelease, v2.release.release)
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.filter { $0.type == "applied" }.map { $0.releaseId }, ["r1"])
+    }
+
     func testShouldQueueTheSwitchWithTheReloadWhileRestartsAreNotAllowed() async throws {
         let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
