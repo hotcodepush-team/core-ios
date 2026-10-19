@@ -218,7 +218,7 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(status.nextRelease)
     }
 
-    func testShouldStillRollBackACrashAtAHeadlessStart() async throws {
+    func testShouldStillRollBackACrashButLoadNothingAtAHeadlessStart() async throws {
         let harness = Harness()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
@@ -232,6 +232,8 @@ final class CoreTests: XCTestCase {
         let headless = await harness.core.handleAppStart(isHeadless: true)
         XCTAssertNil(headless)
         XCTAssertEqual(StateStore(store: harness.store).failedBundleIds, ["b2"])
+        XCTAssertEqual(harness.loader.persisted, .some(nil))
+        XCTAssertEqual(harness.loader.loaded, [])
         XCTAssertTrue(harness.scheduler.tasks.isEmpty)
     }
 
@@ -425,6 +427,26 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.failedBundleIds, ["b2"])
         XCTAssertEqual(harness.listener.updateRolledBack.last?.reason, .appCrashed)
         XCTAssertEqual(harness.loader.loaded.last, .some(nil))
+    }
+
+    func testShouldLoadNothingAtAStartThatRollsBackACrashWhenTheHostServesTheFallbackAlready() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        harness.loader.served = "b2"
+        harness.restart()
+        await harness.core.handleAppStart()
+        harness.loader.served = nil
+        harness.restart()
+        let started = await harness.core.handleAppStart()
+        XCTAssertNil(started)
+        XCTAssertEqual(harness.loader.loaded, [])
+        XCTAssertEqual(harness.listener.updateRolledBack.map { $0.reason }, [.appCrashed])
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.failedBundleIds, ["b2"])
     }
 
     func testShouldFallBackToTheLastConfirmedReleaseNotTheEmbeddedBundle() async throws {

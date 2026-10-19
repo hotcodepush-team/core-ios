@@ -492,6 +492,7 @@ public actor Core {
         }
         guard let current = state.currentRelease, !isCarryingEmbeddedBundle(current) else { return }
         rollbackCurrentRelease(reason: .appRequested, detail: detail)
+        reloadApp()
     }
 
     /// Back to the embedded bundle, now or, before the app is up in this run, once it is: every downloaded update and the failed list go, the identity stays.
@@ -788,7 +789,9 @@ public actor Core {
         }
     }
 
-    /// A rollback never waits for the app to be up: the app's own and the crash a start finds reload at once, the timer's, which settles the start, waits only while the app holds restarts.
+    /// The fallback becomes the current release and the failure is reported; the caller reloads. A rollback never waits for the app
+    /// to be up: the app's own reloads at once and the crash a start finds loads the fallback as the start's bundle, while the
+    /// timer's, which settles the start, waits only while the app holds restarts.
     private func rollbackCurrentRelease(reason: RollbackReason, detail: String?) {
         guard let current = state.currentRelease else { return }
         stopReadyTimer()
@@ -802,12 +805,6 @@ public actor Core {
         enqueueDeviceEvent(.failed(releaseId: current.id, reason: reason.rawValue, detail: detail))
         enqueueDeviceEvent(.rolledBack(fromReleaseId: current.id, toReleaseId: fallback?.id))
         persistServedBundle(of: fallback)
-        switch reason {
-        case .appCrashed, .appRequested:
-            reloadApp()
-        case .readinessTimedOut:
-            restartThroughGate(isAskedByApp: false) { [self] in reloadApp() }
-        }
     }
 
     /// The release to fall back to right now: the last confirmed one while it can still run, its files on disk or in the binary, else
@@ -874,6 +871,7 @@ public actor Core {
         guard readyTimer != nil, isCurrentReleaseUnconfirmed() else { return }
         hasStartSettled = true
         rollbackCurrentRelease(reason: .readinessTimedOut, detail: nil)
+        restartThroughGate(isAskedByApp: false) { [self] in reloadApp() }
     }
 
     private func scheduleIntervalSync(after seconds: TimeInterval) {
