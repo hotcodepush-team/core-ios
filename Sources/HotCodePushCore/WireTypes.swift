@@ -221,10 +221,6 @@ public struct ChannelsIndex: Codable, Equatable {
     public let schema: Int
     public let channels: [Entry]
 
-    enum CodingKeys: String, CodingKey {
-        case schema, channels
-    }
-
     public init(schema: Int = ChannelIndex.schema, channels: [Entry]) {
         self.schema = schema
         self.channels = channels
@@ -246,10 +242,6 @@ public struct Signature: Codable, Equatable {
     public let keyId: String
     public let value: String
 
-    enum CodingKeys: String, CodingKey {
-        case keyId, value
-    }
-
     public init(keyId: String, value: String) {
         self.keyId = keyId
         self.value = value
@@ -270,10 +262,6 @@ public struct ManifestEnvelope: Codable, Equatable {
         public let url: String
         public let sizeBytes: Int
 
-        enum CodingKeys: String, CodingKey {
-            case url, sizeBytes
-        }
-
         public init(url: String, sizeBytes: Int) {
             self.url = url
             self.sizeBytes = sizeBytes
@@ -290,10 +278,6 @@ public struct ManifestEnvelope: Codable, Equatable {
         public let baseBundleId: String
         public let url: String
         public let sizeBytes: Int
-
-        enum CodingKeys: String, CodingKey {
-            case baseBundleId, url, sizeBytes
-        }
 
         public init(baseBundleId: String, url: String, sizeBytes: Int) {
             self.baseBundleId = baseBundleId
@@ -366,10 +350,6 @@ public struct BundleManifest: Codable, Equatable {
         public let path: String
         public let sha256: String
         public let sizeBytes: Int
-
-        enum CodingKeys: String, CodingKey {
-            case path, sha256, sizeBytes
-        }
 
         public init(path: String, sha256: String, sizeBytes: Int) {
             self.path = path

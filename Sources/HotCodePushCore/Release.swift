@@ -8,10 +8,6 @@ public struct Release: Codable, Equatable {
     public let bundleVersion: String
     public let isMandatory: Bool
 
-    enum CodingKeys: String, CodingKey {
-        case id, number, bundleId, bundleVersion, isMandatory
-    }
-
     public init(id: String, number: Int, bundleId: String, bundleVersion: String, isMandatory: Bool) {
         self.id = id
         self.number = number

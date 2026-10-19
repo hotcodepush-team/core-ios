@@ -74,12 +74,6 @@ public struct Configuration: Codable, Equatable {
     public var filesBaseUrl: String
     public var updatesBaseUrl: String
 
-    enum CodingKeys: String, CodingKey {
-        case appId, channelId, checkStrategy, checkIntervalSeconds, downloadStrategy, applyStrategy, mandatoryApplyStrategy
-        case nextResumeMinimumBackgroundSeconds, readySignal, readyTimeoutSeconds, isEnabledInDebugBuilds, publicKeys, builtAt
-        case fingerprint, embeddedBundleManifest, embeddedBundleId, filesBaseUrl, updatesBaseUrl
-    }
-
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         appId = try container.decode(.identifier, forKey: .appId)
