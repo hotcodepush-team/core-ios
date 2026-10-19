@@ -76,11 +76,9 @@ public final class FileStore {
         try? fileManager.removeItem(at: bundlesDirectory.appendingPathComponent(bundleId, isDirectory: true))
     }
 
-    /// Everything no kept bundle lists: the cleanup after a start, no setting.
+    /// Every stored file no kept bundle lists: the cleanup after a start, no setting. The other bundles go first, through
+    /// `deleteBundle(bundleId:)`.
     public func deleteUnusedFiles(keepingBundleIds kept: Set<String>) {
-        for bundleId in bundleIds() where !kept.contains(bundleId) {
-            deleteBundle(bundleId: bundleId)
-        }
         let referenced = Set(kept.compactMap { readManifest(bundleId: $0) }.flatMap { $0.files.map { $0.sha256 } })
         let stored = (try? fileManager.contentsOfDirectory(atPath: filesDirectory.path)) ?? []
         for sha256 in stored where !referenced.contains(sha256) {

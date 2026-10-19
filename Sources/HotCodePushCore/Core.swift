@@ -881,6 +881,7 @@ public actor Core {
         let kept = Set([state.currentRelease, state.nextRelease?.release, state.fallbackRelease].compactMap { $0?.bundleId })
         for bundleId in files.bundleIds() where !kept.contains(bundleId) {
             loader.deleteProjection(bundleId: bundleId)
+            files.deleteBundle(bundleId: bundleId)
         }
         files.deleteUnusedFiles(keepingBundleIds: kept)
     }
