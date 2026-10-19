@@ -99,6 +99,11 @@ final class FileStoreTests: XCTestCase {
         XCTAssertFalse(files.hasFile(sha256: Hashing.sha256Hex("b")))
     }
 
+    func testShouldKeepTheDefaultStoreInApplicationSupport() throws {
+        let applicationSupport = try XCTUnwrap(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
+        XCTAssertEqual(FileStore.defaultRootDirectory, applicationSupport.appendingPathComponent("hotcodepush", isDirectory: true))
+    }
+
     func testShouldKeepTheStoreOutOfDeviceBackups() throws {
         let files = FileStore(rootDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         try files.writeFile(Data("a".utf8), sha256: Hashing.sha256Hex("a"))
@@ -143,5 +148,45 @@ final class UserDefaultsStoreTests: XCTestCase {
         store.set(nil as Int?, forKey: "integer")
         XCTAssertNil(defaults.object(forKey: "string"))
         XCTAssertNil(defaults.object(forKey: "integer"))
+    }
+}
+
+final class AppBundleEmbeddedBundleTests: XCTestCase {
+    private let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+
+    func testShouldCopyAListedFileFromUnderTheRootDirectory() throws {
+        try writeFile("public/assets/logo.svg", content: "logo")
+        let embedded = AppBundleEmbeddedBundle(manifest: manifest(path: "assets/logo.svg", content: "logo"), rootDirectory: root.appendingPathComponent("public"))
+        let destination = root.appendingPathComponent("copy.svg")
+        XCTAssertTrue(embedded.has(sha256: Hashing.sha256Hex("logo")))
+        try embedded.copyFile(sha256: Hashing.sha256Hex("logo"), to: destination)
+        XCTAssertEqual(try Data(contentsOf: destination), Data("logo".utf8))
+    }
+
+    func testShouldHaveNoFileWhenTheBinaryLacksIt() {
+        let embedded = AppBundleEmbeddedBundle(manifest: manifest(path: "assets/logo.svg", content: "logo"), rootDirectory: root)
+        XCTAssertFalse(embedded.has(sha256: Hashing.sha256Hex("logo")))
+    }
+
+    func testShouldHaveNoFileTheManifestDoesNotList() throws {
+        try writeFile("index.html", content: "index")
+        let embedded = AppBundleEmbeddedBundle(manifest: manifest(path: "assets/logo.svg", content: "logo"), rootDirectory: root)
+        XCTAssertFalse(embedded.has(sha256: Hashing.sha256Hex("index")))
+        XCTAssertThrowsError(try embedded.copyFile(sha256: Hashing.sha256Hex("index"), to: root.appendingPathComponent("copy.html")))
+    }
+
+    func testShouldHaveNoFileWhenTheBuildCarriesNoManifest() throws {
+        try writeFile("index.html", content: "index")
+        XCTAssertFalse(AppBundleEmbeddedBundle(manifest: nil, rootDirectory: root).has(sha256: Hashing.sha256Hex("index")))
+    }
+
+    private func manifest(path: String, content: String) -> EmbeddedBundleManifest {
+        return BundleManifest(appId: "a", bundleVersion: "1", files: [.init(path: path, sha256: Hashing.sha256Hex(content), sizeBytes: content.utf8.count)], platforms: ["ios"])
+    }
+
+    private func writeFile(_ path: String, content: String) throws {
+        let url = root.appendingPathComponent(path)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(content.utf8).write(to: url)
     }
 }

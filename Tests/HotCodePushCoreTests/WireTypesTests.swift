@@ -89,11 +89,47 @@ final class WireTypesTests: XCTestCase {
         XCTAssertThrowsError(try Json.decoder.decode(Release.self, from: stored))
     }
 
+    func testShouldReadNoConfigurationWhenTheResourcesLackTheResourceFile() throws {
+        XCTAssertNil(try Configuration.read(from: try resourceBundle(files: [:])))
+    }
+
+    func testShouldReadTheConfigurationInTheSubdirectoryGiven() throws {
+        let resourceFile = try Json.encoder.encode(Fixture.configuration())
+        let bundle = try resourceBundle(files: ["www/hotcodepush.json": resourceFile])
+        XCTAssertEqual(try Configuration.read(from: bundle, subdirectory: "www"), try Configuration.decode(resourceFile))
+        XCTAssertNil(try Configuration.read(from: bundle))
+    }
+
+    func testShouldThrowTheReadersErrorAndPhraseItWhenTheReaderRefusesTheResourceFile() throws {
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any])
+        json["checkIntervalSeconds"] = 59
+        let bundle = try resourceBundle(files: ["hotcodepush.json": try JSONSerialization.data(withJSONObject: json)])
+        XCTAssertThrowsError(try Configuration.read(from: bundle)) { error in
+            XCTAssertEqual(Configuration.resolveRefusedMessage(error), "HotCodePush is not configured: the app's hotcodepush.json was refused: checkIntervalSeconds is below its floor of 60.0 seconds: 59.0. Check the project's hotcodepush.json and build the app again.")
+        }
+    }
+
+    func testShouldPhraseARefusalThatIsNotADecodingErrorByItsDescription() {
+        XCTAssertEqual(Configuration.resolveRefusedMessage(PlainError("The file is unreadable")), "HotCodePush is not configured: the app's hotcodepush.json was refused: The file is unreadable. Check the project's hotcodepush.json and build the app again.")
+    }
+
     func testShouldRefuseAResourceFileWhoseHostIsNotHttpOrHttps() throws {
         let configuration = try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any]
         var json = try XCTUnwrap(configuration)
         json["filesBaseUrl"] = "file:///private/var/www"
         XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)))
+    }
+
+    /// A bundle over a fresh directory holding the files given by path, as an app's resources hold them.
+    private func resourceBundle(files: [String: Data]) throws -> Bundle {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for (path, content) in files {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try content.write(to: url)
+        }
+        return try XCTUnwrap(Bundle(url: root))
     }
 
     private func decodeManifest(path: String, sha256: String) throws -> BundleManifest {

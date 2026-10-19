@@ -70,7 +70,9 @@ public actor Core {
     /// The cleanup the start leaves behind it, which every cycle waits for, since a download writes files no kept release lists yet.
     private var unusedFilesDeletion: Task<Void, Never>?
 
-    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore, files: FileStore, embedded: EmbeddedBundle, http: HttpClient, loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), applicationState: ApplicationState = SystemApplicationState(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
+    /// The defaults are the core as every SDK on iOS wires it: the standard user defaults, the files under
+    /// `FileStore.defaultRootDirectory`, `URLSession` and the wall clock; the tests replace them.
+    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore = UserDefaultsStore(), files: FileStore = FileStore(rootDirectory: FileStore.defaultRootDirectory), embedded: EmbeddedBundle, http: HttpClient = UrlSessionHttpClient(), loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), applicationState: ApplicationState = SystemApplicationState(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
         self.configuration = configuration
         self.device = device
         self.state = StateStore(store: store)

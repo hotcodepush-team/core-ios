@@ -1,4 +1,5 @@
 import Foundation
+import Network
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -10,7 +11,7 @@ public struct DeviceFacts: Equatable {
     public let binaryBuild: String
     public let osVersion: String
     public let sdkVersion: String
-    public let isDebugBuild: Bool
+    public var isDebugBuild: Bool
 
     public init(platform: String, binaryVersion: String, binaryBuild: String, osVersion: String, sdkVersion: String, isDebugBuild: Bool) {
         self.platform = platform
@@ -21,6 +22,40 @@ public struct DeviceFacts: Equatable {
         self.isDebugBuild = isDebugBuild
     }
 }
+
+#if canImport(UIKit)
+extension DeviceFacts {
+    /// The running binary's facts: its version and build from the Info.plist, the OS version, and a debug build when compiled for one.
+    public static func current(sdkVersion: String) -> DeviceFacts {
+        let info = Bundle.main.infoDictionary ?? [:]
+        #if DEBUG
+        let isDebugBuild = true
+        #else
+        let isDebugBuild = false
+        #endif
+        return DeviceFacts(
+            platform: "ios",
+            binaryVersion: info["CFBundleShortVersionString"] as? String ?? "",
+            binaryBuild: info["CFBundleVersion"] as? String ?? "",
+            osVersion: UIDevice.current.systemVersion,
+            sdkVersion: sdkVersion,
+            isDebugBuild: isDebugBuild)
+    }
+}
+
+extension Core {
+    /// The app's background and foreground from UIKit's notifications, for the core's lifetime: call it once, after creating the core.
+    public nonisolated func observeAppLifecycle() {
+        let center = NotificationCenter.default
+        _ = center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { await self?.handleAppPause() }
+        }
+        _ = center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { [weak self] _ in
+            Task { await self?.handleAppResume() }
+        }
+    }
+}
+#endif
 
 /// The framework's side of running a bundle: where a bundle is laid out and which one the WebView serves.
 public protocol BundleLoader: AnyObject {
@@ -89,6 +124,37 @@ public struct SystemApplicationState: ApplicationState {
         #else
         return false
         #endif
+    }
+}
+
+/// Whether the connection is metered, for a loader's `isConnectionMetered()`: an expensive path, cellular or a personal hotspot,
+/// or a constrained one, Low Data Mode, as the system's path monitor last reported it.
+public final class NetworkMonitor {
+    private let lock = NSLock()
+    private let monitor = NWPathMonitor()
+    private var isMetered = false
+
+    public init() {
+        monitor.pathUpdateHandler = { [weak self] path in
+            self?.setIsMetered(path.isExpensive || path.isConstrained)
+        }
+        monitor.start(queue: DispatchQueue.global(qos: .utility))
+    }
+
+    deinit {
+        monitor.cancel()
+    }
+
+    public func isConnectionMetered() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isMetered
+    }
+
+    private func setIsMetered(_ isMetered: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.isMetered = isMetered
     }
 }
 

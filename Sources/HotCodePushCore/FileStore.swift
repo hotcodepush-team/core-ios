@@ -6,6 +6,9 @@ public final class FileStore {
         case hashMismatch(expected: String, actual: String)
     }
 
+    /// Where every SDK keeps its store: `hotcodepush` in the app's Application Support, under which its loader may lay its bundles out too.
+    public static let defaultRootDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("hotcodepush", isDirectory: true)
+
     public let rootDirectory: URL
     private let fileManager = FileManager.default
 
@@ -108,6 +111,36 @@ public protocol EmbeddedBundle {
     func has(sha256: String) -> Bool
     /// Copies the embedded file with that hash to the destination.
     func copyFile(sha256: String, to destination: URL) throws
+}
+
+/// The files compiled into the binary, by path under the root directory the framework ships them in, addressed by the embedded
+/// manifest's hashes; none in a build without a manifest.
+public final class AppBundleEmbeddedBundle: EmbeddedBundle {
+    private let pathsBySha256: [String: String]
+    private let rootDirectory: URL
+
+    public init(manifest: EmbeddedBundleManifest?, rootDirectory: URL) {
+        var paths: [String: String] = [:]
+        for file in manifest?.files ?? [] {
+            paths[file.sha256] = file.path
+        }
+        pathsBySha256 = paths
+        self.rootDirectory = rootDirectory
+    }
+
+    public func has(sha256: String) -> Bool {
+        guard let path = pathsBySha256[sha256] else { return false }
+        return FileManager.default.fileExists(atPath: fileURL(path: path).path)
+    }
+
+    public func copyFile(sha256: String, to destination: URL) throws {
+        guard let path = pathsBySha256[sha256] else { throw PlainError("No embedded file with hash \(sha256)") }
+        try FileManager.default.copyItem(at: fileURL(path: path), to: destination)
+    }
+
+    private func fileURL(path: String) -> URL {
+        return rootDirectory.appendingPathComponent(path)
+    }
 }
 
 /// Lays a bundle out by path for the WebView, linking to the content-addressed files where the platform allows.

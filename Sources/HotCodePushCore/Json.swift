@@ -22,6 +22,15 @@ public enum Json {
         }
         return encoder
     }()
+
+    /// A result or an event as the JavaScript layer receives it: the encoded value read back as one JSON object.
+    public static func encodeObject<T: Encodable>(_ value: T) throws -> [String: Any] {
+        let data = try encoder.encode(value)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw PlainError("The result could not be encoded")
+        }
+        return object
+    }
 }
 
 /// Timestamps travel as `2026-09-29T10:00:00.000Z`: UTC with a `Z`, the fraction read to the millisecond whatever its length, an offset refused.

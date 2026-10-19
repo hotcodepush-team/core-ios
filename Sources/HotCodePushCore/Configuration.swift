@@ -102,8 +102,32 @@ public struct Configuration: Codable, Equatable {
         return [filesBaseUrl, updatesBaseUrl].contains { url.hasPrefix("\($0)/") }
     }
 
+    /// Why an SDK runs without a core when the app's resources lack the resource file.
+    public static let missingMessage = "HotCodePush is not configured: hotcodepush.json is missing from the app's resources. Run `npx hotcodepush init` and build the app once."
+
     public static func decode(_ data: Data) throws -> Configuration {
         return try Json.decoder.decode(Configuration.self, from: data)
+    }
+
+    /// The resource file the build wrote into the bundle's resources, `nil` when they lack it; a file the reader refuses throws its error.
+    public static func read(from bundle: Bundle = .main, subdirectory: String? = nil) throws -> Configuration? {
+        guard let url = bundle.url(forResource: "hotcodepush", withExtension: "json", subdirectory: subdirectory) else {
+            return nil
+        }
+        return try decode(Data(contentsOf: url))
+    }
+
+    /// Why an SDK runs without a core when the reader refused the resource file, in the reader's words: a decoding error's
+    /// `localizedDescription` hides them behind a generic sentence.
+    public static func resolveRefusedMessage(_ error: Error) -> String {
+        let reason: String
+        switch error as? DecodingError {
+        case .dataCorrupted(let context)?, .keyNotFound(_, let context)?, .typeMismatch(_, let context)?, .valueNotFound(_, let context)?:
+            reason = context.debugDescription
+        default:
+            reason = error.localizedDescription
+        }
+        return "HotCodePush is not configured: the app's hotcodepush.json was refused: \(reason). Check the project's hotcodepush.json and build the app again."
     }
 }
 

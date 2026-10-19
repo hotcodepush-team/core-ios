@@ -4,7 +4,7 @@ import XCTest
 /// Every result carries every key of the typed contract, `null` when empty, never an absent key.
 final class ContractTests: XCTestCase {
     private func keys<T: Encodable>(_ value: T) throws -> (keys: Set<String>, object: [String: Any]) {
-        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: try Json.encoder.encode(value)) as? [String: Any])
+        let object = try Json.encodeObject(value)
         return (Set(object.keys), object)
     }
 
@@ -50,5 +50,11 @@ final class ContractTests: XCTestCase {
     func testShouldCarryTheShareOfTheBytesThatArrivedAsTheDownloadsProgress() {
         XCTAssertEqual(DownloadProgressEvent(downloadSizeBytes: 400, progressBytes: 100, releaseId: "r1").progress, 0.25)
         XCTAssertEqual(DownloadProgressEvent(downloadSizeBytes: 0, progressBytes: 0, releaseId: "r1").progress, 0)
+    }
+
+    func testShouldRefuseToEncodeAValueThatIsNotAnObject() {
+        XCTAssertThrowsError(try Json.encodeObject(["r1", "r2"])) { error in
+            XCTAssertEqual(error as? PlainError, PlainError("The result could not be encoded"))
+        }
     }
 }
