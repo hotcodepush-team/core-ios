@@ -128,11 +128,6 @@ public struct ApplyUpdateResult: Codable, Equatable {
     public let status: ApplyStatus
     public let release: Release?
 
-    public init(status: ApplyStatus, release: Release?) {
-        self.status = status
-        self.release = release
-    }
-
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(status, forKey: .status)
@@ -145,13 +140,6 @@ public struct NotifyReadyResult: Codable, Equatable {
     public let previousRelease: Release?
     public let isRolledBack: Bool
     public let rollbackReason: RollbackReason?
-
-    public init(currentRelease: Release?, previousRelease: Release?, isRolledBack: Bool, rollbackReason: RollbackReason?) {
-        self.currentRelease = currentRelease
-        self.previousRelease = previousRelease
-        self.isRolledBack = isRolledBack
-        self.rollbackReason = rollbackReason
-    }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)

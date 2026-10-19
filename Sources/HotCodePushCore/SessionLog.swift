@@ -9,12 +9,6 @@ public struct LogEntry: Equatable {
     public let code: String
     public let message: String
 
-    public init(at: Date, code: String, message: String) {
-        self.at = at
-        self.code = code
-        self.message = message
-    }
-
     /// A cycle's result: the status, the reason and the condition as the code, the trigger and the release in the sentence.
     static func ofCycle(_ result: SyncResult, trigger: SyncTrigger, at: Date) -> LogEntry {
         let code = [result.status.rawValue, result.reason, result.condition?.rawValue].compactMap { $0 }.joined(separator: " ")

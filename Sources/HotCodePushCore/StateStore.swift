@@ -30,12 +30,6 @@ public struct CachedIndex: Codable, Equatable {
     public let etag: String?
     public let fetchedAt: Date
     public let body: ChannelIndex
-
-    public init(etag: String?, fetchedAt: Date, body: ChannelIndex) {
-        self.etag = etag
-        self.fetchedAt = fetchedAt
-        self.body = body
-    }
 }
 
 /// The downloaded release waiting to be applied, and the moment the cycle that downloaded it chose: the start and the resume read
@@ -43,11 +37,6 @@ public struct CachedIndex: Codable, Equatable {
 public struct NextRelease: Codable, Equatable {
     public let release: Release
     public let applyStrategy: ApplyStrategy
-
-    public init(release: Release, applyStrategy: ApplyStrategy) {
-        self.release = release
-        self.applyStrategy = applyStrategy
-    }
 }
 
 public struct LastRollback: Codable, Equatable {

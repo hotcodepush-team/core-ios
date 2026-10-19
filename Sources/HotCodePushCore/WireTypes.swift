@@ -211,11 +211,6 @@ public struct ChannelsIndex: Codable, Equatable {
     public struct Entry: Codable, Equatable {
         public let id: String
         public let name: String
-
-        public init(id: String, name: String) {
-            self.id = id
-            self.name = name
-        }
     }
 
     public let schema: Int

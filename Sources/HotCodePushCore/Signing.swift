@@ -6,11 +6,6 @@ import Security
 public struct DevicePublicKey: Codable, Equatable {
     public let der: String
     public let keyId: String
-
-    public init(der: String, keyId: String) {
-        self.der = der
-        self.keyId = keyId
-    }
 }
 
 /// Why a manifest's signature was refused, one case per cause.

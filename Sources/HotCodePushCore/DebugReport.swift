@@ -8,15 +8,6 @@ public struct DebugSnapshot: Equatable {
     public let isDebugBuild: Bool
     public let state: StateResult
     public let log: [LogEntry]
-
-    public init(takenAt: Date, device: DeviceResult, configuration: Configuration, isDebugBuild: Bool, state: StateResult, log: [LogEntry]) {
-        self.takenAt = takenAt
-        self.device = device
-        self.configuration = configuration
-        self.isDebugBuild = isDebugBuild
-        self.state = state
-        self.log = log
-    }
 }
 
 public struct DebugRow: Equatable {
