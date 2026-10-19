@@ -350,7 +350,7 @@ public actor Core {
             state.channel = nil
             return await resolveCycle(trigger: trigger, stage: stage, options: options)
         }
-        switch Evaluator.evaluate(index, device: deviceInfo()) {
+        switch Evaluator.evaluation(of: index, device: deviceInfo()).outcome {
         case .upToDate:
             return .upToDate(current)
         case .available(let target, let isMandatory):

@@ -58,10 +58,6 @@ public enum Evaluator {
     /// The components a binary version fills before the build: major, minor and patch.
     private static let binaryVersionMinimumComponents = 3
 
-    public static func evaluate(_ index: ChannelIndex, device: DeviceInfo) -> Evaluation {
-        return evaluation(of: index, device: device).outcome
-    }
-
     public static func evaluation(of index: ChannelIndex, device: DeviceInfo) -> IndexEvaluation {
         let currentIndexRelease = device.currentRelease.flatMap { current in index.releases.first { $0.id == current.id } }
         if isDeviceBeyondCap(index, device: device) {
