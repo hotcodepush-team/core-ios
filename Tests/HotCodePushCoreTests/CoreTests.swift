@@ -861,6 +861,25 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(status.currentRelease)
     }
 
+    func testShouldReloadIntoTheEmbeddedBundleWhenTheRunningReleaseIsRevokedWhileAnImmediateApplyIsHeld() async throws {
+        let harness = Harness()
+        try await startOnAConfirmedRelease(harness, configuration: Fixture.configuration(applyStrategy: .immediate))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
+        harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
+        let applied = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(applied, .applied(v3.release.release, notes: "notes 2"))
+        harness.publish([v2], sequence: 3, revoked: ["r1"], etag: "\"e3\"")
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result, .skipped(nil, reason: .releaseRevoked))
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        await harness.core.handleRendered()
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertNil(status.nextRelease)
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+    }
+
     func testShouldQueueTheSwitchWithTheReloadWhileRestartsAreNotAllowed() async throws {
         let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
@@ -2212,6 +2231,45 @@ final class CoreTests: XCTestCase {
         let status = await harness.core.getState()
         XCTAssertNil(status.currentRelease)
         XCTAssertEqual(status.failedBundleIds, ["b2"])
+    }
+
+    func testShouldReloadIntoTheFallbackAtTheReadyTimeoutWhenAnImmediateApplyIsHeldForTheReloadedApp() async throws {
+        let harness = try await harnessOnAnUnconfirmedRelease()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
+        harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
+        let applied = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(applied, .applied(v3.release.release, notes: "notes 2"))
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        await harness.scheduler.fire()
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertNil(status.nextRelease)
+        XCTAssertEqual(status.failedBundleIds, ["b2"])
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+        await harness.core.handleRendered()
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
+    }
+
+    func testShouldReloadIntoTheFallbackWhenTheAppAllowsRestartsAgainAfterTheReadyTimeoutRolledBackWhileAnApplyWasHeld() async throws {
+        let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate, readySignal: .manual))
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        await harness.core.handleRendered()
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.core.handleRendered()
+        await harness.core.setRestartAllowed(false)
+        let v3 = Fixture.release(number: 2, bundleId: "b3", content: Data("<html>v3</html>".utf8))
+        harness.publish([v2, v3], sequence: 2, etag: "\"e2\"")
+        _ = try await harness.core.sync(trigger: .manual)
+        await harness.scheduler.fire()
+        XCTAssertEqual(harness.loader.loaded, ["b2"])
+        await harness.core.setRestartAllowed(true)
+        let status = await harness.core.getState()
+        XCTAssertNil(status.currentRelease)
+        XCTAssertEqual(status.failedBundleIds, ["b2"])
+        XCTAssertEqual(harness.loader.loaded, ["b2", nil])
     }
 
     func testShouldHoldTheNextRestartUntilTheReloadedAppRendersWhenTheCoreReloaded() async throws {

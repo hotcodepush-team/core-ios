@@ -707,10 +707,16 @@ public actor Core {
     }
 
     /// The switch and the reload as one act, once the cached index still lists the release: one revoked or gone from it while the
-    /// restart was held is dropped, and nothing reloads.
+    /// restart was held is dropped. With the release gone, discarded or dropped by a rollback or a revert whose own restart yielded
+    /// to this one, the host reloads into the current bundle when it serves another, and else nothing reloads.
     private func applyNextRelease() {
         discardNextReleaseThatLeftTheIndex()
-        guard state.nextRelease != nil else { return }
+        guard state.nextRelease != nil else {
+            if loader.servedBundleId() != resolveServedBundleId(of: state.currentRelease) {
+                reloadApp()
+            }
+            return
+        }
         switchToNextRelease()
         reloadApp()
     }
