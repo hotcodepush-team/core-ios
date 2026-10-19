@@ -74,20 +74,14 @@ public enum Evaluator {
         let eligibleVerdicts = verdicts.filter(\.isEligible)
         let newerEligible = eligibleVerdicts.first { $0.release.number > currentNumber }
         let olderEligible = eligibleVerdicts.first { $0.release.number < currentNumber }
-        if index.isPaused {
-            if isCurrentRevoked {
-                return .skipped(olderEligible?.release, reason: .releaseRevoked, condition: nil)
-            }
-            if let newer = newerVerdict {
-                return .skipped(newer.release, reason: .channelPaused, condition: nil)
-            }
-            return .upToDate(currentIndexRelease)
-        }
-        if let target = newerEligible?.release {
+        if !index.isPaused, let target = newerEligible?.release {
             return .available(target, isMandatory: isMandatoryTransitively(target, currentNumber: currentNumber, eligibleVerdicts: eligibleVerdicts))
         }
         if isCurrentRevoked {
             return .skipped(olderEligible?.release, reason: .releaseRevoked, condition: nil)
+        }
+        if index.isPaused, let newer = newerVerdict {
+            return .skipped(newer.release, reason: .channelPaused, condition: nil)
         }
         if let newer = newerVerdict, let reason = newer.reason {
             return .skipped(newer.release, reason: reason, condition: newer.condition)
