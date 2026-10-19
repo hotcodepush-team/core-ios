@@ -401,10 +401,6 @@ public struct BundleManifest: Codable, Equatable {
         try container.encode(platforms, forKey: .platforms)
     }
 
-    public func sha256(forPath path: String) -> String? {
-        return files.first { $0.path == path }?.sha256
-    }
-
     /// Whether the manifest names the device's app and lists its platform, signed or not: neither an index pointing at another
     /// app's bundle nor a cache serving one puts it on the device.
     public func isForDevice(appId: String, platform: String) -> Bool {
