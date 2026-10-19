@@ -378,9 +378,10 @@ public actor Core {
     }
 
     /// A release the device qualifies for: adopted in place when it carries the running bundle, the embedded one included, else
-    /// announced and taken as far as the stage goes. An adoption answers `UP_TO_DATE`, since nothing waits and nothing reloads. The
-    /// apply moment is the call's strategy, else the one a release downloaded already carries, else the configuration's, so an
-    /// automatic cycle never overrides the app's.
+    /// announced and taken as far as the stage goes. An adoption answers `UP_TO_DATE`, since nothing waits and nothing reloads. A
+    /// release of the embedded bundle is announced with no bytes to download, its files being the binary's. The apply moment is the
+    /// call's strategy, else the one a release downloaded already carries, else the configuration's, so an automatic cycle never
+    /// overrides the app's.
     private func update(to target: IndexRelease, isMandatory: Bool, trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         if target.bundleId == runningBundleId {
@@ -388,17 +389,18 @@ public actor Core {
             return .upToDate(release)
         }
         let requestedStrategy = resolveRequestedApplyStrategy(isMandatory: isMandatory, options: options)
+        let downloadSizeBytes = isCarryingEmbeddedBundle(release) ? 0 : target.sizeBytes
         if let downloaded = readDownloadedRelease(target) {
             if stage == .check {
-                return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
+                return .available(release, notes: target.notes, downloadSizeBytes: downloadSizeBytes)
             }
             return applyDownloaded(release, notes: target.notes, strategy: requestedStrategy ?? downloaded.applyStrategy)
         }
         let strategy = requestedStrategy ?? resolveConfiguredApplyStrategy(isMandatory: isMandatory)
-        listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadSizeBytes: target.sizeBytes, trigger: trigger))
+        listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadSizeBytes: downloadSizeBytes, trigger: trigger))
         switch resolveDownloadStrategy(of: release, stage: stage, options: options) {
         case .manual:
-            return .available(release, notes: target.notes, downloadSizeBytes: target.sizeBytes)
+            return .available(release, notes: target.notes, downloadSizeBytes: downloadSizeBytes)
         case .unmetered where loader.isConnectionMetered():
             return .skipped(release, reason: .connectionMetered)
         case .auto, .unmetered:

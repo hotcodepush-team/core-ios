@@ -843,7 +843,7 @@ final class CoreTests: XCTestCase {
         let embedded = Fixture.release(number: 2, bundleId: "embedded", content: Fixture.embeddedIndexHtml)
         harness.publish([v2, embedded], sequence: 2, etag: "\"e2\"")
         let checked = try await harness.core.checkForUpdate()
-        XCTAssertEqual(checked, .available(embedded.release.release, notes: "notes 2", downloadSizeBytes: embedded.release.sizeBytes))
+        XCTAssertEqual(checked, .available(embedded.release.release, notes: "notes 2", downloadSizeBytes: 0))
         let afterCheck = await harness.core.getState()
         XCTAssertNil(afterCheck.nextRelease)
         let result = try await harness.core.sync(trigger: .manual)
@@ -856,6 +856,20 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(served)
         let status = await harness.core.getState()
         XCTAssertEqual(status.currentRelease, embedded.release.release)
+    }
+
+    func testShouldReportNoBytesToDownloadForAReleaseOfTheEmbeddedBundle() async throws {
+        let harness = Harness()
+        try await startOnAConfirmedRelease(harness)
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        let embedded = Fixture.release(number: 2, bundleId: "embedded", content: Fixture.embeddedIndexHtml)
+        harness.publish([v2, embedded], sequence: 2, etag: "\"e2\"")
+        let checked = try await harness.core.checkForUpdate()
+        XCTAssertEqual(checked, .available(embedded.release.release, notes: "notes 2", downloadSizeBytes: 0))
+        _ = try await harness.core.sync(trigger: .manual)
+        let checkedWhileWaiting = try await harness.core.checkForUpdate()
+        XCTAssertEqual(checkedWhileWaiting, .available(embedded.release.release, notes: "notes 2", downloadSizeBytes: 0))
+        XCTAssertEqual(harness.listener.updateAvailable.filter { $0.release.id == "r2" }.map { $0.downloadSizeBytes }, [0, 0])
     }
 
     func testShouldGateAndBlocklistAReleaseOfAThirdBundleThatNeverRendersWhileAnotherBundleRuns() async throws {
