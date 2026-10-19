@@ -129,3 +129,20 @@ final class FileStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: www.appendingPathComponent("assets/logo.svg")), Data("embedded".utf8))
     }
 }
+
+final class UserDefaultsStoreTests: XCTestCase {
+    func testShouldRemoveTheKeyWhenANilStringOrIntegerIsSet() throws {
+        let suiteName = "hotcodepush.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = UserDefaultsStore(defaults: defaults)
+        store.set("value", forKey: "string")
+        store.set(1, forKey: "integer")
+        XCTAssertEqual(store.string(forKey: "string"), "value")
+        XCTAssertEqual(store.integer(forKey: "integer"), 1)
+        store.set(nil as String?, forKey: "string")
+        store.set(nil as Int?, forKey: "integer")
+        XCTAssertNil(defaults.object(forKey: "string"))
+        XCTAssertNil(defaults.object(forKey: "integer"))
+    }
+}

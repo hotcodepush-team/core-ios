@@ -20,11 +20,7 @@ public final class UserDefaultsStore: KeyValueStore {
     }
 
     public func set(_ value: String?, forKey key: String) {
-        if let value = value {
-            defaults.set(value, forKey: key)
-        } else {
-            defaults.removeObject(forKey: key)
-        }
+        defaults.set(value, forKey: key)
     }
 
     public func integer(forKey key: String) -> Int? {
@@ -32,10 +28,6 @@ public final class UserDefaultsStore: KeyValueStore {
     }
 
     public func set(_ value: Int?, forKey key: String) {
-        if let value = value {
-            defaults.set(value, forKey: key)
-        } else {
-            defaults.removeObject(forKey: key)
-        }
+        defaults.set(value, forKey: key)
     }
 }
