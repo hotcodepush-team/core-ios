@@ -273,14 +273,14 @@ public actor Core {
     /// the fallback of a revoked release included.
     public func checkForUpdate() async throws -> SyncResult {
         try verifyChannelId()
-        return await runCycle(trigger: .manual, stage: .check, options: SyncOptions())
+        return await runCycle(trigger: .manual, stage: .check, options: SyncOptions(downloadStrategy: .manual))
     }
 
     /// `sync()` with the download gate open: re-check the index, a conditional GET, so nothing is downloaded from stale state, then
     /// download and verify whatever `downloadStrategy` says and apply per the apply strategies; never `AVAILABLE`.
     public func downloadUpdate(options: DownloadUpdateOptions = DownloadUpdateOptions()) async throws -> SyncResult {
         try verifyChannelId()
-        return await runCycle(trigger: .manual, stage: .download, options: SyncOptions(applyStrategy: options.applyStrategy, mandatoryApplyStrategy: options.mandatoryApplyStrategy))
+        return await runCycle(trigger: .manual, stage: .download, options: SyncOptions(applyStrategy: options.applyStrategy, downloadStrategy: .auto, mandatoryApplyStrategy: options.mandatoryApplyStrategy))
     }
 
     /// One cycle at a time: a call joins the running cycle of its own stage, and waits for one of another stage before it starts its own.
@@ -409,15 +409,10 @@ public actor Core {
         }
     }
 
-    /// The download gate of the cycle: pinned shut by the check and open by the download, the call's own strategy, else the
-    /// configuration's, for a sync. A release of the embedded bundle downloads nothing and passes it, `unmetered` and `manual`
-    /// alike, at every stage but the check, whose gate stays shut.
+    /// The download gate of the cycle: the call's own strategy, else the configuration's. A release of the embedded bundle downloads
+    /// nothing and passes it, `unmetered` and `manual` alike, at every stage but the check, whose gate stays shut.
     private func resolveDownloadStrategy(of release: Release, stage: Stage, options: SyncOptions) -> DownloadStrategy {
-        switch stage {
-        case .check: return .manual
-        case .download: return .auto
-        case .sync: return isCarryingEmbeddedBundle(release) ? .auto : options.downloadStrategy ?? configuration.downloadStrategy
-        }
+        return isCarryingEmbeddedBundle(release) && stage != .check ? .auto : options.downloadStrategy ?? configuration.downloadStrategy
     }
 
     /// The release as the app sees it: the index's entry with the mandatory flag the evaluation decided, transitive included.
