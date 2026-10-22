@@ -131,9 +131,9 @@ public enum DebugReport {
         return "none: the build carries no channel, it was built without a token or offline"
     }
 
-    /// The registered bundle's id; a build without an embedded bundle says that live updates are off in it.
+    /// The registered bundle's id; a build without an embedded bundle says that OTA updates are off in it.
     private static func describeEmbeddedBundle(_ snapshot: DebugSnapshot) -> String {
-        guard snapshot.configuration.embeddedBundleManifest != nil else { return "none: the build embeds no bundle, live updates are off in it" }
+        guard snapshot.configuration.embeddedBundleManifest != nil else { return "none: the build embeds no bundle, over-the-air (OTA) updates are off in it" }
         return snapshot.state.embeddedBundleId ?? "not registered"
     }
 

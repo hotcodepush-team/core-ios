@@ -973,7 +973,7 @@ public actor Core {
         return clock.now.timeIntervalSince(cached.fetchedAt) < Core.cachedIndexMaxAge && index.sequence < cached.body.sequence
     }
 
-    /// Live updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`.
+    /// OTA updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`.
     private var isDisabledInThisBuild: Bool {
         return configuration.embeddedBundleManifest == nil || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
     }
