@@ -1616,7 +1616,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StateStore(store: harness.store).reportedAt, Iso8601.parse("2023-12-24T08:00:00.000Z"))
     }
 
-    func testShouldSendNothingWhenLiveUpdatesAreOffInADebugBuild() async throws {
+    func testShouldSendNothingWhenOtaUpdatesAreOffInADebugBuild() async throws {
         let harness = Harness(configuration: Fixture.configuration(isEnabledInDebugBuilds: false), isDebugBuild: true)
         harness.acknowledgeEvents()
         harness.publish([], sequence: 1)
