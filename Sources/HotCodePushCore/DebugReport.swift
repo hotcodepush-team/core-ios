@@ -98,7 +98,7 @@ public enum DebugReport {
     private static func indexSection(_ snapshot: DebugSnapshot) -> DebugSection {
         let state = snapshot.state
         return DebugSection(title: "Index", rows: [
-            DebugRow(label: "Sequence", value: state.index.map { String($0.sequence) } ?? "none"),
+            DebugRow(label: "Published at", value: state.index.map { Iso8601.format(Date(timeIntervalSince1970: TimeInterval($0.sequence) / 1000)) } ?? "none"),
             DebugRow(label: "Fetched at", value: state.index.map { Iso8601.format($0.fetchedAt) } ?? "never"),
             DebugRow(label: "Reported at", value: state.reportedAt.map(Iso8601.format) ?? "never")
         ])
@@ -110,8 +110,6 @@ public enum DebugReport {
             DebugRow(label: "App id", value: configuration.appId),
             DebugRow(label: "Configured channel", value: configuration.channelId ?? "none"),
             DebugRow(label: "Built at", value: Iso8601.format(configuration.builtAt)),
-            DebugRow(label: "Files host", value: configuration.filesBaseUrl),
-            DebugRow(label: "Updates host", value: configuration.updatesBaseUrl),
             DebugRow(label: "Check strategy", value: configuration.checkStrategy == .auto ? "auto, every \(Int(configuration.checkIntervalSeconds)) s" : "manual"),
             DebugRow(label: "Strategies", value: "download \(configuration.downloadStrategy.rawValue), apply \(configuration.applyStrategy.rawValue), mandatory \(configuration.mandatoryApplyStrategy.rawValue)"),
             DebugRow(label: "Ready signal", value: "\(configuration.readySignal.rawValue), \(Int(configuration.readyTimeoutSeconds)) s"),
