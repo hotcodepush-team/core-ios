@@ -140,7 +140,7 @@ public struct IndexRelease: Codable, Equatable {
     }
 }
 
-public enum ConditionType: String, Codable {
+public enum ConditionType: String, CaseIterable, Codable {
     case binary, fingerprint, os, attribute, device
 }
 

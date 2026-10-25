@@ -19,15 +19,15 @@ public struct LogEntry: Equatable {
     static func ofDeviceEvent(_ event: DeviceEvent, at: Date) -> LogEntry? {
         switch event.type {
         case "downloaded":
-            return LogEntry(at: at, code: "DOWNLOADED", message: "release \(event.releaseId ?? ""): \(event.downloadSizeBytes ?? 0) bytes as \(event.packKind ?? "") pack")
+            return LogEntry(at: at, code: "downloaded", message: "release \(event.releaseId ?? ""): \(event.downloadSizeBytes ?? 0) bytes as \(event.packKind ?? "") pack")
         case "applied":
-            return LogEntry(at: at, code: "APPLIED", message: "release \(event.releaseId ?? "") is the running release")
+            return LogEntry(at: at, code: "applied", message: "release \(event.releaseId ?? "") is the running release")
         case "confirmed":
-            return LogEntry(at: at, code: "CONFIRMED", message: "release \(event.releaseId ?? "") passed the readiness gate")
+            return LogEntry(at: at, code: "confirmed", message: "release \(event.releaseId ?? "") passed the readiness gate")
         case "failed":
-            return LogEntry(at: at, code: "FAILED \(event.reason ?? "")", message: "release \(event.releaseId ?? "")\(event.detail.map { ": \($0)" } ?? "")")
-        case "rolledBack":
-            return LogEntry(at: at, code: "ROLLED_BACK", message: "release \(event.fromReleaseId ?? "") rolled back to \(event.toReleaseId ?? "the embedded bundle")")
+            return LogEntry(at: at, code: "failed \(event.reason ?? "")", message: "release \(event.releaseId ?? "")\(event.detail.map { ": \($0)" } ?? "")")
+        case "rolled_back":
+            return LogEntry(at: at, code: "rolled_back", message: "release \(event.fromReleaseId ?? "") rolled back to \(event.toReleaseId ?? "the embedded bundle")")
         default:
             return nil
         }
@@ -37,13 +37,13 @@ public struct LogEntry: Equatable {
     static func ofBatch(_ answer: BatchAnswer, eventCount: Int, at: Date) -> LogEntry {
         switch answer {
         case .acknowledged:
-            return LogEntry(at: at, code: "REPORTED", message: "\(eventCount) events acknowledged")
+            return LogEntry(at: at, code: "reported", message: "\(eventCount) events acknowledged")
         case .refused(let status):
-            return LogEntry(at: at, code: "REPORT_REFUSED", message: "\(eventCount) events dropped: HTTP \(status)")
+            return LogEntry(at: at, code: "report_refused", message: "\(eventCount) events dropped: HTTP \(status)")
         case .failed(let status?):
-            return LogEntry(at: at, code: "REPORT_FAILED", message: "\(eventCount) events kept for the next sync: HTTP \(status)")
+            return LogEntry(at: at, code: "report_failed", message: "\(eventCount) events kept for the next sync: HTTP \(status)")
         case .failed(nil):
-            return LogEntry(at: at, code: "REPORT_FAILED", message: "\(eventCount) events kept for the next sync: the events endpoint could not be reached")
+            return LogEntry(at: at, code: "report_failed", message: "\(eventCount) events kept for the next sync: the events endpoint could not be reached")
         }
     }
 

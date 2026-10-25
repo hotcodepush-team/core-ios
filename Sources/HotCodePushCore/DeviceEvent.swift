@@ -12,7 +12,7 @@ public struct DeviceEvent: Codable, Equatable {
     public let packKind: String?
     public let fromReleaseId: String?
     public let toReleaseId: String?
-    /// The app's `rollback({ reason })` on `APP_REQUESTED`: printable, at most 256 characters.
+    /// The app's `rollback({ reason })` on `app_requested`: printable, at most 256 characters.
     public let detail: String?
 
     private init(type: String, releaseId: String? = nil, bundleId: String? = nil, status: String? = nil, reason: String? = nil, condition: ConditionType? = nil, downloadSizeBytes: Int? = nil, packKind: String? = nil, fromReleaseId: String? = nil, toReleaseId: String? = nil, detail: String? = nil) {
@@ -54,7 +54,7 @@ public struct DeviceEvent: Codable, Equatable {
             try container.encode(releaseId, forKey: .releaseId)
             try container.encode(reason, forKey: .reason)
             try container.encodeIfPresent(detail, forKey: .detail)
-        case "rolledBack":
+        case "rolled_back":
             try container.encode(fromReleaseId, forKey: .fromReleaseId)
             try container.encode(toReleaseId, forKey: .toReleaseId)
         default:
@@ -83,11 +83,11 @@ public struct DeviceEvent: Codable, Equatable {
     }
 
     public static func rolledBack(fromReleaseId: String, toReleaseId: String?) -> DeviceEvent {
-        return DeviceEvent(type: "rolledBack", fromReleaseId: fromReleaseId, toReleaseId: toReleaseId)
+        return DeviceEvent(type: "rolled_back", fromReleaseId: fromReleaseId, toReleaseId: toReleaseId)
     }
 }
 
-public enum PackKind: String, Codable {
+public enum PackKind: String, CaseIterable, Codable {
     case full, delta, streamed, files
 }
 

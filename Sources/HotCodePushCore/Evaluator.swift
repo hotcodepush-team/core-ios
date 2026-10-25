@@ -38,8 +38,8 @@ public struct ReleaseVerdict: Equatable {
     public let condition: ConditionType?
 }
 
-/// The outcome for the device. On `SKIPPED` with `RELEASE_REVOKED`, the release is the one the device resolves to —
-/// `nil` for the embedded bundle; on every other `SKIPPED` it is the newest release the device will not take.
+/// The outcome for the device. On `skipped` with `release_revoked`, the release is the one the device resolves to —
+/// `nil` for the embedded bundle; on every other `skipped` it is the newest release the device will not take.
 public enum Evaluation: Equatable {
     case upToDate(IndexRelease?)
     case available(IndexRelease, isMandatory: Bool)

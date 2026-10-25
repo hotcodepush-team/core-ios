@@ -39,6 +39,16 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(state.deviceId, "device-1")
     }
 
+    func testShouldDropAnOutboxStoredInTheOldSpellingByTheFourthStateVersion() {
+        let store = InMemoryStore()
+        store.set(4, forKey: "hotcodepush.stateVersion")
+        store.set("[{\"type\":\"checked\",\"releaseId\":\"r1\",\"status\":\"AVAILABLE\"},{\"type\":\"rolledBack\",\"fromReleaseId\":\"r1\",\"toReleaseId\":null}]", forKey: "hotcodepush.unsentEvents")
+        store.set("device-1", forKey: "hotcodepush.deviceId")
+        let state = StateStore(store: store)
+        XCTAssertEqual(state.unsentEvents, [])
+        XCTAssertEqual(state.deviceId, "device-1")
+    }
+
     func testShouldStoreTheNextReleaseWithItsApplyMoment() throws {
         let store = InMemoryStore()
         let next = NextRelease(release: Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false), applyStrategy: .nextResume)
@@ -47,7 +57,7 @@ final class StoreTests: XCTestCase {
         let stored = try XCTUnwrap(store.string(forKey: "hotcodepush.nextRelease"))
         let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(stored.utf8)) as? [String: Any])
         XCTAssertEqual(Set(object.keys), ["release", "applyStrategy"])
-        XCTAssertEqual(object["applyStrategy"] as? String, "next-resume")
+        XCTAssertEqual(object["applyStrategy"] as? String, "next_resume")
     }
 
     func testShouldGenerateAStableDeviceIdOnce() {

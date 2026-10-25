@@ -1,58 +1,58 @@
 import Foundation
 
-public enum SyncTrigger: String, Codable {
+public enum SyncTrigger: String, CaseIterable, Codable {
     case start, resume, interval, manual
 }
 
-public enum SyncStatus: String, Codable {
-    case upToDate = "UP_TO_DATE"
-    case available = "AVAILABLE"
-    case downloaded = "DOWNLOADED"
-    case applied = "APPLIED"
-    case skipped = "SKIPPED"
-    case failed = "FAILED"
+public enum SyncStatus: String, CaseIterable, Codable {
+    case upToDate = "up_to_date"
+    case available
+    case downloaded
+    case applied
+    case skipped
+    case failed
 }
 
-public enum SkippedReason: String, Codable {
-    case buildDebug = "BUILD_DEBUG"
-    case bundleFailedBefore = "BUNDLE_FAILED_BEFORE"
-    case channelPaused = "CHANNEL_PAUSED"
-    case conditionUnsupported = "CONDITION_UNSUPPORTED"
-    case connectionMetered = "CONNECTION_METERED"
-    case deviceIncompatible = "DEVICE_INCOMPATIBLE"
-    case deviceNotInRollout = "DEVICE_NOT_IN_ROLLOUT"
-    case deviceNotTargeted = "DEVICE_NOT_TARGETED"
-    case releaseOlderThanBinary = "RELEASE_OLDER_THAN_BINARY"
-    case releaseRevoked = "RELEASE_REVOKED"
-    case spendingCapReached = "SPENDING_CAP_REACHED"
+public enum SkippedReason: String, CaseIterable, Codable {
+    case buildDebug = "build_debug"
+    case bundleFailedBefore = "bundle_failed_before"
+    case channelPaused = "channel_paused"
+    case conditionUnsupported = "condition_unsupported"
+    case connectionMetered = "connection_metered"
+    case deviceIncompatible = "device_incompatible"
+    case deviceNotInRollout = "device_not_in_rollout"
+    case deviceNotTargeted = "device_not_targeted"
+    case releaseOlderThanBinary = "release_older_than_binary"
+    case releaseRevoked = "release_revoked"
+    case spendingCapReached = "spending_cap_reached"
 }
 
-public enum FailedReason: String, Codable {
-    case channelUnknown = "CHANNEL_UNKNOWN"
-    case contentMismatched = "CONTENT_MISMATCHED"
-    case deviceOffline = "DEVICE_OFFLINE"
-    case downloadFailed = "DOWNLOAD_FAILED"
-    case indexInvalid = "INDEX_INVALID"
-    case manifestInvalid = "MANIFEST_INVALID"
-    case signatureInvalid = "SIGNATURE_INVALID"
+public enum FailedReason: String, CaseIterable, Codable {
+    case channelUnknown = "channel_unknown"
+    case contentMismatched = "content_mismatched"
+    case deviceOffline = "device_offline"
+    case downloadFailed = "download_failed"
+    case indexInvalid = "index_invalid"
+    case manifestInvalid = "manifest_invalid"
+    case signatureInvalid = "signature_invalid"
 }
 
-public enum RollbackReason: String, Codable {
-    case appCrashed = "APP_CRASHED"
-    case appRequested = "APP_REQUESTED"
-    case readinessTimedOut = "READINESS_TIMED_OUT"
+public enum RollbackReason: String, CaseIterable, Codable {
+    case appCrashed = "app_crashed"
+    case appRequested = "app_requested"
+    case readinessTimedOut = "readiness_timed_out"
 }
 
 /// One shape for `SyncResult`, `CheckForUpdateResult` and `DownloadUpdateResult`: the status says which fields are set.
-/// `AVAILABLE` when the download is the app's, `DOWNLOADED` when the apply is scheduled or the app's, `applyStrategy` saying which,
-/// and `APPLIED` when it happened now, the reload following the result.
+/// `available` when the download is the app's, `downloaded` when the apply is scheduled or the app's, `applyStrategy` saying which,
+/// and `applied` when it happened now, the reload following the result.
 public struct SyncResult: Codable, Equatable {
     public let status: SyncStatus
     public let release: Release?
     public let reason: String?
     public let condition: ConditionType?
     public let notes: String?
-    /// `next-start`, `next-resume` or `manual` on `DOWNLOADED`, never `immediate`, which answers `APPLIED`.
+    /// `next_start`, `next_resume` or `manual` on `downloaded`, never `immediate`, which answers `applied`.
     public let applyStrategy: ApplyStrategy?
     public let downloadSizeBytes: Int?
     public let message: String?
@@ -118,9 +118,9 @@ public struct SyncResult: Codable, Equatable {
     }
 }
 
-public enum ApplyStatus: String, Codable {
-    case applied = "APPLIED"
-    case nothingToApply = "NOTHING_TO_APPLY"
+public enum ApplyStatus: String, CaseIterable, Codable {
+    case applied
+    case nothingToApply = "nothing_to_apply"
 }
 
 /// What `applyUpdate()` answers: the update is the current release and the reload follows, or nothing waits.
@@ -187,7 +187,7 @@ public struct StateResult: Codable, Equatable {
     }
 }
 
-public enum ChannelSource: String, Codable {
+public enum ChannelSource: String, CaseIterable, Codable {
     case runtime, config
 }
 

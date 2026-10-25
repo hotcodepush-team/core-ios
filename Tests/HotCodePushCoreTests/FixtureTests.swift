@@ -73,11 +73,11 @@ final class FixtureTests: XCTestCase {
         init(_ evaluation: Evaluation) {
             switch evaluation {
             case .upToDate(let release):
-                self.init(status: "UP_TO_DATE", releaseId: release?.id, isMandatory: nil, reason: nil, condition: nil)
+                self.init(status: SyncStatus.upToDate.rawValue, releaseId: release?.id, isMandatory: nil, reason: nil, condition: nil)
             case .available(let release, let isMandatory):
-                self.init(status: "AVAILABLE", releaseId: release.id, isMandatory: isMandatory, reason: nil, condition: nil)
+                self.init(status: SyncStatus.available.rawValue, releaseId: release.id, isMandatory: isMandatory, reason: nil, condition: nil)
             case .skipped(let release, let reason, let condition):
-                self.init(status: "SKIPPED", releaseId: release?.id, isMandatory: nil, reason: reason.rawValue, condition: condition?.rawValue)
+                self.init(status: SyncStatus.skipped.rawValue, releaseId: release?.id, isMandatory: nil, reason: reason.rawValue, condition: condition?.rawValue)
             }
         }
 

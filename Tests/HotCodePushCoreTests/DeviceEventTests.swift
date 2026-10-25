@@ -9,16 +9,16 @@ final class DeviceEventTests: XCTestCase {
     {
       "deviceId": "d1",
       "events": [
-        { "condition": "binary", "reason": "DEVICE_INCOMPATIBLE", "releaseId": "r2", "status": "SKIPPED", "type": "checked" },
-        { "releaseId": "r3", "status": "AVAILABLE", "type": "checked" },
+        { "condition": "binary", "reason": "device_incompatible", "releaseId": "r2", "status": "skipped", "type": "checked" },
+        { "releaseId": "r3", "status": "available", "type": "checked" },
         { "bundleId": "b1", "downloadSizeBytes": 4096, "packKind": "delta", "releaseId": "r1", "type": "downloaded" },
         { "releaseId": "r1", "type": "applied" },
         { "releaseId": "r1", "type": "confirmed" },
-        { "reason": "READINESS_TIMED_OUT", "releaseId": "r1", "type": "failed" },
-        { "detail": "checkout crashed on launch", "reason": "APP_REQUESTED", "releaseId": "r1", "type": "failed" },
-        { "reason": "SIGNATURE_INVALID", "releaseId": "r2", "type": "failed" },
-        { "fromReleaseId": "r2", "toReleaseId": "r1", "type": "rolledBack" },
-        { "fromReleaseId": "r1", "toReleaseId": null, "type": "rolledBack" }
+        { "reason": "readiness_timed_out", "releaseId": "r1", "type": "failed" },
+        { "detail": "checkout crashed on launch", "reason": "app_requested", "releaseId": "r1", "type": "failed" },
+        { "reason": "signature_invalid", "releaseId": "r2", "type": "failed" },
+        { "fromReleaseId": "r2", "toReleaseId": "r1", "type": "rolled_back" },
+        { "fromReleaseId": "r1", "toReleaseId": null, "type": "rolled_back" }
       ],
       "platform": "ios",
       "report": {

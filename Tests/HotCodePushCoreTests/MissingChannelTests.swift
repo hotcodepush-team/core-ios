@@ -2,7 +2,7 @@ import XCTest
 @testable import HotCodePushCore
 
 /// A build whose build step ran without a token or offline carries no channel: it checks nothing on its own, answers an explicit
-/// call `CHANNEL_UNKNOWN` without a request and reports nothing, until the app sets a channel at runtime.
+/// call `channel_unknown` without a request and reports nothing, until the app sets a channel at runtime.
 final class MissingChannelTests: XCTestCase {
     private func harnessWithoutChannel() -> Harness {
         let harness = Harness(configuration: Fixture.configuration(checkStrategy: .auto, channelId: nil))
@@ -210,7 +210,7 @@ final class MissingChannelTests: XCTestCase {
         let text = DebugReport.text(of: await harness.core.debugSnapshot())
         XCTAssertTrue(text.contains("Channel id: none: the build carries no channel, it was built without a token or offline"), text)
         XCTAssertTrue(text.contains("Configured channel: none"), text)
-        XCTAssertTrue(text.contains("Result: FAILED CHANNEL_UNKNOWN"), text)
+        XCTAssertTrue(text.contains("Result: failed channel_unknown"), text)
         XCTAssertTrue(text.contains(Core.missingChannelMessage), text)
     }
 }

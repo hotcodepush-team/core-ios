@@ -2,7 +2,7 @@ import XCTest
 @testable import HotCodePushCore
 
 /// A build whose build step found no JavaScript bundled embeds no bundle: OTA updates are off in it, every cycle skips with
-/// `BUILD_DEBUG` without a request, and nothing is sent.
+/// `build_debug` without a request, and nothing is sent.
 final class MissingEmbeddedBundleTests: XCTestCase {
     private func configurationWithoutEmbeddedBundle(channelId: String? = Fixture.channelId, applyStrategy: ApplyStrategy = .nextStart) -> Configuration {
         return Fixture.configuration(applyStrategy: applyStrategy, builtAt: Fixture.builtAt.addingTimeInterval(86_400), channelId: channelId, hasEmbeddedBundle: false)
@@ -133,6 +133,6 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         let text = DebugReport.text(of: await harness.core.debugSnapshot())
         XCTAssertTrue(text.contains("Embedded bundle: none: the build embeds no bundle, over-the-air (OTA) updates are off in it"), text)
         XCTAssertTrue(text.contains("Channel id: none: a build without an embedded bundle resolves no channel name"), text)
-        XCTAssertTrue(text.contains("Result: SKIPPED BUILD_DEBUG"), text)
+        XCTAssertTrue(text.contains("Result: skipped build_debug"), text)
     }
 }

@@ -98,7 +98,7 @@ public actor Core {
     /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
     /// has not come up after and the gate. Answers the bundle the host serves, `nil` for the embedded one, without awaiting the
     /// network: the start's check and the cleanup run after it returns, so a host waiting on the start never waits on them.
-    /// A reload the core did not perform serves the running bundle and is not interpreted: a `next-start` release applies at the
+    /// A reload the core did not perform serves the running bundle and is not interpreted: a `next_start` release applies at the
     /// next start or through the core's own apply.
     /// A headless start, one the host knows no screen will render for, neither applies a waiting release nor arms the gate, and
     /// loads nothing: the host serves its answer, and a bundle persisted for the next start stays the one the next start finds.
@@ -164,8 +164,8 @@ public actor Core {
         return answer.wait(timeout: timeout) ?? nil
     }
 
-    /// The moment the release carries decides: `next-start` switches, and so does an `immediate` apply this run never got to, a
-    /// mandatory release's included; `next-resume` and `manual` wait, so a mandatory release the app took over waits across starts.
+    /// The moment the release carries decides: `next_start` switches, and so does an `immediate` apply this run never got to, a
+    /// mandatory release's included; `next_resume` and `manual` wait, so a mandatory release the app took over waits across starts.
     /// A bundle the WebView already serves is adopted.
     private func shouldSwitchAtStart(to next: NextRelease) -> Bool {
         if loader.servedBundleId() == resolveServedBundleId(of: next.release) { return true }
@@ -209,7 +209,7 @@ public actor Core {
     }
 
     /// The background: the interval timer stops, since interval checks belong to the foreground, the readiness timer stops, since an
-    /// app that cannot render there proves nothing, and the moment is kept for `next-resume`.
+    /// app that cannot render there proves nothing, and the moment is kept for `next_resume`.
     public func handleAppPause() {
         backgroundedAt = clock.now
         intervalTimer?.cancel()
@@ -217,7 +217,7 @@ public actor Core {
         pauseReadyTimer()
     }
 
-    /// A resume starts a paused readiness window again, applies a release that carries `next-resume` after enough time in the
+    /// A resume starts a paused readiness window again, applies a release that carries `next_resume` after enough time in the
     /// background, else checks when the interval has passed. A mandatory release never carries it, so one the app took over is never
     /// applied behind its back.
     public func handleAppResume() {
@@ -271,7 +271,7 @@ public actor Core {
     }
 
     /// `sync()` with the download gate closed: fetch and evaluate, and download and apply nothing, so a release downloaded already
-    /// answers `AVAILABLE`; never `DOWNLOADED` or `APPLIED`. A release that carries the running bundle is adopted, as at every stage,
+    /// answers `available`; never `downloaded` or `applied`. A release that carries the running bundle is adopted, as at every stage,
     /// the fallback of a revoked release included.
     public func checkForUpdate() async throws -> SyncResult {
         try verifyChannelId()
@@ -279,7 +279,7 @@ public actor Core {
     }
 
     /// `sync()` with the download gate open: re-check the index, a conditional GET, so nothing is downloaded from stale state, then
-    /// download and verify whatever `downloadStrategy` says and apply per the apply strategies; never `AVAILABLE`.
+    /// download and verify whatever `downloadStrategy` says and apply per the apply strategies; never `available`.
     public func downloadUpdate(options: DownloadUpdateOptions = DownloadUpdateOptions()) async throws -> SyncResult {
         try verifyChannelId()
         return await runCycle(trigger: .manual, stage: .download, options: SyncOptions(applyStrategy: options.applyStrategy, downloadStrategy: .auto, mandatoryApplyStrategy: options.mandatoryApplyStrategy))
@@ -381,7 +381,7 @@ public actor Core {
     }
 
     /// A release the device qualifies for: adopted in place when it carries the running bundle, the embedded one included, else
-    /// announced and taken as far as the stage goes. An adoption answers `UP_TO_DATE`, since nothing waits and nothing reloads. A
+    /// announced and taken as far as the stage goes. An adoption answers `up_to_date`, since nothing waits and nothing reloads. A
     /// release of the embedded bundle is announced with no bytes to download, its files being the binary's. The apply moment is the
     /// call's strategy, else the one a release downloaded already carries, else the configuration's, so an automatic cycle never
     /// overrides the app's.
@@ -469,7 +469,7 @@ public actor Core {
     }
 
     /// Choosing and applying are two acts: the strategy is a policy over the four functions, its moment stored with the release.
-    /// `APPLIED` when the apply happens now, the reload following, else `DOWNLOADED` with the moment it waits for.
+    /// `applied` when the apply happens now, the reload following, else `downloaded` with the moment it waits for.
     private func applyDownloaded(_ release: Release, notes: String?, strategy: ApplyStrategy) -> SyncResult {
         setNextRelease(NextRelease(release: release, applyStrategy: strategy))
         switch strategy {
@@ -973,7 +973,7 @@ public actor Core {
         return clock.now.timeIntervalSince(cached.fetchedAt) < Core.cachedIndexMaxAge && index.sequence < cached.body.sequence
     }
 
-    /// OTA updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `BUILD_DEBUG`.
+    /// OTA updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `build_debug`.
     private var isDisabledInThisBuild: Bool {
         return configuration.embeddedBundleManifest == nil || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
     }
@@ -1016,13 +1016,13 @@ public actor Core {
         let events = state.unsentEvents
         var report = buildDeviceReport()
         if report?.isReadable == false {
-            record(LogEntry(at: clock.now, code: "REPORT_UNREADABLE", message: "the device report stays unsent: a fact or an attribute is one the events endpoint refuses"))
+            record(LogEntry(at: clock.now, code: "report_unreadable", message: "the device report stays unsent: a fact or an attribute is one the events endpoint refuses"))
             report = nil
         }
         guard !events.isEmpty || report != nil else { return }
         let request = DeviceEventsRequest(deviceId: state.deviceId, events: events, platform: device.platform, report: report, sdkVersion: device.sdkVersion)
         guard request.isReadable else {
-            record(LogEntry(at: clock.now, code: "REPORT_UNREADABLE", message: "\(events.count) events kept: the SDK's version or the platform is one the events endpoint refuses"))
+            record(LogEntry(at: clock.now, code: "report_unreadable", message: "\(events.count) events kept: the SDK's version or the platform is one the events endpoint refuses"))
             return
         }
         guard let url = URL(string: "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/events"),

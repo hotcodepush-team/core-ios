@@ -1,28 +1,28 @@
 import Foundation
 
 /// When a downloaded update is applied.
-public enum ApplyStrategy: String, Codable {
+public enum ApplyStrategy: String, CaseIterable, Codable {
     case immediate
     case manual
-    case nextResume = "next-resume"
-    case nextStart = "next-start"
+    case nextResume = "next_resume"
+    case nextStart = "next_start"
 }
 
 /// Whether the SDK checks on its own, at start, on resume and at the interval; `manual` leaves every cycle to the app's `sync()`.
-public enum CheckStrategy: String, Codable {
+public enum CheckStrategy: String, CaseIterable, Codable {
     case auto
     case manual
 }
 
 /// When an update the check found is downloaded; `manual` stops the cycle after the check.
-public enum DownloadStrategy: String, Codable {
+public enum DownloadStrategy: String, CaseIterable, Codable {
     case auto
     case manual
     case unmetered
 }
 
-/// When a mandatory update is applied; `next-start` is excluded, since it would make the flag mean nothing.
-public enum MandatoryApplyStrategy: String, Codable {
+/// When a mandatory update is applied; `next_start` is excluded, since it would make the flag mean nothing.
+public enum MandatoryApplyStrategy: String, CaseIterable, Codable {
     case immediate
     case manual
 }
@@ -38,7 +38,7 @@ extension ApplyStrategy {
 }
 
 /// What ends the readiness gate: the first render, or an explicit `notifyReady()`.
-public enum ReadySignal: String, Codable {
+public enum ReadySignal: String, CaseIterable, Codable {
     case manual
     case render
 }
@@ -60,7 +60,7 @@ public struct Configuration: Codable, Equatable {
     public var downloadStrategy: DownloadStrategy
     public var applyStrategy: ApplyStrategy
     public var mandatoryApplyStrategy: MandatoryApplyStrategy
-    /// The least time in the background before a `next-resume` apply.
+    /// The least time in the background before a `next_resume` apply.
     public var nextResumeMinimumBackgroundSeconds: Double
     public var readySignal: ReadySignal
     public var readyTimeoutSeconds: Double
