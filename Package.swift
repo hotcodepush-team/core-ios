@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "HotCodePushCore",
-    platforms: [.iOS(.v13), .macOS(.v12)],
+    platforms: [.iOS(.v15), .macOS(.v12)],
     products: [
         .library(
             name: "HotCodePushCore",
@@ -14,9 +14,7 @@ let package = Package(
             name: "HotCodePushCore",
             dependencies: ["HotCodePushBspatch"],
             path: "Sources/HotCodePushCore",
-            // The pod's bundle directory: the package's own resource bundle takes the manifest alone.
-            exclude: ["HotCodePushCorePrivacy.bundle/Info.plist"],
-            resources: [.copy("HotCodePushCorePrivacy.bundle/PrivacyInfo.xcprivacy")]),
+            resources: [.copy("PrivacyInfo.xcprivacy")]),
         .target(
             name: "HotCodePushBspatch",
             path: "Sources/HotCodePushBspatch",

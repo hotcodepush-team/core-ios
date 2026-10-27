@@ -10,9 +10,7 @@ Pod::Spec.new do |s|
   s.source_files = 'Sources/HotCodePushCore/**/*.swift', 'Sources/HotCodePushBspatch/**/*.{c,h}'
   s.public_header_files = 'Sources/HotCodePushBspatch/include/*.h'
   s.libraries = 'bz2'
-  # The privacy manifest ships in a bundle directory kept in the repository and copied as it is: a generated resource
-  # bundle target would carry the pod's iOS 13, below what Xcode 27 builds for the simulator.
-  s.resources = ['Sources/HotCodePushCore/HotCodePushCorePrivacy.bundle']
-  s.ios.deployment_target = '13.0'
+  s.resource_bundles = { 'HotCodePushCorePrivacy' => ['Sources/HotCodePushCore/PrivacyInfo.xcprivacy'] }
+  s.ios.deployment_target = '15.0'
   s.swift_version = '5.9'
 end

@@ -77,6 +77,40 @@ final class HttpClientTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
     }
 
+    func testShouldAnswerAGetWithItsStatusAndBodyWhenTheStatusIsNotASuccess() async throws {
+        var methods: [String?] = []
+        let client = StubUrlProtocol.client { request in
+            methods.append(request.httpMethod)
+            return .init(status: 404, body: Data("missing".utf8))
+        }
+        let response = try await client.get(url, headers: [:])
+        XCTAssertEqual(methods, ["GET"])
+        XCTAssertEqual(response.status, 404)
+        XCTAssertEqual(response.body, Data("missing".utf8))
+    }
+
+    func testShouldAnswerAPostWithItsStatusAndBody() async throws {
+        var methods: [String?] = []
+        let client = StubUrlProtocol.client { request in
+            methods.append(request.httpMethod)
+            return .init(status: 202, body: Data("{}".utf8))
+        }
+        let response = try await client.post(url, headers: ["Content-Type": "application/json"], body: Data("{\"events\":[]}".utf8))
+        XCTAssertEqual(methods, ["POST"])
+        XCTAssertEqual(response.status, 202)
+        XCTAssertEqual(response.body, Data("{}".utf8))
+    }
+
+    func testShouldThrowTheTransportErrorOfAGet() async {
+        let client = StubUrlProtocol.client { _ in .init(status: 0, body: Data(), transportError: URLError(.notConnectedToInternet)) }
+        do {
+            _ = try await client.get(url, headers: [:])
+            XCTFail("The get answered instead of throwing.")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+        }
+    }
+
     private func writePartialFile(_ content: String) throws {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(content.utf8).write(to: file)
@@ -101,6 +135,8 @@ final class StubUrlProtocol: URLProtocol {
         var isInterrupted = false
         /// Where a redirect points; the loading system then asks the session whether to follow.
         var redirectLocation: URL?
+        /// The request fails with this before any response, as a network that cannot be reached does.
+        var transportError: URLError?
     }
 
     static var reply: (URLRequest) -> Reply = { _ in Reply(status: 404, body: Data()) }
@@ -117,6 +153,10 @@ final class StubUrlProtocol: URLProtocol {
 
     override func startLoading() {
         let reply = StubUrlProtocol.reply(request)
+        if let transportError = reply.transportError {
+            client?.urlProtocol(self, didFailWithError: transportError)
+            return
+        }
         let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: [:])!
         if let location = reply.redirectLocation {
             client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: location), redirectResponse: response)

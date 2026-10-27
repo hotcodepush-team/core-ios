@@ -37,7 +37,7 @@ public protocol HttpClient {
     func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws
 }
 
-/// `URLSession` on the package's floor: completion handlers for the small requests, the session's delegate for the streamed download.
+/// `URLSession`: its async `data(for:)` for the small requests, the session's delegate for the streamed download.
 public final class UrlSessionHttpClient: HttpClient {
     private let session: URLSession
     private let transfers = TransferDelegate()
@@ -59,19 +59,8 @@ public final class UrlSessionHttpClient: HttpClient {
     }
 
     private func send(_ request: URLRequest) async throws -> HttpResponse {
-        return try await withCheckedThrowingContinuation { continuation in
-            session.dataTask(with: request) { data, response, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                guard let data = data, let response = response else {
-                    continuation.resume(throwing: URLError(.badServerResponse))
-                    return
-                }
-                continuation.resume(returning: HttpResponse(status: (response as? HTTPURLResponse)?.statusCode ?? 0, headers: UrlSessionHttpClient.headers(of: response), body: data))
-            }.resume()
-        }
+        let (data, response) = try await session.data(for: request)
+        return HttpResponse(status: (response as? HTTPURLResponse)?.statusCode ?? 0, headers: UrlSessionHttpClient.headers(of: response), body: data)
     }
 
     private static func request(_ url: URL, method: String, headers: [String: String], body: Data?) -> URLRequest {
