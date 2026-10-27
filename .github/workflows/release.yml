@@ -44,7 +44,7 @@ jobs:
           ref: ${{ needs.release-please.outputs.tag_name }}
       - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
-          xcode-version: 26.0.1
+          xcode-version: 26.2
       - run: scripts/build-xcframework.sh "$VERSION" "$RUNNER_TEMP/xcframework"
       - run: gh release upload "$TAG" "$RUNNER_TEMP/xcframework/HotCodePushCore.xcframework.zip"
       - name: Write the checksum the SDKs' binary targets pin

@@ -35,7 +35,7 @@ package.json                       private, only the pinned @hotcodepush/protoco
 | `scripts/build-xcframework.sh <version> <dir>` | writes `<dir>/HotCodePushCore.xcframework.zip`, failing on a binary linked against an SDK below 26 |
 
 `ci.yml` compares the bspatch sources with core-android's, then runs the lint, the tests and an iOS simulator build, and builds the XCFramework, on every push to `main` and every pull request.
-`release.yml` runs release-please, which bumps the podspec and tags the release without a `v`, and attaches the unsigned XCFramework to the GitHub release, built on `macos-26` with Xcode 26.0.1, the oldest Xcode the App Store accepts, so every newer compiler reads its interface.
+`release.yml` runs release-please, which bumps the podspec and tags the release without a `v`, and attaches the unsigned XCFramework to the GitHub release, built on `macos-26` with Xcode 26.2, the oldest Xcode whose iOS platform that image installs, so every newer compiler reads its interface.
 The fixtures and `catalog.json` move with `package.json`'s pin: a protocol change is a bump of that sha, and the cases the new build adds, or a catalog value it adds or renames, fail here until the Swift follows.
 
 ## Rules
