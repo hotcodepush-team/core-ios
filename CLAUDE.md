@@ -3,7 +3,7 @@
 `HotCodePushCore`, the HotCodePush update-protocol client for Apple platforms: the wire types, the evaluator, the downloader, the signature check, the patch application, the file store, the state machine, the debug screen and the platform facts every HotCodePush SDK on iOS runs, held to the fixture suite of `@hotcodepush/protocol`.
 `@hotcodepush/protocol` (`protocol`) and the Android library `com.hotcodepush:core-android` (`core-android`) implement the same functions and types; a change to one is a change to the other two.
 The Capacitor SDK consumes it at a pinned git revision until its publish decision — SPM by `revision`, the pod by `:git` and `:commit` — never a branch; it is not the supported API, apps use the SDK for their framework.
-Stack: Swift 5.9, C for FreeBSD's `bspatch.c` over the system's libbz2, iOS 13 and the macOS host for the tests, XCTest, SwiftLint, CocoaPods for the podspec, Node 24 for the fixtures.
+Stack: Swift 5.9, C for FreeBSD's `bspatch.c` over the system's libbz2, iOS 15 and the macOS host for the tests, XCTest, SwiftLint, CocoaPods for the podspec, Node 24 for the fixtures.
 
 The plan is the private `handbook` repo, checked out beside this one: `../handbook/docs/`.
 Its `sdk-api.md` (the SDK surface, the state and the functions, statuses and reasons) and `architecture.md` (_The device protocol_, _Signing_, _Packs_, _Debugging_, _Evolving the wire format_, _Testing_) are binding here.
@@ -12,7 +12,7 @@ When code and plan disagree, stop and surface it; never improvise.
 ## Layout
 
 ```
-Sources/HotCodePushCore            the package: no framework import, UIKit in DebugScreen.swift and Platform.swift alone and behind canImport; HotCodePushCorePrivacy.bundle holds the privacy manifest, which SPM copies as a resource and the pod ships whole through `s.resources`, no generated target
+Sources/HotCodePushCore            the package: no framework import, UIKit in DebugScreen.swift and Platform.swift alone and behind canImport; PrivacyInfo.xcprivacy is the privacy manifest, which SPM copies as a resource and the pod ships in its `HotCodePushCorePrivacy` resource bundle
 Sources/HotCodePushBspatch         the C target linking libbz2: bspatch.c and its header, byte for byte core-android's, which a CI step compares
 Tests/HotCodePushCoreTests         XCTest on the host; FixtureTests reads node_modules/@hotcodepush/protocol/fixtures and CatalogTests its catalog.json, after npm ci
 Tests/BspatchFixtures              what BspatchTests reads: the committed inputs old.bin, new.bin and valid.patch, the patch written once by bsdiff 4.3, and the hostile patches make-patches.sh writes with bash, xxd and bzip2

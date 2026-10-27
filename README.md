@@ -18,7 +18,7 @@ CocoaPods:
 pod 'HotCodePushCore', :git => 'https://github.com/hotcodepush-team/core-ios.git', :commit => '<sha>'
 ```
 
-The package supports iOS 13 and later.
+The package supports iOS 15 and later.
 
 ## Usage
 
