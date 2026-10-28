@@ -5,19 +5,22 @@ It is held to the same fixture suite as the [JavaScript](https://github.com/hotc
 
 ## Installation
 
-The package is not tagged yet: pin one commit and bump it deliberately, never a branch.
+Each release attaches `HotCodePushCore.xcframework.zip`, a prebuilt dynamic framework with its dSYMs, privacy manifest and licence notices. The HotCodePush SDKs ship it; an app installs the SDK for its framework, never the core.
 
 ```swift
 // Swift Package Manager
-.package(url: "https://github.com/hotcodepush-team/core-ios.git", revision: "<sha>")
+.binaryTarget(
+    name: "HotCodePushCore",
+    url: "https://github.com/hotcodepush-team/core-ios/releases/download/<version>/HotCodePushCore.xcframework.zip",
+    checksum: "<checksum>")
 ```
 
 ```ruby
-# CocoaPods
-pod 'HotCodePushCore', :git => 'https://github.com/hotcodepush-team/core-ios.git', :commit => '<sha>'
+# CocoaPods: the SDK unpacks the release asset into its package first
+s.vendored_frameworks = 'ios/Frameworks/HotCodePushCore.xcframework'
 ```
 
-The package supports iOS 15 and later.
+The checksum is the zip's SHA-256, written to the release job's summary. The framework supports iOS 15 and later.
 
 ## Usage
 
