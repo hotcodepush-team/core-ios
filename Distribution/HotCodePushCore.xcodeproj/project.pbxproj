@@ -6,8 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C0DE00000000000000000041 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000040 /* LICENSE */; };
+		C0DE00000000000000000043 /* THIRD-PARTY-NOTICES in Resources */ = {isa = PBXBuildFile; fileRef = C0DE00000000000000000042 /* THIRD-PARTY-NOTICES */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		C0DE00000000000000000001 /* HotCodePushCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = HotCodePushCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0DE00000000000000000040 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; name = LICENSE; path = ../LICENSE; sourceTree = "<group>"; };
+		C0DE00000000000000000042 /* THIRD-PARTY-NOTICES */ = {isa = PBXFileReference; lastKnownFileType = text; name = "THIRD-PARTY-NOTICES"; path = "../THIRD-PARTY-NOTICES"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -44,6 +51,8 @@
 			children = (
 				C0DE00000000000000000003 /* HotCodePushCore */,
 				C0DE00000000000000000004 /* HotCodePushBspatch */,
+				C0DE00000000000000000040 /* LICENSE */,
+				C0DE00000000000000000042 /* THIRD-PARTY-NOTICES */,
 				C0DE00000000000000000006 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -134,6 +143,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0DE00000000000000000041 /* LICENSE in Resources */,
+				C0DE00000000000000000043 /* THIRD-PARTY-NOTICES in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

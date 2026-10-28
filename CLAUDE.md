@@ -3,7 +3,7 @@
 `HotCodePushCore`, the HotCodePush update-protocol client for Apple platforms: the wire types, the evaluator, the downloader, the signature check, the patch application, the file store, the state machine, the debug screen and the platform facts every HotCodePush SDK on iOS runs, held to the fixture suite of `@hotcodepush/protocol`.
 `@hotcodepush/protocol` (`protocol`) and the Android library `com.hotcodepush:core-android` (`core-android`) implement the same functions and types; a change to one is a change to the other two.
 The Capacitor SDK consumes it at a pinned git revision until its publish decision — SPM by `revision`, the pod by `:git` and `:commit` — never a branch; it is not the supported API, apps use the SDK for their framework.
-Stack: Swift 5.9, C for FreeBSD's `bspatch.c` over the system's libbz2, iOS 15 and the macOS host for the tests, XCTest, SwiftLint, CocoaPods for the podspec, Node 24 for the fixtures.
+Stack: Swift 6 tools in the Swift 5 language mode, C for FreeBSD's `bspatch.c` over the system's libbz2, iOS 15 and the macOS host for the tests, XCTest, SwiftLint, CocoaPods for the podspec, Node 24 for the fixtures.
 
 The plan is the private `handbook` repo, checked out beside this one: `../handbook/docs/`.
 Its `sdk-api.md` (the SDK surface, the state and the functions, statuses and reasons) and `architecture.md` (_The device protocol_, _Signing_, _Packs_, _Debugging_, _Evolving the wire format_, _Testing_) are binding here.

@@ -25,14 +25,10 @@ public struct DeviceFacts: Equatable {
 
 #if canImport(UIKit)
 extension DeviceFacts {
-    /// The running binary's facts: its version and build from the Info.plist, the OS version, and a debug build when compiled for one.
-    public static func current(sdkVersion: String) -> DeviceFacts {
+    /// The running binary's facts: its version and build from the Info.plist and the OS version.
+    /// The SDK passes `isDebugBuild` from its own `#if DEBUG`: the core ships prebuilt in Release, so its own flag never sees the app's.
+    public static func current(sdkVersion: String, isDebugBuild: Bool) -> DeviceFacts {
         let info = Bundle.main.infoDictionary ?? [:]
-        #if DEBUG
-        let isDebugBuild = true
-        #else
-        let isDebugBuild = false
-        #endif
         return DeviceFacts(
             platform: "ios",
             binaryVersion: info["CFBundleShortVersionString"] as? String ?? "",
