@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: Release Please
+    if: github.repository == 'hotcodepush-team/core-ios'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release-please.outputs.release_created }}
+      tag_name: ${{ steps.release-please.outputs.tag_name }}
+      version: ${{ steps.release-please.outputs.version }}
+    steps:
+      - id: release-please
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+
+  xcframework:
+    name: Attach the XCFramework to the release
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: macos-26
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      VERSION: ${{ needs.release-please.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: 26.2
+      - run: scripts/build-xcframework.sh "$VERSION" "$RUNNER_TEMP/xcframework"
+      - run: gh release upload "$TAG" "$RUNNER_TEMP/xcframework/HotCodePushCore.xcframework.zip"
+      - name: Write the checksum the SDKs' binary targets pin
+        run: |
+          checksum=$(swift package compute-checksum "$RUNNER_TEMP/xcframework/HotCodePushCore.xcframework.zip")
+          echo "Checksum: \`$checksum\`" >> "$GITHUB_STEP_SUMMARY"

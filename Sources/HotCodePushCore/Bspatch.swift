@@ -1,6 +1,6 @@
 import Foundation
 #if canImport(HotCodePushBspatch)
-import HotCodePushBspatch
+internal import HotCodePushBspatch
 #endif
 
 /// FreeBSD's bspatch, the `HotCodePushBspatch` C target: a BSDIFF40 patch turns an old file into a new one.
