@@ -594,7 +594,7 @@ final class FixtureTests: XCTestCase {
         XCTAssertEqual(PackWriter.pack(entries), pack)
     }
 
-    func testShouldReadAndWriteTheDeltaPackOfThePackEntriesFixture() throws {
+    func testShouldReadAndWriteTheDeltaOfThePackEntriesFixture() throws {
         let fixture = try load("pack-entries.json", as: PackEntriesFile.self).deltaPack
         let pack = try XCTUnwrap(Data(base64Encoded: fixture.packBase64))
         let entries = try PackReader.entries(in: pack)
@@ -608,7 +608,7 @@ final class FixtureTests: XCTestCase {
         XCTAssertEqual(try PackReader.entries(in: pack), try fixture.entries.map { try $0.packEntry() })
     }
 
-    /// Each case's patch entry in a delta pack against the running bundle, the held files in the store and every file of the
+    /// Each case's patch entry in a delta against the running bundle, the held files in the store and every file of the
     /// manifest on the files host: applied writes the file without fetching it, fallback fetches it, ignored does neither.
     func testShouldMatchEveryPatchCaseOfThePackEntriesFixture() async throws {
         let fixture = try load("pack-entries.json", as: PackEntriesFile.self)

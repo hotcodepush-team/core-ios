@@ -355,7 +355,7 @@ final class DownloaderHarness {
         return BundleManifest(appId: manifest.appId, bundleVersion: manifest.bundleVersion, files: files, fingerprint: manifest.fingerprint, keyId: manifest.keyId, platforms: manifest.platforms)
     }
 
-    /// Serves the envelope, and its pack and delta packs by base bundle when given, where the index entry says they are and
+    /// Serves the envelope, and its pack and deltas by base bundle when given, where the index entry says they are and
     /// returns that entry; a signing key signs the manifest under its fingerprint.
     func publish(_ manifest: BundleManifest, pack: Data? = nil, packUrl: String = packUrl, packSizeBytes: Int? = nil, deltas: [String: Data] = [:], bundleId: String = bundleId, manifestUrl: String = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/manifest.json", signingKey: SecKey? = nil) -> IndexRelease {
         let signed = signingKey.map { key in BundleManifest(appId: manifest.appId, bundleVersion: manifest.bundleVersion, files: manifest.files, fingerprint: manifest.fingerprint, keyId: SigningFixture.keyId(of: key), platforms: manifest.platforms) } ?? manifest

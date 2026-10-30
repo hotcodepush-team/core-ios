@@ -26,7 +26,7 @@
 * a build without an embedded bundle skips every cycle with DEBUG_BUILD
 * the package is HotCodePushCore in core-ios
 * rollback() is rollbackUpdate(), a verb and its object like every other method
-* the pack's patch entries applied from the delta pack, and patches leave the manifest and the envelope
+* the pack's patch entries applied from the delta, and patches leave the manifest and the envelope
 * signatures are RSA alone, verified by Security.framework with the resource file's keys
 
 ### Features
@@ -60,7 +60,7 @@
 * the debug screen, the session log behind it and the report the share sheet carries ([0a23070](https://github.com/hotcodepush-team/core-ios/commit/0a2307088865ea2d2897e053ec0cf4d52dbf0190)), closes [#3](https://github.com/hotcodepush-team/core-ios/issues/3)
 * the index decides the pack; an unlisted base takes the streamed pack directly ([b2f5fad](https://github.com/hotcodepush-team/core-ios/commit/b2f5fadf8bf7c8c0089564dbbc8f02b6385f2fdc))
 * the index says when it was published, the host rows go ([bba0cf9](https://github.com/hotcodepush-team/core-ios/commit/bba0cf94109e0fe0dd2b5abe6d085a3c5b5f3d95))
-* the pack's patch entries applied from the delta pack, and patches leave the manifest and the envelope ([06d3d8c](https://github.com/hotcodepush-team/core-ios/commit/06d3d8c86c9bd191cec1ae3f116d44f5ea12692c)), closes [#4](https://github.com/hotcodepush-team/core-ios/issues/4)
+* the pack's patch entries applied from the delta, and patches leave the manifest and the envelope ([06d3d8c](https://github.com/hotcodepush-team/core-ios/commit/06d3d8c86c9bd191cec1ae3f116d44f5ea12692c)), closes [#4](https://github.com/hotcodepush-team/core-ios/issues/4)
 * the package converges on the protocol fixtures and reads the wire strictly ([434efe1](https://github.com/hotcodepush-team/core-ios/commit/434efe103f7a56005f6a1d9ed43ac9a816dbf0f0)), closes [#1](https://github.com/hotcodepush-team/core-ios/issues/1)
 * the protocol at daa03b8, a binary version padded to three components, http and https URLs only ([ba1c3e6](https://github.com/hotcodepush-team/core-ios/commit/ba1c3e604d3040108f6d4c65d5eff65cf7c6fcd3))
 * the resource file names its strategies and its durations in seconds ([fb08ccb](https://github.com/hotcodepush-team/core-ios/commit/fb08ccb145d217fed30ffcf9e8cdf06fb999cccc))

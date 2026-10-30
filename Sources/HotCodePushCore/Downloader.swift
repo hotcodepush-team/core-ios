@@ -134,8 +134,8 @@ public final class Downloader {
         return manifest.files.filter { !files.hasFile(sha256: $0.sha256) && !embedded.has(sha256: $0.sha256) }
     }
 
-    /// The pack a download requests first, `nil` when no file is missing. A device with a base takes a delta pack for one missing file as
-    /// for ten, so the one file a patch exists for, the main bundle, arrives as a patch. The envelope's deltas are the delta packs that
+    /// The pack a download requests first, `nil` when no file is missing. A device with a base takes a delta for one missing file as
+    /// for ten, so the one file a patch exists for, the main bundle, arrives as a patch. The envelope's deltas are the deltas that
     /// exist: the one it lists for the device's base, else the streamed pack the updates host assembles, never a URL guessed on the files
     /// host. Without a base the full pack.
     func resolvePack(_ envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int) -> PackSource? {
@@ -162,7 +162,7 @@ public final class Downloader {
         return PackSource(url: envelope.pack.url, sizeBytes: envelope.pack.sizeBytes, packBytesLimit: envelope.pack.sizeBytes, kind: .full)
     }
 
-    /// The delta pack the updates host assembles on request, of a length known only as it arrives, never larger than the full pack whose
+    /// The delta the updates host assembles on request, of a length known only as it arrives, never larger than the full pack whose
     /// entries it shares.
     private func resolveStreamedPack(_ envelope: ManifestEnvelope, baseBundleId: String) -> PackSource {
         let url = "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/bundles/\(envelope.bundleId)/deltas/\(baseBundleId)"
