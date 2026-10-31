@@ -476,8 +476,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.failedBundleIds, ["b3"])
         XCTAssertEqual(harness.loader.loaded.last, "b2")
         let events = StateStore(store: harness.store).unsentEvents
-        XCTAssertEqual(events.last?.type, "rolled_back")
-        XCTAssertEqual(events.last?.toReleaseId, "r1")
+        XCTAssertEqual(events.last?.type, "failed")
+        XCTAssertEqual(events.last?.reason, RollbackReason.appRequested.rawValue)
     }
 
     func testShouldKeepTheCachedIndexOfflineAndIgnoreAnOlderSequence() async throws {
@@ -770,7 +770,7 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(harness.listener.updateRolledBack.isEmpty)
         let events = StateStore(store: harness.store).unsentEvents
         XCTAssertEqual(events.filter { $0.releaseId == "r2" }.map { $0.type }, ["checked", "applied", "confirmed"])
-        XCTAssertFalse(events.contains { $0.type == "failed" || $0.type == "rolled_back" })
+        XCTAssertFalse(events.contains { $0.type == "failed" })
     }
 
     func testShouldSwitchWithoutTheGateAndBlocklistNothingAtTheNextStartWhenANextStartReleaseCarriesTheEmbeddedBundleWhileAnotherBundleRuns() async throws {
@@ -814,7 +814,7 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(harness.listener.updateRolledBack.isEmpty)
         let events = StateStore(store: harness.store).unsentEvents
         XCTAssertEqual(events.filter { $0.releaseId == "r2" }.map { $0.type }, ["checked", "applied", "confirmed"])
-        XCTAssertFalse(events.contains { $0.type == "failed" || $0.type == "rolled_back" })
+        XCTAssertFalse(events.contains { $0.type == "failed" })
     }
 
     func testShouldSwitchToAReleaseOfTheEmbeddedBundleOnAMeteredConnectionUnderTheUnmeteredStrategy() async throws {
@@ -894,8 +894,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.failedBundleIds, ["b6"])
         let events = StateStore(store: harness.store).unsentEvents
         XCTAssertEqual(events.filter { $0.releaseId == "r2" }.map { $0.type }, ["checked", "downloaded", "applied", "failed"])
-        XCTAssertEqual(events.last { $0.type == "failed" }?.reason, RollbackReason.readinessTimedOut.rawValue)
-        XCTAssertEqual(events.last?.toReleaseId, "r1")
+        XCTAssertEqual(events.last?.type, "failed")
+        XCTAssertEqual(events.last?.reason, RollbackReason.readinessTimedOut.rawValue)
     }
 
     func testShouldRollBackNothingWhenTheCurrentReleaseCarriesTheEmbeddedBundle() async throws {
@@ -910,7 +910,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.currentRelease, embedded.release.release)
         XCTAssertEqual(status.failedBundleIds, [])
         XCTAssertEqual(harness.loader.loaded, [])
-        XCTAssertFalse(StateStore(store: harness.store).unsentEvents.contains { $0.type == "failed" || $0.type == "rolled_back" })
+        XCTAssertFalse(StateStore(store: harness.store).unsentEvents.contains { $0.type == "failed" })
     }
 
     func testShouldFallBackToAReleaseOfTheEmbeddedBundleWhenTheNextReleaseNeverRenders() async throws {
@@ -929,7 +929,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.currentRelease, embedded.release.release)
         XCTAssertEqual(status.failedBundleIds, ["b3"])
         XCTAssertEqual(harness.loader.loaded, ["b3", nil])
-        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.last { $0.type == "rolled_back" }?.toReleaseId, "r1")
+        let log = await harness.core.debugSnapshot().log
+        XCTAssertEqual(log.last { $0.code == "rolled_back" }?.message, "release r2 rolled back to r1")
     }
 
     func testShouldRevertToTheEmbeddedBundleWhenTheRunningReleaseIsRevoked() async throws {
@@ -1073,7 +1074,7 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(status.nextRelease)
     }
 
-    func testShouldReportARollbackToTheEmbeddedBundleWithANullRelease() async throws {
+    func testShouldReportARollbackToTheEmbeddedBundleAsItsFailedEventAndLogWhereItWent() async throws {
         let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         harness.acknowledgeEvents()
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
@@ -1088,10 +1089,12 @@ final class CoreTests: XCTestCase {
         let events = try harness.http.posts.flatMap { post in
             try XCTUnwrap((try XCTUnwrap(JSONSerialization.jsonObject(with: post.body) as? [String: Any]))["events"] as? [[String: Any]])
         }
-        let rolledBack = try XCTUnwrap(events.first { $0["type"] as? String == "rolled_back" })
-        XCTAssertEqual(rolledBack["fromReleaseId"] as? String, "r1")
-        XCTAssertTrue(rolledBack["toReleaseId"] is NSNull)
+        let failed = try XCTUnwrap(events.first { $0["type"] as? String == "failed" })
+        XCTAssertEqual(failed["releaseId"] as? String, "r1")
+        XCTAssertEqual(failed["reason"] as? String, RollbackReason.readinessTimedOut.rawValue)
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
+        let log = await harness.core.debugSnapshot().log
+        XCTAssertEqual(log.last { $0.code == "rolled_back" }?.message, "release r1 rolled back to the embedded bundle")
     }
 
     func testShouldRollBackAtOnceWhileRestartsAreNotAllowed() async throws {
@@ -1419,7 +1422,7 @@ final class CoreTests: XCTestCase {
         let events = StateStore(store: harness.store).unsentEvents.filter { $0.type == "checked" }
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events[0].reason, SkippedReason.deviceIncompatible.rawValue)
-        XCTAssertEqual(events[0].condition, .os)
+        XCTAssertEqual(events[0].conditionType, .os)
     }
 
     func testShouldSendTheOutboxAndTheReportAfterASyncAndClearThemOnA202() async throws {

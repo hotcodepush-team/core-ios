@@ -10,7 +10,7 @@ public struct LogEntry: Equatable {
     public let message: String
 
     static func ofCycle(_ result: SyncResult, trigger: SyncTrigger, at: Date) -> LogEntry {
-        let code = [result.status.rawValue, result.reason, result.condition?.rawValue].compactMap { $0 }.joined(separator: " ")
+        let code = [result.status.rawValue, result.reason, result.conditionType?.rawValue].compactMap { $0 }.joined(separator: " ")
         return LogEntry(at: at, code: code, message: "\(trigger.rawValue): \(resolveCycleSentence(result))")
     }
 
@@ -25,11 +25,13 @@ public struct LogEntry: Equatable {
             return LogEntry(at: at, code: "confirmed", message: "release \(event.releaseId ?? "") passed the readiness gate")
         case "failed":
             return LogEntry(at: at, code: "failed \(event.reason ?? "")", message: "release \(event.releaseId ?? "")\(event.detail.map { ": \($0)" } ?? "")")
-        case "rolled_back":
-            return LogEntry(at: at, code: "rolled_back", message: "release \(event.fromReleaseId ?? "") rolled back to \(event.toReleaseId ?? "the embedded bundle")")
         default:
             return nil
         }
+    }
+
+    static func ofRollback(_ rollback: UpdateRolledBackEvent, at: Date) -> LogEntry {
+        return LogEntry(at: at, code: "rolled_back", message: "release \(rollback.fromRelease.id) rolled back to \(rollback.toRelease?.id ?? "the embedded bundle")")
     }
 
     static func ofBatch(_ answer: BatchAnswer, eventCount: Int, at: Date) -> LogEntry {

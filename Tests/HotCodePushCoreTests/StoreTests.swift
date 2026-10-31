@@ -49,6 +49,17 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(state.deviceId, "device-1")
     }
 
+    func testShouldDropALastCheckStoredWithTheOldConditionKeyByTheSixthStateVersion() {
+        let store = InMemoryStore()
+        let release = "{\"id\":\"r1\",\"number\":1,\"bundleId\":\"b1\",\"bundleVersion\":\"1\",\"isMandatory\":false}"
+        store.set(5, forKey: "hotcodepush.stateVersion")
+        store.set("{\"checkedAt\":\"2026-10-01T00:00:00.000Z\",\"trigger\":\"manual\",\"result\":{\"status\":\"skipped\",\"release\":\(release),\"reason\":\"device_incompatible\",\"condition\":\"os\"}}", forKey: "hotcodepush.lastCheck")
+        store.set("device-1", forKey: "hotcodepush.deviceId")
+        let state = StateStore(store: store)
+        XCTAssertNil(state.lastCheck)
+        XCTAssertEqual(state.deviceId, "device-1")
+    }
+
     func testShouldStoreTheNextReleaseWithItsApplyMoment() throws {
         let store = InMemoryStore()
         let next = NextRelease(release: Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false), applyStrategy: .nextResume)

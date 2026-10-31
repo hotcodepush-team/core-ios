@@ -67,25 +67,25 @@ final class FixtureTests: XCTestCase {
         let releaseId: String?
         let isMandatory: Bool?
         let reason: String?
-        let condition: String?
+        let conditionType: String?
 
         init(_ evaluation: Evaluation) {
             switch evaluation {
             case .upToDate(let release):
-                self.init(status: SyncStatus.upToDate.rawValue, releaseId: release?.id, isMandatory: nil, reason: nil, condition: nil)
+                self.init(status: SyncStatus.upToDate.rawValue, releaseId: release?.id, isMandatory: nil, reason: nil, conditionType: nil)
             case .available(let release, let isMandatory):
-                self.init(status: SyncStatus.available.rawValue, releaseId: release.id, isMandatory: isMandatory, reason: nil, condition: nil)
-            case .skipped(let release, let reason, let condition):
-                self.init(status: SyncStatus.skipped.rawValue, releaseId: release?.id, isMandatory: nil, reason: reason.rawValue, condition: condition?.rawValue)
+                self.init(status: SyncStatus.available.rawValue, releaseId: release.id, isMandatory: isMandatory, reason: nil, conditionType: nil)
+            case .skipped(let release, let reason, let conditionType):
+                self.init(status: SyncStatus.skipped.rawValue, releaseId: release?.id, isMandatory: nil, reason: reason.rawValue, conditionType: conditionType?.rawValue)
             }
         }
 
-        init(status: String, releaseId: String?, isMandatory: Bool?, reason: String?, condition: String?) {
+        init(status: String, releaseId: String?, isMandatory: Bool?, reason: String?, conditionType: String?) {
             self.status = status
             self.releaseId = releaseId
             self.isMandatory = isMandatory
             self.reason = reason
-            self.condition = condition
+            self.conditionType = conditionType
         }
     }
 
@@ -93,17 +93,17 @@ final class FixtureTests: XCTestCase {
         let releaseId: String
         let isEligible: Bool
         let reason: String?
-        let condition: String?
+        let conditionType: String?
 
         init(_ verdict: ReleaseVerdict) {
-            self.init(releaseId: verdict.release.id, isEligible: verdict.isEligible, reason: verdict.reason?.rawValue, condition: verdict.condition?.rawValue)
+            self.init(releaseId: verdict.release.id, isEligible: verdict.isEligible, reason: verdict.reason?.rawValue, conditionType: verdict.conditionType?.rawValue)
         }
 
-        init(releaseId: String, isEligible: Bool, reason: String?, condition: String?) {
+        init(releaseId: String, isEligible: Bool, reason: String?, conditionType: String?) {
             self.releaseId = releaseId
             self.isEligible = isEligible
             self.reason = reason
-            self.condition = condition
+            self.conditionType = conditionType
         }
     }
 
@@ -280,7 +280,7 @@ final class FixtureTests: XCTestCase {
             let outcome: String
         }
         let files: [File]
-        let deltaPack: Pack
+        let delta: Pack
         let skippedEntryPack: Pack
         let patchCases: [PatchCase]
     }
@@ -592,7 +592,7 @@ final class FixtureTests: XCTestCase {
     }
 
     func testShouldReadAndWriteTheDeltaOfThePackEntriesFixture() throws {
-        let fixture = try load("pack-entries.json", as: PackEntriesFile.self).deltaPack
+        let fixture = try load("pack-entries.json", as: PackEntriesFile.self).delta
         let pack = try XCTUnwrap(Data(base64Encoded: fixture.packBase64))
         let entries = try PackReader.entries(in: pack)
         XCTAssertEqual(entries, try fixture.entries.map { try $0.packEntry() })
