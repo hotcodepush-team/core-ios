@@ -123,7 +123,6 @@ public enum DebugReport {
         return DebugSection(title: "Log", rows: rows.isEmpty ? [DebugRow(label: "Entries", value: "none this session")] : rows)
     }
 
-    /// The id in effect; without one, a runtime name waits for its first sync and a build without a channel says why it has none.
     private static func describeChannelId(_ channel: ChannelResult, configuration: Configuration) -> String {
         if let id = channel.id { return id }
         if channel.source == .runtime { return "unresolved" }
@@ -131,7 +130,6 @@ public enum DebugReport {
         return "none: the build carries no channel, it was built without a token or offline"
     }
 
-    /// The registered bundle's id; a build without an embedded bundle says that OTA updates are off in it.
     private static func describeEmbeddedBundle(_ snapshot: DebugSnapshot) -> String {
         guard snapshot.configuration.embeddedBundleManifest != nil else { return "none: the build embeds no bundle, over-the-air (OTA) updates are off in it" }
         return snapshot.state.embeddedBundleId ?? "not registered"

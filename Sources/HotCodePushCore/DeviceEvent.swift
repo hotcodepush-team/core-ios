@@ -33,9 +33,8 @@ public struct DeviceEvent: Codable, Equatable {
         case type, releaseId, bundleId, status, reason, condition, downloadSizeBytes, packKind, fromReleaseId, toReleaseId, detail
     }
 
-    /// The keys the wire's schema names for the event's type, and no other: a required one is always written, as `null` where it is
-    /// nullable and empty — a rollback to the embedded bundle carries `"toReleaseId": null` — and an optional one is left out when
-    /// empty, since the schema refuses a `null` there.
+    /// Writes only the keys the schema names for the event type.
+    /// A required key is always written, as `null` when empty; an optional one is left out when empty, since the schema refuses a `null` there.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(type, forKey: .type)
@@ -107,7 +106,7 @@ public struct DeviceReport: Codable, Equatable {
         case attributes, binaryBuild, binaryVersion, channelId, channelSource, embeddedBundleId, fingerprint, osVersion, releaseId
     }
 
-    /// Every key on the wire, `null` for the empty ones, as the endpoint's schema asks.
+    /// Writes every key, `null` for an empty one, as the endpoint schema asks.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(attributes, forKey: .attributes)
@@ -121,8 +120,7 @@ public struct DeviceReport: Codable, Equatable {
         try container.encode(releaseId, forKey: .releaseId)
     }
 
-    /// Whether the events endpoint reads the report: every text fact printable, every attribute under the attribute rules and
-    /// every id an identifier. A report it refuses costs the batch's events at every sync, so the device never sends one.
+    // A refused report would cost the events of every batch, so the device never sends one.
     var isReadable: Bool {
         let texts = [binaryBuild, binaryVersion, channelId, osVersion] + [fingerprint].compactMap { $0 }
         let ids = [embeddedBundleId, releaseId].compactMap { $0 }
@@ -133,7 +131,7 @@ public struct DeviceReport: Codable, Equatable {
 
 /// One batch to `POST /v1/apps/{appId}/events`: the outbox and, when it changed, the report.
 public struct DeviceEventsRequest: Encodable {
-    /// The outbox's cap and so the largest batch a device sends; the events endpoint refuses a larger one.
+    // The events endpoint refuses a larger batch, so this also caps the outbox.
     static let maximumEventCount = 200
 
     public let deviceId: String
@@ -155,27 +153,23 @@ public struct DeviceEventsRequest: Encodable {
         try container.encode(sdkVersion, forKey: .sdkVersion)
     }
 
-    /// Whether the events endpoint reads the batch whole: the device's id and the SDK's version printable, a platform it knows, no
-    /// more events than the outbox holds and a readable report.
     var isReadable: Bool {
         return [deviceId, sdkVersion].allSatisfy(WireRule.printable.accepts) && ChannelIndex.platforms.contains(platform)
             && events.count <= DeviceEventsRequest.maximumEventCount && (report?.isReadable ?? true)
     }
 }
 
-/// The `202`: the server time the device keeps as `reportedAt` by `DeviceEventsAcknowledgement.resolveKeptReportedAt`.
+/// The body of a `202` from the events endpoint: the server time the device may keep as `reportedAt`.
 public struct DeviceEventsResponse: Decodable {
     public let reportedAt: Date
 }
 
-/// A `202` as the device reads it: the server time, and whether the acknowledged batch carried the device report.
 struct DeviceEventsAcknowledgement: Equatable {
     let hasReport: Bool
     let reportedAt: Date
 
-    /// The `reportedAt` the device keeps after this acknowledgement: the stamp of the first acknowledged batch of a UTC month that
-    /// carried the device report, the month read from the stamp itself. A later acknowledgement replaces it only when it falls in a later
-    /// UTC month, and a batch of events alone never moves it, so the device compares with `cappedAt` the stamp the consumer counted it by.
+    // Only a batch that carried the report moves the stamp, and only into a later UTC month.
+    // So the device compares with `cappedAt` the same stamp the consumer counted it by.
     func resolveKeptReportedAt(held heldReportedAt: Date?) -> Date? {
         guard hasReport else { return heldReportedAt }
         guard let heldReportedAt = heldReportedAt else { return reportedAt }
@@ -183,14 +177,12 @@ struct DeviceEventsAcknowledgement: Equatable {
     }
 }
 
-/// What the events endpoint's answer means for a batch: taken, refused for good, or kept for the next sync.
 enum BatchAnswer: Equatable {
     case acknowledged(reportedAt: Date)
     case refused(status: Int)
-    /// No response, or one that asks for the batch again: `nil` when the endpoint could not be reached.
+    // The status is `nil` when the endpoint could not be reached.
     case failed(status: Int?)
 
-    /// A readable `202` takes the batch; a 4xx other than 408 and 429 refuses it for good; anything else asks for it again.
     init(_ response: HttpResponse?) {
         guard let response = response else {
             self = .failed(status: nil)

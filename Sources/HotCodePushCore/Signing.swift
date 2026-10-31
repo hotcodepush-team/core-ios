@@ -1,8 +1,8 @@
 import Foundation
 import Security
 
-/// A public key as the resource file carries it for this platform: the base64 of the key's PKCS #1 DER, which the system imports
-/// as it stands, beside its key id — the fingerprint a signature names, which a device cannot recompute from those bytes.
+/// A public key from the resource file: the base64 of its PKCS #1 DER and its key id.
+/// The key id is the fingerprint a signature names, which a device cannot recompute from the key bytes.
 public struct DevicePublicKey: Codable, Equatable {
     public let der: String
     public let keyId: String
@@ -12,7 +12,7 @@ public struct DevicePublicKey: Codable, Equatable {
 public enum SignatureRefusal: Error, Equatable {
     /// The envelope carries no signature.
     case unsigned
-    /// The value's prefix names another scheme than the allow-list's one; `ed25519` is one of them.
+    /// The signature names a scheme other than `rsa-v1_5-sha256`, `ed25519` included.
     case unknownScheme
     /// The signature names a key the app does not list.
     case unlistedKey
@@ -29,8 +29,8 @@ public enum Signatures {
     public static let scheme = "rsa-v1_5-sha256"
     public static let minimumKeyBits = 2048
 
-    /// Verifies that the envelope's signature covers its `manifest` bytes — the string as received, never re-serialized — under the
-    /// key its `keyId` names among `publicKeys`; throws the refusal otherwise.
+    /// Verifies that the signature covers the `manifest` string as received, under the key its `keyId` names.
+    /// Throws the refusal otherwise.
     public static func verifyManifestSignature(_ envelope: ManifestEnvelope, publicKeys: [DevicePublicKey]) throws {
         guard let signature = envelope.signature else { throw SignatureRefusal.unsigned }
         let prefix = "\(scheme):"
@@ -44,7 +44,7 @@ public enum Signatures {
         }
     }
 
-    /// The key as the system imports it, an RSA public key from its PKCS #1 DER: no ASN.1 is handled here and no format converted.
+    // The system imports the PKCS #1 DER as it stands; no ASN.1 is handled here.
     static func importPublicKey(_ publicKey: DevicePublicKey) -> SecKey? {
         guard let der = Data(base64Encoded: publicKey.der) else { return nil }
         let attributes: [CFString: Any] = [kSecAttrKeyType: kSecAttrKeyTypeRSA, kSecAttrKeyClass: kSecAttrKeyClassPublic]

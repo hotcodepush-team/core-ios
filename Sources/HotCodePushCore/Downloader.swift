@@ -28,7 +28,6 @@ public struct DownloadOutcome: Equatable {
     public let packKind: PackKind
 }
 
-/// Where a pack comes from: its URL, its size where the envelope states one, the most bytes it may hold and how the bytes arrive.
 struct PackSource: Equatable {
     let url: String
     let sizeBytes: Int?
@@ -36,9 +35,8 @@ struct PackSource: Equatable {
     let kind: PackKind
 }
 
-/// Manifest, signature, missing files, pack, verification, files to disk — each step one function.
+/// Downloads the files of a release, verifies them and writes them to the file store.
 public final class Downloader {
-    /// The pauses before the second and the third attempt of a fetch.
     static let retryPausesSeconds: [TimeInterval] = [1, 3]
 
     private let clock: Clock
@@ -59,7 +57,8 @@ public final class Downloader {
         self.temporaryDirectory = temporaryDirectory
     }
 
-    /// `baseBundleId` is the bundle the device runs, the current release's or the embedded bundle's, `nil` without a base.
+    /// Downloads the files the device lacks for a release and writes its manifest.
+    /// `baseBundleId` is the bundle the device runs, `nil` without a base.
     public func downloadRelease(_ target: IndexRelease, baseBundleId: String?, progress: @escaping (Int, Int) -> Void) async throws -> DownloadOutcome {
         let (envelope, manifest) = try await fetchBundleManifest(target)
         let missing = resolveMissingFiles(manifest)
@@ -78,8 +77,6 @@ public final class Downloader {
         return DownloadOutcome(manifest: manifest, downloadSizeBytes: downloadSizeBytes, packKind: packKind)
     }
 
-    /// The envelope with its manifest decoded, once the manifest's bytes match the index, the envelope names the release's bundle
-    /// and the manifest the device's app and platform.
     func fetchBundleManifest(_ target: IndexRelease) async throws -> (envelope: ManifestEnvelope, manifest: BundleManifest) {
         let url = try resolvePinnedUrl(target.manifestUrl)
         let response: HttpResponse
@@ -105,8 +102,7 @@ public final class Downloader {
         return (envelope, manifest)
     }
 
-    /// The manifest's bytes against the index's hash, then, once the app carries public keys, against the customer's signature:
-    /// an unsigned or wrongly signed manifest is refused before a byte of the bundle is fetched.
+    // A manifest refused here costs no byte of the bundle.
     func verifyManifestSignature(_ envelope: ManifestEnvelope, expectedSha256: String) throws {
         let actual = Hashing.sha256Hex(envelope.manifest)
         guard actual == expectedSha256 else { throw DownloadFailure.manifestInvalid("The manifest's hash does not match the index") }
@@ -118,7 +114,6 @@ public final class Downloader {
         }
     }
 
-    /// The sentence behind a refused signature; an unimportable key is the app's configuration, and the sentence says so.
     static func describe(_ refusal: SignatureRefusal, keyId: String) -> String {
         switch refusal {
         case .unsigned: return "The manifest is unsigned and the app accepts only signed bundles"
@@ -134,10 +129,8 @@ public final class Downloader {
         return manifest.files.filter { !files.hasFile(sha256: $0.sha256) && !embedded.has(sha256: $0.sha256) }
     }
 
-    /// The pack a download requests first, `nil` when no file is missing. A device with a base takes a delta for one missing file as
-    /// for ten, so the one file a patch exists for, the main bundle, arrives as a patch. The envelope's deltas are the deltas that
-    /// exist: the one it lists for the device's base, else the streamed pack the updates host assembles, never a URL guessed on the files
-    /// host. Without a base the full pack.
+    // A device with a base takes a delta even for one missing file, so the main bundle arrives as a patch.
+    // Only a listed delta or the streamed pack is used, never a URL guessed on the files host.
     func resolvePack(_ envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int) -> PackSource? {
         guard missingFileCount > 0 else { return nil }
         guard let baseBundleId = baseBundleId else { return resolveFullPack(envelope) }
@@ -145,10 +138,8 @@ public final class Downloader {
         return PackSource(url: listedDelta.url, sizeBytes: listedDelta.sizeBytes, packBytesLimit: listedDelta.sizeBytes, kind: .delta)
     }
 
-    /// The pack a download requests after `source` answered anything but a 200 or a 206, `nil` when the download fails and waits for the
-    /// next cycle. Only the streamed pack gives way: whatever the updates host answers, its redirect to the full pack above twenty objects
-    /// included, reads as the full pack, since a download follows no redirect. A listed delta that does not answer fails like the full
-    /// pack, its 404 included.
+    // The updates host redirects to the full pack above twenty objects, and a download follows no redirect.
+    // So any refusal of the streamed pack falls back to the full pack.
     func resolveFallbackPack(after source: PackSource, envelope: ManifestEnvelope) -> PackSource? {
         switch source.kind {
         case .delta, .files, .full:
@@ -162,21 +153,17 @@ public final class Downloader {
         return PackSource(url: envelope.pack.url, sizeBytes: envelope.pack.sizeBytes, packBytesLimit: envelope.pack.sizeBytes, kind: .full)
     }
 
-    /// The delta the updates host assembles on request, of a length known only as it arrives, never larger than the full pack whose
-    /// entries it shares.
+    // Its length is known only as it arrives, but it never exceeds the full pack whose entries it shares.
     private func resolveStreamedPack(_ envelope: ManifestEnvelope, baseBundleId: String) -> PackSource {
         let url = "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/bundles/\(envelope.bundleId)/deltas/\(baseBundleId)"
         return PackSource(url: url, sizeBytes: nil, packBytesLimit: envelope.pack.sizeBytes, kind: .streamed)
     }
 
-    /// The download needs its bytes on disk at its peak: every missing file and the pack they arrive in.
     func verifyFreeSpace(forBytes requiredBytes: Int) throws {
         guard let availableBytes = files.availableBytes(), availableBytes < requiredBytes else { return }
         throw DownloadFailure.downloadFailed("The download needs \(requiredBytes) bytes and \(availableBytes) are free")
     }
 
-    /// The pack's wanted entries in the store and how they arrived. An answer other than a 200 or a 206 turns to the pack
-    /// `resolveFallbackPack` names, and fails the download when it names none.
     func downloadPack(_ source: PackSource, envelope: ManifestEnvelope, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> (bytes: Int, kind: PackKind) {
         do {
             return (try await downloadPackEntries(source, bundleId: envelope.bundleId, wanted: wanted, progress: progress), source.kind)
@@ -188,12 +175,9 @@ public final class Downloader {
         }
     }
 
-    /// Streams the pack to disk, resuming what an earlier attempt or cycle left — the file is named by bundle and URL for that, and the core's one
-    /// running cycle keeps two downloads from ever sharing it — and never past its bound, then inflates each
-    /// wanted file entry up to its file's size, an entry always the gzip bytes the bucket serves, and applies each patch
-    /// entry to a wanted file. A patch that does not apply leaves its file missing, fetched whole after the pack.
     func downloadPackEntries(_ source: PackSource, bundleId: String, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> Int {
         let url = try resolvePinnedUrl(source.url)
+        // Named by bundle and URL, so a later attempt or cycle resumes it. The one running cycle keeps two downloads from sharing it.
         let file = temporaryDirectory.appendingPathComponent("\(bundleId)-\(Hashing.sha256Hex(source.url).prefix(16)).pack")
         do {
             try await fetchWithRetries { try await http.download(url, to: file, maximumBytes: source.packBytesLimit, progress: progress) }
@@ -217,6 +201,7 @@ public final class Downloader {
                     try writeInflatedFile(body, sha256: sha256, maximumBytes: sizeBytes)
                 case .patch(let fromSha256, let toSha256, let body):
                     guard let sizeBytes = wanted[toSha256] else { return }
+                    // A patch that does not apply leaves its file to the single-file fetch after the pack.
                     try? applyPatch(body, from: fromSha256, to: toSha256, maximumBytes: sizeBytes)
                 }
             }
@@ -228,8 +213,6 @@ public final class Downloader {
         return data.count
     }
 
-    /// One file entry inflated straight to disk, then verified into the store: the pack is mapped, the entry a slice of it, and the
-    /// inflation holds one chunk, so a large file never lies in memory whole.
     private func writeInflatedFile(_ body: Data, sha256: String, maximumBytes: Int) throws {
         let inflated = temporaryDirectory.appendingPathComponent("\(UUID().uuidString).inflating")
         defer { try? FileManager.default.removeItem(at: inflated) }
@@ -237,7 +220,6 @@ public final class Downloader {
         try files.writeFile(at: inflated, sha256: sha256)
     }
 
-    /// Writes the file `toSha256` from the patch and the held file `fromSha256`; the store refuses bytes of another hash.
     func applyPatch(_ patch: Data, from fromSha256: String, to toSha256: String, maximumBytes: Int) throws {
         let directory = temporaryDirectory.appendingPathComponent("\(UUID().uuidString).patching", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -249,7 +231,6 @@ public final class Downloader {
         try files.writeFile(at: patchedFile, sha256: toSha256)
     }
 
-    /// The held file a patch starts from: the store's in place, the embedded bundle's copied beside the patch.
     private func preparePatchBase(_ sha256: String, in directory: URL) throws -> URL {
         if files.hasFile(sha256: sha256) {
             return files.fileURL(sha256: sha256)
@@ -260,7 +241,7 @@ public final class Downloader {
         return base
     }
 
-    /// The URL of a manifest, pack or delta only when it is on a configured host: the SDK fetches from our hosts and nowhere else.
+    // The SDK fetches from its configured hosts and nowhere else.
     func resolvePinnedUrl(_ string: String) throws -> URL {
         guard configuration.isOnConfiguredHost(string), let url = URL(string: string) else {
             throw DownloadFailure.manifestInvalid("\(string) is not on a configured host")
@@ -268,15 +249,13 @@ public final class Downloader {
         return url
     }
 
-    /// One file through the same bounded stream as the pack, never past its size in the manifest; the HTTP client already
-    /// decoded the gzip the bucket serves, so the body is the content, whatever bytes it starts with.
     func downloadFile(_ file: BundleManifest.File) async throws -> Int {
         guard let url = URL(string: "\(configuration.filesBaseUrl)/apps/\(configuration.appId)/files/\(file.sha256)") else { throw DownloadFailure.downloadFailed("Invalid file URL") }
         let temporary = temporaryDirectory.appendingPathComponent("\(UUID().uuidString).file")
         defer { try? FileManager.default.removeItem(at: temporary) }
         do {
             try await fetchWithRetries {
-                // The body arrives decoded, so a range of the gzip the bucket serves would not continue it: every attempt starts over.
+                // The HTTP client decodes the gzip the bucket serves, so a byte range could not continue it and every attempt starts over.
                 try? FileManager.default.removeItem(at: temporary)
                 try await http.download(url, to: temporary, maximumBytes: file.sizeBytes) { _, _ in }
             }
@@ -296,9 +275,7 @@ public final class Downloader {
         return bytes
     }
 
-    /// A fetch tried three times inside the check: a network error, a timeout, a short read or a 5xx pauses one second, then three,
-    /// before the next attempt, and the last attempt's failure is the fetch's; any other answer is final at once, a 404 or a 410
-    /// since the object will not appear.
+    // Any answer but a transient failure is final at once: after a 404 or a 410 the object will not appear.
     private func fetchWithRetries<Fetched>(_ attempt: () async throws -> Fetched) async throws -> Fetched {
         for pauseSeconds in Downloader.retryPausesSeconds {
             do {
@@ -310,8 +287,7 @@ public final class Downloader {
         return try await attempt()
     }
 
-    /// A failure the next attempt may not meet: the connection's, a dropped one cutting the body short included, or the host's
-    /// 5xx; never a cancellation.
+    // A dropped connection that cuts the body short is a `URLError` too.
     private static func isTransient(_ error: Error) -> Bool {
         if let refusal = error as? HttpStatusError {
             return (500...599).contains(refusal.status)

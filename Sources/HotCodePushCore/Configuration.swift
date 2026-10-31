@@ -28,7 +28,6 @@ public enum MandatoryApplyStrategy: String, CaseIterable, Codable {
 }
 
 extension ApplyStrategy {
-    /// A mandatory strategy in the apply strategies' vocabulary, which holds both of its values.
     init(_ strategy: MandatoryApplyStrategy) {
         switch strategy {
         case .immediate: self = .immediate
@@ -47,13 +46,13 @@ public enum ReadySignal: String, CaseIterable, Codable {
 public struct Configuration: Codable, Equatable {
     public static let defaultFilesBaseUrl = "https://files.hotcodepush.com"
     public static let defaultUpdatesBaseUrl = "https://updates.hotcodepush.com"
-    /// The floor of `checkIntervalSeconds`: a zero made the core check in a tight loop.
+    // A zero would make the core check in a tight loop.
     static let minimumCheckIntervalSeconds: Double = 60
-    /// The floor of `readyTimeoutSeconds`: the readiness gate has no off switch.
+    // The readiness gate has no off switch.
     static let minimumReadyTimeoutSeconds: Double = 1
 
     public var appId: String
-    /// The channel the build follows; `nil` in a build whose build step ran without a token or offline and never resolved the channel's name.
+    /// The channel the build follows; `nil` when the build step ran without a token or offline.
     public var channelId: String?
     public var checkStrategy: CheckStrategy
     public var checkIntervalSeconds: Double
@@ -68,7 +67,7 @@ public struct Configuration: Codable, Equatable {
     public var publicKeys: [DevicePublicKey]
     public var builtAt: Date
     public var fingerprint: String?
-    /// The embedded bundle's files; `nil` in a build that bundled no JavaScript, which embeds no bundle and never updates.
+    /// The files of the embedded bundle; `nil` in a build that bundled no JavaScript, which never updates.
     public var embeddedBundleManifest: EmbeddedBundleManifest?
     public var embeddedBundleId: String?
     public var filesBaseUrl: String
@@ -96,8 +95,8 @@ public struct Configuration: Codable, Equatable {
         updatesBaseUrl = try container.decodeIfPresent(.url, forKey: .updatesBaseUrl) ?? Configuration.defaultUpdatesBaseUrl
     }
 
-    /// Whether a manifest, pack or delta URL lies under the files or the updates host: it starts with the base URL and a `/`, so
-    /// another scheme, userinfo, a look-alike host, another port or another path is off the host.
+    /// Whether a manifest, pack or delta URL lies under the files or the updates host.
+    /// The base URL must be followed by a `/`, so a look-alike host, userinfo or another port does not match.
     public func isOnConfiguredHost(_ url: String) -> Bool {
         return [filesBaseUrl, updatesBaseUrl].contains { url.hasPrefix("\($0)/") }
     }
@@ -109,7 +108,7 @@ public struct Configuration: Codable, Equatable {
         return try Json.decoder.decode(Configuration.self, from: data)
     }
 
-    /// The resource file the build wrote into the bundle's resources, `nil` when they lack it; a file the reader refuses throws its error.
+    /// Reads the resource file the build wrote into the bundle, `nil` when it is missing; a file the reader refuses throws.
     public static func read(from bundle: Bundle = .main, subdirectory: String? = nil) throws -> Configuration? {
         guard let url = bundle.url(forResource: "hotcodepush", withExtension: "json", subdirectory: subdirectory) else {
             return nil
@@ -117,10 +116,10 @@ public struct Configuration: Codable, Equatable {
         return try decode(Data(contentsOf: url))
     }
 
-    /// Why an SDK runs without a core when the reader refused the resource file, in the reader's words: a decoding error's
-    /// `localizedDescription` hides them behind a generic sentence.
+    /// Why an SDK runs without a core when the reader refused the resource file, in the reader's own words.
     public static func resolveRefusedMessage(_ error: Error) -> String {
         let reason: String
+        // The `localizedDescription` of a `DecodingError` hides the reason behind a generic sentence.
         switch error as? DecodingError {
         case .dataCorrupted(let context)?, .keyNotFound(_, let context)?, .typeMismatch(_, let context)?, .valueNotFound(_, let context)?:
             reason = context.debugDescription
@@ -156,7 +155,7 @@ public struct DownloadUpdateOptions: Equatable {
 }
 
 private extension KeyedDecodingContainer {
-    /// A duration in seconds, the default when the file leaves it out; one below its floor refuses the file, never clamped.
+    // A value below its floor refuses the file and is never clamped.
     func decodeSeconds(forKey key: Key, minimum: Double, default defaultSeconds: Double) throws -> Double {
         let seconds = try decodeIfPresent(Double.self, forKey: key) ?? defaultSeconds
         guard seconds >= minimum else {

@@ -308,11 +308,10 @@ final class DownloaderTests: XCTestCase {
     }
 }
 
-/// A downloader over fakes, in a fresh temporary directory.
 final class DownloaderHarness {
     static let bundleId = "b2"
     static let packUrl = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/pack"
-    /// A pack that carries none of the files, which leaves every one to the single-file fetch.
+    // Leaves every file to the single-file fetch.
     static let emptyPack = PackWriter.pack([])
 
     static func deltaUrl(baseBundleId: String, bundleId: String = bundleId) -> String {
@@ -339,7 +338,7 @@ final class DownloaderHarness {
         downloader = Downloader(configuration: configuration, platform: "ios", files: files, embedded: embedded, http: http, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
-    /// The manifest of these files and the pack that carries them, each entry the gzip bytes the bucket serves.
+    // Each pack entry holds the gzip bytes the bucket serves.
     static func bundle(_ files: [String: Data]) -> (manifest: BundleManifest, pack: Data) {
         let sorted = files.sorted { $0.key < $1.key }
         let pack = PackWriter.pack(sorted.map { PackEntry.file(sha256: Hashing.sha256Hex($0.value), body: try! Gzip.compress($0.value)) })
@@ -355,8 +354,7 @@ final class DownloaderHarness {
         return BundleManifest(appId: manifest.appId, bundleVersion: manifest.bundleVersion, files: files, fingerprint: manifest.fingerprint, keyId: manifest.keyId, platforms: manifest.platforms)
     }
 
-    /// Serves the envelope, and its pack and deltas by base bundle when given, where the index entry says they are and
-    /// returns that entry; a signing key signs the manifest under its fingerprint.
+    // Serves the envelope, pack and deltas where the returned index entry says they are. A signing key signs the manifest.
     func publish(_ manifest: BundleManifest, pack: Data? = nil, packUrl: String = packUrl, packSizeBytes: Int? = nil, deltas: [String: Data] = [:], bundleId: String = bundleId, manifestUrl: String = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/manifest.json", signingKey: SecKey? = nil) -> IndexRelease {
         let signed = signingKey.map { key in BundleManifest(appId: manifest.appId, bundleVersion: manifest.bundleVersion, files: manifest.files, fingerprint: manifest.fingerprint, keyId: SigningFixture.keyId(of: key), platforms: manifest.platforms) } ?? manifest
         let json = String(bytes: try! Json.encoder.encode(signed), encoding: .utf8) ?? ""
@@ -377,7 +375,7 @@ final class DownloaderHarness {
         return try await downloader.downloadRelease(release, baseBundleId: baseBundleId) { _, _ in }
     }
 
-    /// What the download requested after the manifest, in order: the packs, then the single files.
+    // The packs come first, then the single files.
     func requestUrlsAfterManifest() -> [String] {
         return http.requests.dropFirst().map { $0.url.absoluteString }
     }

@@ -1,7 +1,7 @@
 import XCTest
 @testable import HotCodePushCore
 
-/// The protocol's fixture suite, read from the `@hotcodepush/protocol` package in `node_modules`: the same cases every core runs.
+// The fixture suite of `@hotcodepush/protocol`, read from `node_modules`: the same cases every core runs.
 final class FixtureTests: XCTestCase {
     private static let fixturesDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -21,7 +21,6 @@ final class FixtureTests: XCTestCase {
         let acknowledgements: [Acknowledgement]?
     }
 
-    /// A `202` as `device-events.json` and the evaluation cases write it.
     private struct Acknowledgement: Decodable {
         let hasReport: Bool
         let reportedAt: Date
@@ -291,7 +290,7 @@ final class FixtureTests: XCTestCase {
         return try Json.decoder.decode(T.self, from: try Data(contentsOf: url))
     }
 
-    /// The cases of one list of a fixture file, each document re-serialized on its own so a refused one fails only its own decode.
+    // Each document is re-serialized on its own, so a refused one fails only its own decode.
     private func documentCases(in fileName: String, listed key: String, holding document: String) throws -> [(name: String, data: Data)] {
         let url = FixtureTests.fixturesDirectory.appendingPathComponent(fileName)
         let file = try XCTUnwrap(try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as? [String: Any])
@@ -312,7 +311,6 @@ final class FixtureTests: XCTestCase {
         }
     }
 
-    /// The fixture's batches, each a JSON object as the endpoint reads it.
     private func deviceEventsBatches(listed key: String) throws -> [(name: String, batch: [String: Any], skippedEventIndexes: [Int])] {
         let url = FixtureTests.fixturesDirectory.appendingPathComponent("device-events.json")
         let file = try XCTUnwrap(try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as? [String: Any])
@@ -321,7 +319,7 @@ final class FixtureTests: XCTestCase {
         return try cases.map { (try XCTUnwrap($0["name"] as? String), try XCTUnwrap($0["batch"] as? [String: Any]), $0["skippedEventIndexes"] as? [Int] ?? []) }
     }
 
-    /// The batch as the device's own types hold it, built only from events the device can write: `nil` when they cannot hold it.
+    // Built only from events the device can write; `nil` when the types of the device cannot hold the batch.
     private func rebuildBatch(_ batch: [String: Any], leavingOut skippedEventIndexes: [Int]) -> DeviceEventsRequest? {
         guard let deviceId = batch["deviceId"] as? String, let platform = batch["platform"] as? String, let sdkVersion = batch["sdkVersion"] as? String,
               let events = batch["events"] as? [Any], batch.keys.contains("report") else { return nil }
@@ -335,7 +333,7 @@ final class FixtureTests: XCTestCase {
         return DeviceEventsRequest(deviceId: deviceId, events: decodedEvents, platform: platform, report: report, sdkVersion: sdkVersion)
     }
 
-    /// The batch with the events the endpoint skips left out and the fields no reader of this version knows removed.
+    // Leaves out the events the endpoint skips and the fields no reader of this version knows.
     private func resolveReadBatch(_ batch: [String: Any], leavingOut skippedEventIndexes: [Int]) -> NSDictionary {
         var read = batch.filter { DeviceEventsRequest.CodingKeys(stringValue: $0.key) != nil }
         let events = (batch["events"] as? [[String: Any]]) ?? []
@@ -415,8 +413,8 @@ final class FixtureTests: XCTestCase {
         }
     }
 
-    /// The packs a download requests against the case's answers in order, and the kind of the pack that served it: `files` when it
-    /// requests none, `nil` when an answer leaves no pack to turn to — the protocol's own runner, step for step.
+    // Steps through the answers of the case as the runner of the protocol does.
+    // The kind is `files` when no pack is requested, and `nil` when no pack is left to turn to.
     private func resolveDownloadOutcome(_ testCase: PackSourcesFile.Case, downloader: Downloader) -> (requests: [PackSource], packKind: PackKind?) {
         guard var source = downloader.resolvePack(testCase.envelope, baseBundleId: testCase.baseBundleId, missingFileCount: testCase.missingFileCount) else { return ([], .files) }
         var requests: [PackSource] = []
@@ -460,7 +458,7 @@ final class FixtureTests: XCTestCase {
         }
     }
 
-    /// A production build names no host, which the fixture writes as `null`: the configuration's defaults apply.
+    // A production build names no host, which the fixture writes as `null`, so the defaults apply.
     func testShouldMatchEveryConfiguredHostsFixture() throws {
         let cases = try load("configured-hosts.json", as: ConfiguredHostsFile.self).cases
         XCTAssertFalse(cases.isEmpty)
@@ -513,7 +511,7 @@ final class FixtureTests: XCTestCase {
         XCTAssertEqual(staging.updatesBaseUrl, "https://updates.staging.hotcodepush.com")
     }
 
-    /// A file that leaves the SDK options out reads them as the file that spells out the schema's defaults.
+    // A file that leaves the SDK options out reads them as the file that spells out the schema defaults.
     func testShouldReadTheDefaultsOfEveryResourceFileFixtureThatLeavesTheSdkOptionsOut() throws {
         let cases = try load("resource-files.json", as: ResourceFilesFile.self).cases
         let defaults = try XCTUnwrap(cases.first { $0.name.contains("spelled out at their defaults") }).resourceFile
@@ -539,7 +537,6 @@ final class FixtureTests: XCTestCase {
         try assertRefused(Configuration.self, in: "resource-files.json", listed: "refusedResourceFiles", holding: "resourceFile")
     }
 
-    /// Every signed manifest of the suite is a manifest this reader decodes, its signature in the wire's form.
     func testShouldDecodeTheManifestOfEverySignatureFixture() throws {
         let cases = try load("signatures.json", as: SignaturesFile.self).manifests
         XCTAssertGreaterThan(cases.count, 5)
@@ -548,7 +545,7 @@ final class FixtureTests: XCTestCase {
         }
     }
 
-    /// The suite's verdicts, case for case, against the keys as an iOS resource file carries them.
+    // The keys are read as an iOS resource file carries them.
     func testShouldMatchEverySignatureFixture() throws {
         let cases = try load("signatures.json", as: SignaturesFile.self).manifests
         var verified = 0
@@ -561,7 +558,7 @@ final class FixtureTests: XCTestCase {
         XCTAssertGreaterThan(cases.count - verified, 5)
     }
 
-    /// The public keys of the iOS resource file are PKCS #1 DER the system imports as they stand.
+    // The public keys of the iOS resource file are PKCS #1 DER, which the system imports as it stands.
     func testShouldImportThePublicKeysOfTheIosResourceFileFixture() throws {
         let cases = try load("resource-files.json", as: ResourceFilesFile.self).cases
         let iosBuild = try XCTUnwrap(cases.first { $0.name.contains("iOS build") })
@@ -572,7 +569,7 @@ final class FixtureTests: XCTestCase {
         }
     }
 
-    /// The bounds are the writer's: a reader takes a release with more conditions, and a device condition with more ids, than the API accepts.
+    // The bounds are the writer's: a reader takes more conditions per release, and more ids per device condition, than the API accepts.
     func testShouldReadPastTheWriterBoundsFixture() throws {
         let bounds = try load("bounds.json", as: BoundsFile.self)
         let hashedIds = (0...bounds.deviceConditionHashedIdCountLimit).map { Hashing.sha256Hex("device-\($0)") }
@@ -608,8 +605,8 @@ final class FixtureTests: XCTestCase {
         XCTAssertEqual(try PackReader.entries(in: pack), try fixture.entries.map { try $0.packEntry() })
     }
 
-    /// Each case's patch entry in a delta against the running bundle, the held files in the store and every file of the
-    /// manifest on the files host: applied writes the file without fetching it, fallback fetches it, ignored does neither.
+    // A delta against the running bundle carries the patch entry of each case.
+    // `applied` writes the file without fetching it, `fallback` fetches it, and `ignored` does neither.
     func testShouldMatchEveryPatchCaseOfThePackEntriesFixture() async throws {
         let fixture = try load("pack-entries.json", as: PackEntriesFile.self)
         let contents = try Dictionary(uniqueKeysWithValues: fixture.files.map { ($0.sha256, try XCTUnwrap(Data(base64Encoded: $0.contentBase64))) })

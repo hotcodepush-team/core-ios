@@ -11,8 +11,8 @@ public enum Gzip {
 
     private static let chunkSize = 64 * 1024
 
-    /// Inflates into the file chunk by chunk, so a large file never lies in memory whole, and at most `maximumBytes`, the file's
-    /// size: a few bytes that would inflate to gigabytes are refused on the way. Empty input is an empty file.
+    /// Inflates the data into the file chunk by chunk, writing at most `maximumBytes`.
+    /// A few bytes that would inflate to gigabytes are refused on the way; empty input is an empty file.
     public static func decompress(_ data: Data, to file: URL, maximumBytes: Int) throws {
         guard let output = OutputStream(url: file, append: false) else { throw Failure.unwritable }
         output.open()

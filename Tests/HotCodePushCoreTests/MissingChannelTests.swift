@@ -1,8 +1,8 @@
 import XCTest
 @testable import HotCodePushCore
 
-/// A build whose build step ran without a token or offline carries no channel: it checks nothing on its own, answers an explicit
-/// call `channel_unknown` without a request and reports nothing, until the app sets a channel at runtime.
+// A build step without a token or offline leaves the build without a channel.
+// Until the app sets one, it checks nothing on its own, answers a call with `channel_unknown` without a request and reports nothing.
 final class MissingChannelTests: XCTestCase {
     private func harnessWithoutChannel() -> Harness {
         let harness = Harness(configuration: Fixture.configuration(checkStrategy: .auto, channelId: nil))
@@ -191,7 +191,7 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(channel, ChannelResult(id: Fixture.channelId, name: nil, source: .config))
     }
 
-    /// A cycle that is not started leaves no trace: no check, no log entry, no event, no request and no interval timer.
+    // No check, no log entry, no event, no request and no interval timer.
     private func assertNoCheckStarted(_ harness: Harness, file: StaticString = #filePath, line: UInt = #line) async throws {
         XCTAssertNil(StateStore(store: harness.store).lastCheck, file: file, line: line)
         XCTAssertNil(StateStore(store: harness.store).lastSyncAt, file: file, line: line)

@@ -16,7 +16,8 @@ public struct Release: Codable, Equatable {
         self.isMandatory = isMandatory
     }
 
-    /// A stored release's ids are identifiers, so neither names another path; one that is not drops the cache like any unreadable value.
+    /// Refuses ids that are not identifiers, so a stored release never names another path.
+    /// The refusal drops the cache like any unreadable value.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(.identifier, forKey: .id)

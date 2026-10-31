@@ -1,7 +1,7 @@
 import XCTest
 @testable import HotCodePushCore
 
-/// Every result carries every key of the typed contract, `null` when empty, never an absent key.
+// Every result writes every key of the typed contract, `null` when empty, and never leaves one out.
 final class ContractTests: XCTestCase {
     private func keys<T: Encodable>(_ value: T) throws -> (keys: Set<String>, object: [String: Any]) {
         let object = try Json.encodeObject(value)

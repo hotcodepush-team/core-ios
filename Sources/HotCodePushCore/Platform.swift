@@ -25,8 +25,8 @@ public struct DeviceFacts: Equatable {
 
 #if canImport(UIKit)
 extension DeviceFacts {
-    /// The running binary's facts: its version and build from the Info.plist and the OS version.
-    /// The SDK passes `isDebugBuild` from its own `#if DEBUG`: the core ships prebuilt in Release, so its own flag never sees the app's.
+    /// The facts of the running binary: version and build from the Info.plist, and the OS version.
+    /// Pass `isDebugBuild` from the SDK's own `#if DEBUG`: the core ships prebuilt in Release, so its own flag never sees the app's.
     public static func current(sdkVersion: String, isDebugBuild: Bool) -> DeviceFacts {
         let info = Bundle.main.infoDictionary ?? [:]
         return DeviceFacts(
@@ -40,7 +40,7 @@ extension DeviceFacts {
 }
 
 extension Core {
-    /// The app's background and foreground from UIKit's notifications, for the core's lifetime: call it once, after creating the core.
+    /// Follows the app between background and foreground for the lifetime of the core. Call it once, after creating the core.
     public nonisolated func observeAppLifecycle() {
         let center = NotificationCenter.default
         _ = center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { [weak self] _ in
@@ -69,7 +69,7 @@ public protocol BundleLoader: AnyObject {
     func isConnectionMetered() -> Bool
 }
 
-/// The five events, named by the object and what happened to it; a cycle's start and end fire nothing.
+/// Receives the five core events; the start and the end of a cycle fire nothing.
 public protocol CoreListener: AnyObject {
     func updateAvailable(_ event: UpdateAvailableEvent)
     func updateDownloaded(_ event: UpdateDownloadedEvent)
@@ -101,21 +101,21 @@ public struct SystemClock: Clock {
     }
 }
 
-/// Whether the app runs in the background, which the start cannot learn from a notification: the system launching the app straight
-/// into the background, for a push or a background fetch, posts none.
+/// Whether the app runs in the background.
+/// The start cannot learn it from a notification: a launch straight into the background, for a push or a background fetch, posts none.
 public protocol ApplicationState: Sendable {
     /// Read on the main thread.
     var isInBackground: Bool { get }
 }
 
-/// UIKit's state. `inactive` is a launch on its way to the foreground, which posts no foreground notification, so it is not the
-/// background; a scene-based app reads `background` while its first scene connects, and UIKit posts the foreground notification
-/// right after. Without UIKit the app is in the foreground.
+/// The application state as UIKit reports it; without UIKit the app is in the foreground.
 public struct SystemApplicationState: ApplicationState {
     public init() {}
 
     public var isInBackground: Bool {
         #if canImport(UIKit)
+        // `inactive` is a launch on its way to the foreground, which posts no foreground notification.
+        // A scene-based app reads `background` while its first scene connects, and UIKit posts the foreground notification right after.
         return UIApplication.shared.applicationState == .background
         #else
         return false
@@ -123,8 +123,8 @@ public struct SystemApplicationState: ApplicationState {
     }
 }
 
-/// Whether the connection is metered, for a loader's `isConnectionMetered()`: an expensive path, cellular or a personal hotspot,
-/// or a constrained one, Low Data Mode, as the system's path monitor last reported it.
+/// Whether the connection is metered, as the system path monitor last reported it.
+/// Metered is an expensive path, such as cellular or a personal hotspot, or a constrained one in Low Data Mode.
 public final class NetworkMonitor {
     private let lock = NSLock()
     private let monitor = NWPathMonitor()
@@ -196,8 +196,8 @@ public enum AttributeRules {
         return keyPattern.firstMatch(in: key, range: NSRange(key.startIndex..., in: key)) != nil
     }
 
-    /// The value rule alone, shared with the app's rollback reason: at most 256 Unicode code points, counted neither in UTF-16
-    /// code units nor in the characters a reader sees, and no control character, C0, DEL or C1, which the events endpoint refuses.
+    /// Checks an attribute value, or the rollback reason of the app, by the rule of the events endpoint.
+    /// At most 256 Unicode code points, not UTF-16 units or characters, and no control character (C0, DEL or C1).
     public static func validate(value: String) throws {
         guard isValid(value: value) else {
             throw PlainError("A value is at most \(valueMaximumCodePoints) Unicode code points without a control character")

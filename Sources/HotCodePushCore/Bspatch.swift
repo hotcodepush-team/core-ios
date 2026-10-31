@@ -3,7 +3,6 @@ import Foundation
 internal import HotCodePushBspatch
 #endif
 
-/// FreeBSD's bspatch, the `HotCodePushBspatch` C target: a BSDIFF40 patch turns an old file into a new one.
 enum Bspatch {
     enum Failure: Error, Equatable {
         case corruptPatch
@@ -11,8 +10,8 @@ enum Bspatch {
         case outOfMemory
     }
 
-    /// Writes the new file, never larger than `maximumBytes`. A control triple that reaches outside the old file adds nothing
-    /// there, as bsdiff 4.3 defined it, so only the result's hash says the patch was the right one.
+    // A control triple that reaches outside the old file adds nothing there, as bsdiff 4.3 defined it.
+    // So only the hash of the result shows that the patch was the right one.
     static func apply(_ patch: URL, to old: URL, writingTo new: URL, maximumBytes: Int) throws {
         switch hotcodepush_bspatch(old.path, new.path, patch.path, off_t(maximumBytes)) {
         case HOTCODEPUSH_BSPATCH_OK: return

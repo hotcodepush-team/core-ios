@@ -27,17 +27,17 @@ public struct HttpStatusError: Error, Equatable, LocalizedError {
     public var errorDescription: String? { "HTTP \(status)" }
 }
 
-/// The three HTTP shapes the core needs: a small GET, a small POST and a large download that resumes.
+/// The three HTTP requests the core needs: a small GET, a small POST and a large download that resumes.
 public protocol HttpClient {
     func get(_ url: URL, headers: [String: String]) async throws -> HttpResponse
     func post(_ url: URL, headers: [String: String], body: Data) async throws -> HttpResponse
-    /// Downloads to the file, appending from its current size with a `Range` request when it exists; what arrived stays when the
-    /// connection drops, for the next attempt to resume. Past `maximumBytes` it stops and deletes the file; on a status other than
-    /// 200 or 206 — a redirect included, which it never follows — it deletes the file and throws `HttpStatusError`.
+    /// Downloads to the file, resuming from its current size with a `Range` request.
+    /// What arrived stays when the connection drops. Past `maximumBytes` it stops and deletes the file.
+    /// On a status other than 200 or 206, a redirect included, it deletes the file and throws `HttpStatusError`.
     func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws
 }
 
-/// `URLSession`: its async `data(for:)` for the small requests, the session's delegate for the streamed download.
+/// The `HttpClient` on `URLSession`.
 public final class UrlSessionHttpClient: HttpClient {
     private let session: URLSession
     private let transfers = TransferDelegate()
@@ -74,7 +74,6 @@ public final class UrlSessionHttpClient: HttpClient {
         return request
     }
 
-    /// Streams the body into the file as it arrives: a body larger than it may be never lands on disk whole, and a dropped connection leaves what arrived.
     public func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws {
         var request = URLRequest(url: url)
         request.timeoutInterval = 60
@@ -101,7 +100,6 @@ public final class UrlSessionHttpClient: HttpClient {
     }
 }
 
-/// One streamed download: where the bytes go, how many may come, and the continuation waiting for the end.
 private final class Transfer {
     let url: URL
     let file: URL
@@ -122,7 +120,7 @@ private final class Transfer {
         self.continuation = continuation
     }
 
-    /// Opens the file for the body: appended to when the server honours the range, started over otherwise.
+    // The file is appended to when the server honours the range, else started over.
     func open(status: Int) throws {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let isResumed = status == 206 && existing > 0
@@ -156,7 +154,6 @@ private final class Transfer {
     }
 }
 
-/// The session's delegate for the streamed downloads, one transfer per task.
 private final class TransferDelegate: NSObject, URLSessionDataDelegate {
     private let lock = NSLock()
     private var transfers: [Int: Transfer] = [:]
@@ -199,7 +196,7 @@ private final class TransferDelegate: NSObject, URLSessionDataDelegate {
         }
     }
 
-    /// A download stays on the URL the core pinned: its redirect is the answer, never a second request to wherever it points.
+    // A download stays on the URL the core pinned, so its redirect is the answer.
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         completionHandler(transfer(for: task) == nil ? request : nil)
     }

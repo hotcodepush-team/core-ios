@@ -120,7 +120,7 @@ final class WireTypesTests: XCTestCase {
         XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)))
     }
 
-    /// A bundle over a fresh directory holding the files given by path, as an app's resources hold them.
+    // Holds the files by path, as the resources of an app hold them.
     private func resourceBundle(files: [String: Data]) throws -> Bundle {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

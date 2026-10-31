@@ -1,7 +1,7 @@
 import Foundation
 @testable import HotCodePushCore
 
-/// A value the test and the core's tasks reach from different threads: every read, write and mutation under one lock.
+// The test and the tasks of the core reach the value from different threads.
 @propertyWrapper
 final class Locked<Value> {
     private let lock = NSLock()
@@ -26,7 +26,7 @@ final class Locked<Value> {
 
     var projectedValue: Locked<Value> { self }
 
-    /// A read and a write as one step, so two appends from two threads both land.
+    // One locked step, so two appends from two threads both land.
     func mutate(_ body: (inout Value) -> Void) {
         lock.lock()
         defer { lock.unlock() }
@@ -45,9 +45,9 @@ final class FakeHttpClient: HttpClient {
     @Locked var requests: [(url: URL, headers: [String: String])] = []
     @Locked var posts: [(url: URL, headers: [String: String], body: Data)] = []
     @Locked var isOffline = false
-    /// How many of the next GETs and downloads of a URL drop their connection before its stub answers.
+    // How many of the next GETs and downloads of a URL drop their connection before the stub answers.
     @Locked var droppedRequestCounts: [String: Int] = [:]
-    /// Runs once inside the next post, before it answers: what the app does while a batch is on its way.
+    // Runs once inside the next post, like the app acting while a batch is in flight.
     @Locked var whilePosting: (() async -> Void)?
 
     func stub(_ url: String, status: Int = 200, headers: [String: String] = [:], body: Data) {
@@ -129,7 +129,7 @@ final class FakeLoader: BundleLoader {
     @Locked var loaded: [String?] = []
     @Locked var served: String?
     @Locked var isMetered = false
-    /// Runs inside the next read of the served bundle: a host slow to answer while the start waits on it.
+    // Runs inside the next read of the served bundle, like a host slow to answer while the start waits.
     @Locked var whileReadingServedBundle: (() -> Void)?
 
     init(root: URL) {
@@ -148,7 +148,7 @@ final class FakeLoader: BundleLoader {
         persisted = .some(bundleId)
     }
 
-    /// Every host also records what it loads as the bundle for the next start.
+    // Every host also records what it loads as the bundle for the next start.
     func loadServedBundle(bundleId: String?) {
         persistServedBundle(bundleId: bundleId)
         $loaded.mutate { $0.append(bundleId) }
@@ -168,7 +168,6 @@ final class FakeLoader: BundleLoader {
     }
 }
 
-/// Records every event under its own name.
 final class FakeListener: CoreListener {
     @Locked var downloadProgress: [DownloadProgressEvent] = []
     @Locked var updateAvailable: [UpdateAvailableEvent] = []
@@ -200,7 +199,7 @@ final class ManualScheduler: Scheduler {
         return task
     }
 
-    /// Fires every pending task that is still alive, the way time would, and returns once each has run.
+    // Fires every pending task still alive, the way time would, and returns once each has run.
     func fire() async {
         var pending: [Task] = []
         $tasks.mutate { tasks in
@@ -219,7 +218,7 @@ final class FakeApplicationState: ApplicationState, @unchecked Sendable {
 
 final class FixedClock: Clock {
     @Locked var now: Date
-    /// The pauses asked for, in order, each over at once.
+    // Each pause asked for ends at once.
     @Locked var sleptSeconds: [TimeInterval] = []
 
     init(now: Date) {
@@ -243,7 +242,6 @@ final class InMemoryEmbeddedBundle: EmbeddedBundle {
     }
 }
 
-/// One app, one channel, the fixtures every test starts from.
 struct Fixture {
     static let appId = "a0000000-0000-4000-8000-000000000001"
     static let channelId = "c0000000-0000-4000-8000-000000000001"
@@ -313,7 +311,6 @@ struct Fixture {
     }
 }
 
-/// A core over fakes, in a fresh temporary directory.
 final class Harness {
     let root: URL
     let store = InMemoryStore()
@@ -337,12 +334,11 @@ final class Harness {
         core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, applicationState: applicationState, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
-    /// A second core over the same store and files: the next start of the app.
+    // A second core over the same store and files is the next start of the app.
     func restart(configuration: Configuration = Fixture.configuration()) {
         core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, applicationState: applicationState, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
-    /// The events endpoint answering every batch with the same server time.
     func acknowledgeEvents(reportedAt: String = "2023-11-14T23:00:00.000Z") {
         http.stubJson(Fixture.eventsUrl(), ["reportedAt": reportedAt], status: 202)
     }

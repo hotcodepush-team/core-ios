@@ -56,7 +56,6 @@ final class SigningTests: XCTestCase {
     }
 }
 
-/// Keys and signatures for the tests, made by the system: an RSA pair, its public key as an iOS resource file carries it and a key id the signature names.
 enum SigningFixture {
     static let keyA = privateKey(bits: 2048)
     static let keyB = privateKey(bits: 2048)
@@ -66,12 +65,12 @@ enum SigningFixture {
         return SecKeyCreateRandomKey(attributes as CFDictionary, nil)!
     }
 
-    /// The public half's PKCS #1 DER, as `SecKeyCopyExternalRepresentation` exports an RSA public key.
+    // `SecKeyCopyExternalRepresentation` exports an RSA public key as PKCS #1 DER.
     private static func publicKeyDer(of privateKey: SecKey) -> Data {
         return SecKeyCopyExternalRepresentation(SecKeyCopyPublicKey(privateKey)!, nil)! as Data
     }
 
-    /// An id the tests assign; a device takes the id from its resource file and never recomputes it.
+    // A device takes the key id from its resource file and never recomputes it.
     static func keyId(of privateKey: SecKey) -> String {
         return "sha256:\(Hashing.sha256Hex(publicKeyDer(of: privateKey)))"
     }
