@@ -126,16 +126,16 @@ final class HttpClientTests: XCTestCase {
     }
 }
 
-/// Answers the real `URLSession` client's requests from a closure, so it runs without a network.
+// Answers the requests of the real `URLSession` client from a closure, so the tests run without a network.
 final class StubUrlProtocol: URLProtocol {
     struct Reply {
         let status: Int
         let body: Data
-        /// The connection drops once the body has been read, as a network drops after what it delivered.
+        // The connection drops once the body has been read.
         var isInterrupted = false
-        /// Where a redirect points; the loading system then asks the session whether to follow.
+        // The loading system then asks the session whether to follow.
         var redirectLocation: URL?
-        /// The request fails with this before any response, as a network that cannot be reached does.
+        // Thrown before any response, like an unreachable network.
         var transportError: URLError?
     }
 

@@ -2,7 +2,7 @@ import Foundation
 @testable import HotCodePushCore
 import zlib
 
-/// Writes the pack format the SDK reads, as the CLI and the edge Worker do: a patch entry's `patches/{from}` in the ustar prefix.
+// Writes packs as the CLI and the edge Worker do, with the `patches/{from}` of a patch entry in the ustar prefix.
 enum PackWriter {
     static func pack(_ entries: [PackEntry]) -> Data {
         var data = Data()
@@ -18,7 +18,7 @@ enum PackWriter {
         return data
     }
 
-    /// One entry under any name, the ustar magic only beside a prefix as the writers set it.
+    // The writers set the ustar magic only beside a prefix.
     static func append(prefix: String, name: String, body: Data, to data: inout Data) {
         var header = Data(count: 512)
         header.replaceSubrange(0..<name.utf8.count, with: Data(name.utf8))
@@ -37,7 +37,7 @@ enum PackWriter {
     }
 }
 
-/// Gzip as the CLI writes every file it uploads.
+// Gzip as the CLI writes every file it uploads.
 extension Gzip {
     static func compress(_ data: Data) throws -> Data {
         var stream = z_stream()

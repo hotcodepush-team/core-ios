@@ -1,7 +1,6 @@
 import Foundation
 
-/// One entry of a pack: a file's stored object, gzip as the bucket serves it, named by the file's content hash, or a
-/// BSDIFF40 patch that turns the file `fromSha256` into the file `toSha256`.
+/// One entry of a pack: a gzip file object named by its content hash, or a BSDIFF40 patch from the file `fromSha256` to the file `toSha256`.
 public enum PackEntry: Equatable {
     case file(sha256: String, body: Data)
     case patch(fromSha256: String, toSha256: String, body: Data)
@@ -28,9 +27,8 @@ public enum PackReader {
         return entries
     }
 
-    /// Reads entry after entry up to the two end-of-archive blocks: a pack that ends before them is refused, a header whose
-    /// checksum does not add up is refused, an entry named neither by a content hash nor `patches/{hash}/{hash}` is skipped
-    /// with its body, so a later kind does not break this reader, and anything after the end is ignored.
+    /// Calls `body` for each entry up to the two end-of-archive blocks.
+    /// A cut pack or a header whose checksum does not add up throws. An entry of an unknown name is skipped, so a later kind does not break this reader.
     public static func forEachEntry(in data: Data, _ body: (PackEntry) throws -> Void) throws {
         var offset = 0
         while true {
@@ -51,15 +49,14 @@ public enum PackReader {
         }
     }
 
-    /// The entry's full name: `prefix/name` when the prefix field holds one.
+    // Ustar splits a long name into a prefix field and a name field.
     private static func resolveName(of header: Data) -> String {
         let name = string(in: header, range: nameRange)
         let prefix = string(in: header, range: prefixRange)
         return prefix.isEmpty ? name : "\(prefix)/\(name)"
     }
 
-    /// The kind a full name gives an entry, `nil` for a name of neither kind; the body is a slice of the pack, never a copy, so a
-    /// pack mapped from disk is read without holding its entries in memory.
+    // The body is a slice of the pack, never a copy, so a mapped pack is read without holding its entries in memory.
     private static func resolveEntry(named name: String, body: () -> Data) -> PackEntry? {
         if WireRule.sha256.accepts(name) {
             return .file(sha256: name, body: body())
@@ -69,7 +66,7 @@ public enum PackReader {
         return .patch(fromSha256: segments[1], toSha256: segments[2], body: body())
     }
 
-    /// The ustar checksum: the sum of the header's bytes with the checksum field read as spaces, stored in octal.
+    // Ustar sums the header bytes with the checksum field read as spaces, and stores the sum in octal.
     private static func verifyChecksum(of header: Data) throws {
         guard let expected = Int(string(in: header, range: checksumRange), radix: 8) else { throw Failure.invalidHeader }
         var actual = 0

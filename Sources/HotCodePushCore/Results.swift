@@ -43,9 +43,8 @@ public enum RollbackReason: String, CaseIterable, Codable {
     case readinessTimedOut = "readiness_timed_out"
 }
 
-/// One shape for `SyncResult`, `CheckForUpdateResult` and `DownloadUpdateResult`: the status says which fields are set.
-/// `available` when the download is the app's, `downloaded` when the apply is scheduled or the app's, `applyStrategy` saying which,
-/// and `applied` when it happened now, the reload following the result.
+/// The answer of `sync()`, `checkForUpdate()` and `downloadUpdate()`; the status says which fields are set.
+/// `available` leaves the download to the app, `downloaded` waits for the moment in `applyStrategy`, and `applied` reloads after the result.
 public struct SyncResult: Codable, Equatable {
     public let status: SyncStatus
     public let release: Release?
@@ -68,7 +67,7 @@ public struct SyncResult: Codable, Equatable {
         self.message = message
     }
 
-    /// The discriminated union's keys per status; a nullable field is an explicit `null`, an optional one absent.
+    /// Writes the keys of its status only: a nullable field as an explicit `null`, an optional one left out.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(status, forKey: .status)
@@ -173,7 +172,7 @@ public struct StateResult: Codable, Equatable {
     /// The server time of the month's first acknowledged report, for the spending cap.
     public let reportedAt: Date?
 
-    /// Every key of the typed contract, `null` when empty, so `result.currentRelease === null` holds in app code.
+    /// Writes every key, `null` when empty, so `result.currentRelease === null` holds in app code.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(currentRelease, forKey: .currentRelease)
@@ -230,8 +229,6 @@ public struct DeviceResult: Codable, Equatable {
     }
 }
 
-// MARK: Events — what the SDK did on its own; results answer what the app called.
-
 /// A check found a release the device qualifies for.
 public struct UpdateAvailableEvent: Codable, Equatable {
     public let release: Release
@@ -286,7 +283,8 @@ public struct DownloadProgressEvent: Codable, Equatable {
     }
 }
 
-/// At each start that follows a rollback until the app is up after one, before the readiness gate; `toRelease` is `null` for the embedded bundle.
+/// Sent at each start after a rollback until the app is up, before the readiness gate.
+/// `toRelease` is `null` for the embedded bundle.
 public struct UpdateRolledBackEvent: Codable, Equatable {
     public let fromRelease: Release
     public let toRelease: Release?

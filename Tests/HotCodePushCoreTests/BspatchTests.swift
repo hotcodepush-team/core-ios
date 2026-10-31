@@ -1,8 +1,8 @@
 import XCTest
 @testable import HotCodePushCore
 
-/// FreeBSD's bspatch on the patches in `Tests/BspatchFixtures`: a patch arrives unsigned, so a hostile
-/// one must end in an error or in bytes the hash check refuses, never in a read or write outside a buffer.
+// A patch arrives unsigned, so a hostile one must end in an error or in bytes the hash check refuses.
+// It must never read or write outside a buffer.
 final class BspatchTests: XCTestCase {
     private static let controlLengthOffset = 8
     private static let diffLengthOffset = 16
@@ -94,7 +94,6 @@ final class BspatchTests: XCTestCase {
         return try BspatchFixture.data(name)
     }
 
-    /// Applies the patch to `old.bin` and returns where the new file is.
     private func apply(_ patch: Data, maximumBytes: Int = 1_000_000) throws -> URL {
         let patchFile = directory.appendingPathComponent("patch")
         let new = directory.appendingPathComponent("new")
@@ -109,7 +108,7 @@ final class BspatchTests: XCTestCase {
         }
     }
 
-    /// The patch with one header field set the way bsdiff writes an offset: eight bytes little-endian, the sign in the top bit.
+    // Bsdiff writes an offset as eight bytes little-endian, with the sign in the top bit.
     private func settingOffset(_ value: Int64, at offset: Int, in patch: Data) -> Data {
         var bytes = withUnsafeBytes(of: value.magnitude.littleEndian) { Array($0) }
         if value < 0 { bytes[7] |= 0x80 }
@@ -119,7 +118,7 @@ final class BspatchTests: XCTestCase {
     }
 }
 
-/// The committed bsdiff 4.3 patch with its old and new file, and the hostile patches `make-patches.sh` writes beside them.
+// The committed bsdiff 4.3 patch with its old and new file, and the hostile patches that `make-patches.sh` writes.
 enum BspatchFixture {
     private static let directory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent()

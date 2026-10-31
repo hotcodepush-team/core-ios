@@ -2,9 +2,9 @@ import XCTest
 @testable import HotCodePushCore
 
 final class DeviceEventTests: XCTestCase {
-    /// One batch with every event kind and a report whose nullable facts are empty: the batch of `@hotcodepush/protocol`'s own schema
-    /// test, with a check that found a release and a rollback to a release beside it. `DeviceEventsRequestSchema` accepts it as it stands,
-    /// refuses it with `toReleaseId` or a nullable report key left out, and refuses a `null` on the optional `reason`, `condition` or `detail`.
+    // The batch of the schema test in `@hotcodepush/protocol`, plus a check that found a release and a rollback to a release.
+    // `DeviceEventsRequestSchema` accepts it as it stands, but refuses it without `toReleaseId` or a nullable report key.
+    // It also refuses a `null` on the optional `reason`, `condition` or `detail`.
     private static let batch = """
     {
       "deviceId": "d1",

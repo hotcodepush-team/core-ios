@@ -1,8 +1,8 @@
 import XCTest
 @testable import HotCodePushCore
 
-/// The protocol's `catalog.json`, read from the `@hotcodepush/protocol` package in `node_modules`: the core holds every list of it,
-/// each with the catalog's values, in the catalog's order where the Swift list is declared alphabetically, as the same set otherwise.
+// The core must hold every list of the protocol catalog, read from `node_modules`.
+// A list declared alphabetically in Swift must match the catalog order; any other list must match as a set.
 final class CatalogTests: XCTestCase {
     private static let catalogUrl = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -31,7 +31,7 @@ final class CatalogTests: XCTestCase {
         return try Json.decoder.decode(Catalog.self, from: try Data(contentsOf: CatalogTests.catalogUrl))
     }
 
-    /// A list the catalog adds fails here until a field of `Catalog` and its test cover it.
+    // A list the catalog adds fails here until a field of `Catalog` and its test cover it.
     func testShouldCoverEveryListOfTheCatalog() throws {
         let lists = try Json.decoder.decode([String: [String]].self, from: try Data(contentsOf: CatalogTests.catalogUrl))
         let coveredLists = Mirror(reflecting: try loadCatalog()).children.compactMap(\.label)
@@ -58,7 +58,7 @@ final class CatalogTests: XCTestCase {
         XCTAssertEqual(Set(ConditionType.allCases.map(\.rawValue)), Set(try loadCatalog().conditionTypes))
     }
 
-    /// The type is a string the factories write, one factory per type, listed here alphabetically.
+    // The type is a string the factories write, so this lists one factory per type, alphabetically.
     func testShouldWriteTheCatalogsDeviceEventTypesInItsOrder() throws {
         let events: [DeviceEvent] = [
             .applied(releaseId: "r1"),

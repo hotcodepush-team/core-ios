@@ -2612,7 +2612,7 @@ final class CoreTests: XCTestCase {
         assertFailedWithoutRelease(result, reason: .indexInvalid, in: harness)
     }
 
-    /// A batch the endpoint refuses loses its events and leaves the report unacknowledged, so the next sync sends the report alone.
+    // A refused batch loses its events but leaves the report unacknowledged, so the next sync sends the report alone.
     private func assertBatchRefused(status: Int, file: StaticString = #filePath, line: UInt = #line) async throws {
         let harness = Harness()
         harness.http.stub(Fixture.eventsUrl(), status: status, body: Data())
@@ -2633,14 +2633,13 @@ final class CoreTests: XCTestCase {
         XCTAssertNotNil(next["report"] as? [String: Any], file: file, line: line)
     }
 
-    /// A failure before any release was evaluated names none, in the result and in the event.
     private func assertFailedWithoutRelease(_ result: SyncResult, reason: FailedReason, in harness: Harness, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(result.reason, reason.rawValue, file: file, line: line)
         XCTAssertNil(result.release, file: file, line: line)
         XCTAssertEqual(harness.listener.updateFailed.map { $0.release }, [nil], file: file, line: line)
     }
 
-    /// A run that applies v2 at once after the first render and has not confirmed it: its readiness timer is the one scheduled.
+    // Applies v2 at once after the first render and leaves it unconfirmed, so its readiness timer is the one scheduled.
     private func harnessOnAnUnconfirmedRelease() async throws -> Harness {
         let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
@@ -2653,14 +2652,13 @@ final class CoreTests: XCTestCase {
         return harness
     }
 
-    /// The process ends, and the next one starts on the bundle the core persisted.
     private func restartOnTheServedBundle(_ harness: Harness) async {
         harness.loader.served = harness.loader.persisted ?? nil
         harness.restart(configuration: Fixture.configuration(applyStrategy: .immediate))
         await harness.core.handleAppStart()
     }
 
-    /// A first run that applies v2 and confirms it, then the next start's core over the same store and files.
+    // A first run applies and confirms v2, then a new core over the same store and files starts.
     private func restartOnAConfirmedRelease(_ harness: Harness, configuration: Configuration) async throws {
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
@@ -2671,7 +2669,6 @@ final class CoreTests: XCTestCase {
         harness.restart(configuration: configuration)
     }
 
-    /// The next start on the confirmed v2, the release a result names only when a release was evaluated.
     private func startOnAConfirmedRelease(_ harness: Harness, configuration: Configuration = Fixture.configuration()) async throws {
         try await restartOnAConfirmedRelease(harness, configuration: configuration)
         await harness.core.handleAppStart()

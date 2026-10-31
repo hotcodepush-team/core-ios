@@ -2,29 +2,25 @@ import Foundation
 
 /// The state machine every framework shares: three named releases, a readiness gate and one cycle of three stages.
 public actor Core {
-    /// Which call runs the cycle: the check keeps the download gate closed, the download keeps it open, the sync follows the
-    /// strategy. A call joins a running cycle of its own stage only, so each answers a status of its own result type.
+    // A call joins a running cycle of its own stage only, so each call answers with its own result type.
     enum Stage {
         case check, download, sync
     }
 
-    /// A restart held at the gate and who asked for it: the app's own is never held by `setRestartAllowed(false)`.
     private struct QueuedRestart {
         let isAskedByApp: Bool
         let restart: () -> Void
     }
 
-    /// How the channel in effect resolved: the runtime choice, a name through the channels index, else the build's own.
     enum ChannelResolution {
         case id(String)
         case offline
         case unknown
         case invalid(String)
-        /// The build carries no channel and the app set none at runtime.
+        // The build carries no channel and the app set none at runtime.
         case missing
     }
 
-    /// What a build without a channel answers, without a request: it can never update until the app sets a channel at runtime.
     static let missingChannelMessage = "The build carries no channel: it was built without a token or offline, so the channel's name was never resolved. Build it with a token to receive updates."
 
     public let configuration: Configuration
@@ -41,37 +37,31 @@ public actor Core {
     private let applicationState: ApplicationState
 
     private var readyTimer: ScheduledTask?
-    /// The background stopped the readiness timer, and the resume starts its full window again.
     private var isReadyTimerPaused = false
     private var intervalTimer: ScheduledTask?
-    /// The one cycle that runs, and its stage: no two stages ever download beside each other.
+    // One cycle at a time, so no two stages ever download side by side.
     private var runningCycle: (stage: Stage, task: Task<SyncResult, Never>)?
     private var isRestartAllowed = true
     private var queuedRestart: QueuedRestart?
-    /// The app is up in this run: its first render, `notifyReady()` or the readiness timeout settles the start, and every reload the core performs unsettles it.
+    // Set by the first render, `notifyReady()` or the readiness timeout. Every reload the core performs clears it.
     private var hasStartSettled = false
-    /// The times the core pointed the host at a bundle in this process, read where a readiness signal is reported: one reported
-    /// before the latest load is the replaced bundle's.
+    // A readiness signal reported before the latest load belongs to the replaced bundle.
     nonisolated let bundleLoadCount = BundleLoadCount()
     private var isStartSyncPending = false
     private var isSendingDeviceEvents = false
-    /// The events enqueued while a batch is on its way: never part of it, so they stay in the outbox whatever the answer.
+    // Events enqueued while a batch is in flight are not part of it, so they stay in the outbox whatever the answer.
     private var eventCountEnqueuedInFlight = 0
     private var backgroundedAt: Date?
     private var resolvedChannelName: (name: String, id: String)?
-    /// The stored rollback notice was announced in this process, so the app coming up next has received it.
     private var hasAnnouncedRollback = false
-    /// The release a switch replaced in this run, `notifyReady()`'s `previousRelease` until it is read.
+    // Answered once as the `previousRelease` of `notifyReady()`.
     private var releaseBeforeSwitch: Release?
-    /// This session's log, the newest last, behind the debug screen.
     private var logEntries: [LogEntry] = []
-    /// The work a call starts beside its answer — the automatic cycles, the batches and the cleanup — until it ends.
     private var backgroundWork: [UUID: Task<Void, Never>] = [:]
-    /// The cleanup the start leaves behind it, which every cycle waits for, since a download writes files no kept release lists yet.
+    // Every cycle waits for this cleanup, since a download writes files no kept release lists yet.
     private var unusedFilesDeletion: Task<Void, Never>?
 
-    /// The defaults are the core as every SDK on iOS wires it: the standard user defaults, the files under
-    /// `FileStore.defaultRootDirectory`, `URLSession` and the wall clock; the tests replace them.
+    /// Creates the core. The defaults are the production wiring every SDK on iOS uses; tests replace them.
     public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore = UserDefaultsStore(), files: FileStore = FileStore(rootDirectory: FileStore.defaultRootDirectory), embedded: EmbeddedBundle, http: HttpClient = UrlSessionHttpClient(), loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), applicationState: ApplicationState = SystemApplicationState(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
         self.configuration = configuration
         self.device = device
@@ -87,23 +77,15 @@ public actor Core {
         self.applicationState = applicationState
     }
 
-    // MARK: Lifecycle
-
-    /// The longest a host's synchronous start waits for the start's answer before it serves the embedded bundle.
+    /// The longest `handleAppStartBlocking` waits for an answer before it serves the embedded bundle.
     public static let startTimeout: TimeInterval = 2
-    /// How long the kept index holds the never-backwards rule: past it, a fetched index is taken whatever its sequence, so a
-    /// forged or buggy far-future sequence cannot freeze the device.
+    // Past this age, a fetched index replaces the kept one whatever its sequence.
+    // A forged far-future sequence then freezes a device for a day at most.
     static let cachedIndexMaxAge: TimeInterval = 24 * 60 * 60
 
-    /// The start of a run: the binary's floor, the files on disk, the previous run's verdict, the pending switch, a rollback the app
-    /// has not come up after and the gate. Answers the bundle the host serves, `nil` for the embedded one, without awaiting the
-    /// network: the start's check and the cleanup run after it returns, so a host waiting on the start never waits on them.
-    /// A reload the core did not perform serves the running bundle and is not interpreted: a `next_start` release applies at the
-    /// next start or through the core's own apply.
-    /// A headless start, one the host knows no screen will render for, neither applies a waiting release nor arms the gate, and
-    /// loads nothing: the host serves its answer, and a bundle persisted for the next start stays the one the next start finds.
-    /// The application's state is read on the main thread first: an app the system launched into the background is in the
-    /// background from its start, so the gate waits for its first resume.
+    /// Runs the start of the app and answers the bundle to serve, `nil` for the embedded one.
+    /// It never awaits the network: the check and the cleanup run after it returns.
+    /// A headless start, for a host that will render no screen, applies no waiting release, arms no readiness gate and loads nothing.
     @discardableResult
     public func handleAppStart(isHeadless: Bool = false) async -> String? {
         let isInBackground = await MainActor.run { applicationState.isInBackground }
@@ -143,10 +125,9 @@ public actor Core {
         return resolveServedBundleId(of: state.currentRelease)
     }
 
-    /// The start for a host that resolves its bundle in synchronous code before its WebView or JavaScript loads: `handleAppStart()`'s
-    /// answer, waited for at most `startTimeout`. Without an answer in time it answers the embedded bundle, and the start, once it
-    /// runs, reloads the host into the bundle it resolved, as it does whenever the host serves another one. A host waiting on the
-    /// main thread has the application's state read there before it waits, since the start could not reach the thread it blocks.
+    /// `handleAppStart()` for a host that resolves its bundle in synchronous code, waiting at most `startTimeout`.
+    /// Without an answer in time it answers the embedded bundle, and the start reloads the host into the right one once it runs.
+    /// It is safe to call on the main thread.
     public nonisolated func handleAppStartBlocking(isHeadless: Bool = false) -> String? {
         return handleAppStartBlocking(isHeadless: isHeadless, timeout: Core.startTimeout)
     }
@@ -164,17 +145,14 @@ public actor Core {
         return answer.wait(timeout: timeout) ?? nil
     }
 
-    /// The moment the release carries decides: `next_start` switches, and so does an `immediate` apply this run never got to, a
-    /// mandatory release's included; `next_resume` and `manual` wait, so a mandatory release the app took over waits across starts.
-    /// A bundle the WebView already serves is adopted.
+    // An `immediate` apply this run never got to also switches here. `next_resume` and `manual` wait across starts.
     private func shouldSwitchAtStart(to next: NextRelease) -> Bool {
         if loader.servedBundleId() == resolveServedBundleId(of: next.release) { return true }
         return next.applyStrategy == .nextStart || next.applyStrategy == .immediate
     }
 
-    /// The first render of the run, the readiness signal when `readySignal` is `render`, settles the start whatever it is. A render
-    /// reported before the core last pointed the host at a bundle is the replaced bundle's, the embedded one a host ran past the
-    /// start's bound among them, and confirms and settles nothing.
+    /// Reports the first render, which settles the start and is the readiness signal when `readySignal` is `render`.
+    /// A render reported before the core last loaded a bundle belongs to the replaced bundle and counts for nothing.
     public nonisolated func handleRendered() async {
         await handleRendered(bundleLoadCountAtSignal: bundleLoadCount.value)
     }
@@ -187,9 +165,8 @@ public actor Core {
         settleStart()
     }
 
-    /// Ends the gate when `readySignal` is `manual`, settles the start, and tells the app whether this start follows a rollback or a
-    /// switch, `previousRelease` the release that ran before it; each is told once. A call reported before the core last pointed the
-    /// host at a bundle is the replaced bundle's: it confirms, settles and tells nothing, and answers the release that runs.
+    /// Ends the readiness gate when `readySignal` is `manual`, settles the start and tells once whether a rollback or a switch came before.
+    /// A call from a bundle the core has since replaced changes nothing and answers the running release.
     public nonisolated func notifyReady() async -> NotifyReadyResult {
         await notifyReady(bundleLoadCountAtSignal: bundleLoadCount.value)
     }
@@ -208,8 +185,7 @@ public actor Core {
         return result
     }
 
-    /// The background: the interval timer stops, since interval checks belong to the foreground, the readiness timer stops, since an
-    /// app that cannot render there proves nothing, and the moment is kept for `next_resume`.
+    /// Handles the move to the background: stops the interval and readiness timers and notes the time for `next_resume`.
     public func handleAppPause() {
         backgroundedAt = clock.now
         intervalTimer?.cancel()
@@ -217,9 +193,8 @@ public actor Core {
         pauseReadyTimer()
     }
 
-    /// A resume starts a paused readiness window again, applies a release that carries `next_resume` after enough time in the
-    /// background, else checks when the interval has passed. A mandatory release never carries it, so one the app took over is never
-    /// applied behind its back.
+    /// Handles the return to the foreground.
+    /// Restarts a paused readiness window, applies a `next_resume` release after enough time away, else checks once the interval has passed.
     public func handleAppResume() {
         let backgroundDuration = backgroundedAt.map { clock.now.timeIntervalSince($0) }
         backgroundedAt = nil
@@ -237,7 +212,7 @@ public actor Core {
         }
     }
 
-    /// The start's, the resume's and the interval's cycle; a device without a channel starts none, since it could only fail.
+    // A device without a channel starts no cycle, since it could only fail.
     private func startAutomaticCycle(trigger: SyncTrigger) {
         guard hasChannel else { return }
         startBackgroundWork { _ = try? await self.sync(trigger: trigger) }
@@ -254,38 +229,34 @@ public actor Core {
         return task
     }
 
-    /// Returns once no background work runs, the work it started meanwhile included: what a test waits on instead of a sleep.
+    // Tests wait on this instead of a sleep. It also waits for work started meanwhile.
     func waitForBackgroundWork() async {
         while let work = backgroundWork.values.first {
             await work.value
         }
     }
 
-    // MARK: The three stages
-
-    /// One full cycle; a second call while one runs joins the running one. Each stage throws the plain error, fetching nothing, for a
-    /// channel id in effect that is not a UUID.
+    /// Runs one full cycle, or joins the one that runs.
+    /// Throws a plain error before any fetch when the channel id in effect is not a UUID; so do the other two stages.
     public func sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()) async throws -> SyncResult {
         try verifyChannelId()
         return await runCycle(trigger: trigger, stage: .sync, options: options)
     }
 
-    /// `sync()` with the download gate closed: fetch and evaluate, and download and apply nothing, so a release downloaded already
-    /// answers `available`; never `downloaded` or `applied`. A release that carries the running bundle is adopted, as at every stage,
-    /// the fallback of a revoked release included.
+    /// `sync()` with the download gate shut: it downloads and applies nothing.
+    /// A downloaded release answers `available`, and a release that carries the running bundle is adopted.
     public func checkForUpdate() async throws -> SyncResult {
         try verifyChannelId()
         return await runCycle(trigger: .manual, stage: .check, options: SyncOptions(downloadStrategy: .manual))
     }
 
-    /// `sync()` with the download gate open: re-check the index, a conditional GET, so nothing is downloaded from stale state, then
-    /// download and verify whatever `downloadStrategy` says and apply per the apply strategies; never `available`.
+    /// `sync()` with the download gate open: it re-checks the index, then downloads and applies per the apply strategies.
+    /// It never answers `available`.
     public func downloadUpdate(options: DownloadUpdateOptions = DownloadUpdateOptions()) async throws -> SyncResult {
         try verifyChannelId()
         return await runCycle(trigger: .manual, stage: .download, options: SyncOptions(applyStrategy: options.applyStrategy, downloadStrategy: .auto, mandatoryApplyStrategy: options.mandatoryApplyStrategy))
     }
 
-    /// One cycle at a time: a call joins the running cycle of its own stage, and waits for one of another stage before it starts its own.
     private func runCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         await unusedFilesDeletion?.value
         while let running = runningCycle {
@@ -303,7 +274,7 @@ public actor Core {
         return await task.value
     }
 
-    /// The third stage: apply the downloaded update and reload the app, now or, before the app is up in this run, once it is.
+    /// Applies the downloaded update and reloads the app, at once or, before the app is up in this run, once it is.
     public func applyUpdate() -> ApplyUpdateResult {
         discardNextReleaseThatLeftTheIndex()
         guard let next = state.nextRelease else {
@@ -328,7 +299,6 @@ public actor Core {
         return result
     }
 
-    /// A result names a release only once one was evaluated: a cycle that stops before the evaluation answers none.
     private func resolveCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let current = state.currentRelease
         if isDisabledInThisBuild {
@@ -380,11 +350,8 @@ public actor Core {
         }
     }
 
-    /// A release the device qualifies for: adopted in place when it carries the running bundle, the embedded one included, else
-    /// announced and taken as far as the stage goes. An adoption answers `up_to_date`, since nothing waits and nothing reloads. A
-    /// release of the embedded bundle is announced with no bytes to download, its files being the binary's. The apply moment is the
-    /// call's strategy, else the one a release downloaded already carries, else the configuration's, so an automatic cycle never
-    /// overrides the app's.
+    // An adoption answers `up_to_date`, since nothing waits and nothing reloads.
+    // The strategy stored with a downloaded release wins over the configuration, so an automatic cycle never overrides the app.
     private func update(to target: IndexRelease, isMandatory: Bool, trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         if target.bundleId == runningBundleId {
@@ -411,35 +378,29 @@ public actor Core {
         }
     }
 
-    /// The download gate of the cycle: the call's own strategy, else the configuration's. A release of the embedded bundle downloads
-    /// nothing and passes it, `unmetered` and `manual` alike, at every stage but the check, whose gate stays shut.
+    // A release of the embedded bundle downloads nothing, so it passes every gate but the check's.
     private func resolveDownloadStrategy(of release: Release, stage: Stage, options: SyncOptions) -> DownloadStrategy {
         return isCarryingEmbeddedBundle(release) && stage != .check ? .auto : options.downloadStrategy ?? configuration.downloadStrategy
     }
 
-    /// The release as the app sees it: the index's entry with the mandatory flag the evaluation decided, transitive included.
+    // The mandatory flag is the evaluation's, transitive included.
     private func resolveRelease(_ target: IndexRelease, isMandatory: Bool) -> Release {
         return Release(id: target.id, number: target.number, bundleId: target.bundleId, bundleVersion: target.bundleVersion, isMandatory: isMandatory)
     }
 
-    /// The strategy the call names for this release, `nil` when it names none: a mandatory release follows `mandatoryApplyStrategy`,
-    /// any other `applyStrategy`.
     private func resolveRequestedApplyStrategy(isMandatory: Bool, options: SyncOptions) -> ApplyStrategy? {
         return isMandatory ? options.mandatoryApplyStrategy.map(ApplyStrategy.init) : options.applyStrategy
     }
 
-    /// The configuration's strategy for this release, by the same rule.
     private func resolveConfiguredApplyStrategy(isMandatory: Bool) -> ApplyStrategy {
         return isMandatory ? ApplyStrategy(configuration.mandatoryApplyStrategy) : configuration.applyStrategy
     }
 
-    /// The next release when it is the target and every file it lists is on disk or in the binary.
     private func readDownloadedRelease(_ target: IndexRelease) -> NextRelease? {
         guard let next = state.nextRelease, next.release.bundleId == target.bundleId, hasEveryFile(of: next.release) else { return nil }
         return next
     }
 
-    /// A release of the embedded bundle downloads nothing and lays out no tree: its files are the binary's.
     private func downloadAndApply(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         do {
@@ -459,7 +420,6 @@ public actor Core {
         return applyDownloaded(release, notes: target.notes, strategy: strategy)
     }
 
-    /// Fetches and verifies the release's files, lays its tree out for the host and records how the bytes arrived.
     private func downloadBundle(of target: IndexRelease) async throws {
         let outcome = try await downloader.downloadRelease(target, baseBundleId: runningBundleId) { [listener] progressBytes, downloadSizeBytes in
             listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes: downloadSizeBytes, progressBytes: progressBytes, releaseId: target.id))
@@ -468,8 +428,7 @@ public actor Core {
         enqueueDeviceEvent(.downloaded(releaseId: target.id, bundleId: target.bundleId, downloadSizeBytes: outcome.downloadSizeBytes, packKind: outcome.packKind))
     }
 
-    /// Choosing and applying are two acts: the strategy is a policy over the four functions, its moment stored with the release.
-    /// `applied` when the apply happens now, the reload following, else `downloaded` with the moment it waits for.
+    // The apply moment is stored with the release, so the start and the resume read it, never the configuration.
     private func applyDownloaded(_ release: Release, notes: String?, strategy: ApplyStrategy) -> SyncResult {
         setNextRelease(NextRelease(release: release, applyStrategy: strategy))
         switch strategy {
@@ -484,8 +443,8 @@ public actor Core {
         return .downloaded(release, notes: notes, applyStrategy: strategy)
     }
 
-    /// Rolls the running release back now, even before the app is up; `detail` is the app's own cause, carried on the failure event.
-    /// The embedded bundle, a release that carries it included, has nothing to roll back to.
+    /// Rolls the running release back and reloads at once, even before the app is up.
+    /// `detail` is the app's own cause, sent with the failure event. The embedded bundle has nothing to roll back to.
     public func rollbackUpdate(detail: String?) throws {
         if let detail = detail {
             try AttributeRules.validate(value: detail)
@@ -495,7 +454,8 @@ public actor Core {
         reloadApp()
     }
 
-    /// Back to the embedded bundle, now or, before the app is up in this run, once it is: every downloaded update and the failed list go, the identity stays.
+    /// Drops every downloaded update and the failed list and reloads into the embedded bundle; the device identity stays.
+    /// Before the app is up in this run, the reload waits until it is.
     public func clearUpdates() {
         restartThroughGate(isAskedByApp: true) { [self] in
             stopReadyTimer()
@@ -519,8 +479,6 @@ public actor Core {
         runQueuedRestart()
     }
 
-    // MARK: State
-
     public func getState() -> StateResult {
         return StateResult(
             currentRelease: state.currentRelease,
@@ -541,7 +499,8 @@ public actor Core {
         }
     }
 
-    /// Throws the plain error for an id that is not a UUID: it never reaches a URL, and the stored choice stays.
+    /// Sets or clears the channel chosen at runtime.
+    /// Throws a plain error for an id that is not a UUID, and the stored choice then stays.
     public func setChannel(_ choice: ChannelChoice?) throws {
         if case .id(let id) = choice {
             try verifyChannelId(id)
@@ -550,15 +509,15 @@ public actor Core {
         state.cachedIndex = nil
     }
 
-    /// The channel id a cycle would fetch by, the runtime one or the build's: one stored by an earlier version, or a resource file
-    /// written by hand, is refused like the app's own; a name resolves through the channels index, which checks its id there.
+    // An id stored by an earlier version or written by hand into the resource file is refused like the app's own.
+    // A channel name is checked where the channels index resolves it.
     private func verifyChannelId() throws {
         if let id = channel().id {
             try verifyChannelId(id)
         }
     }
 
-    /// A channel id is a UUID, so nothing with `..`, `/` or a query reaches the index's URL.
+    // A UUID keeps `..`, `/` and a query out of the index URL.
     private func verifyChannelId(_ id: String) throws {
         guard WireRule.uuid.accepts(id) else {
             throw PlainError("A channel id is a UUID: \(id)")
@@ -587,17 +546,13 @@ public actor Core {
         state.attributes = attributes
     }
 
-    // MARK: The four functions and the gate
-
-    /// A restored phone brings the store's keys back without its files: a current or next release with no manifest on disk names a tree
-    /// that is not there. A release that carries the embedded bundle runs from the binary and needs none.
+    // A restored phone brings back the stored keys without the files.
     private func hasReleaseWithoutManifest() -> Bool {
         return [state.currentRelease, state.nextRelease?.release].compactMap { $0 }.contains { !isCarryingEmbeddedBundle($0) && files.readManifest(bundleId: $0.bundleId) == nil }
     }
 
-    /// A new binary carries a new floor and a restored phone carries no files: the stored releases are forgotten and the embedded
-    /// bundle runs. The kept index and its ETag go with them, so the first check fetches unconditionally and takes whatever sequence
-    /// it finds: a store update heals a device a far-future sequence froze.
+    // Dropping the kept index and its ETag makes the first check fetch unconditionally.
+    // So a store update heals a device that a far-future sequence froze.
     private func dropStoredReleases() {
         state.cachedIndex = nil
         state.currentRelease = nil
@@ -614,7 +569,6 @@ public actor Core {
         state.nextRelease = next
     }
 
-    /// A downloaded release that has left the cached index since — revoked, or gone from it — is never applied: it is dropped and the served bundle stays the running one.
     private func discardNextReleaseThatLeftTheIndex() {
         guard let next = state.nextRelease, let index = state.cachedIndex?.body, hasLeftIndex(next.release, index) else { return }
         state.nextRelease = nil
@@ -625,9 +579,8 @@ public actor Core {
         return index.revokedReleaseIds.contains(release.id) || !index.releases.contains { $0.id == release.id }
     }
 
-    /// The next release becomes the current one, unconfirmed, so the reload that follows runs the gate. A release of the embedded
-    /// bundle is confirmed at once, like a revert to the embedded bundle: the binary's bundle is never gated, so it is never rolled
-    /// back and never blocklisted.
+    // The release stays unconfirmed, so the reload that follows runs the readiness gate.
+    // The embedded bundle is never gated, so it is never rolled back or blocklisted.
     private func switchToNextRelease() {
         guard let next = state.nextRelease?.release else { return }
         releaseBeforeSwitch = state.currentRelease
@@ -640,7 +593,6 @@ public actor Core {
         }
     }
 
-    /// The bundle the device runs: the current release's, else the embedded one.
     private var runningBundleId: String? {
         return state.currentRelease?.bundleId ?? configuration.embeddedBundleId
     }
@@ -649,8 +601,7 @@ public actor Core {
         return release.bundleId == configuration.embeddedBundleId
     }
 
-    /// The bundle the host serves for a release, `nil` for the embedded bundle: a release that carries it runs from the binary,
-    /// never from a tree of ours.
+    // A release of the embedded bundle runs from the binary, never from a tree of ours.
     private func resolveServedBundleId(of release: Release?) -> String? {
         guard let release = release, !isCarryingEmbeddedBundle(release) else { return nil }
         return release.bundleId
@@ -660,21 +611,17 @@ public actor Core {
         loader.persistServedBundle(bundleId: resolveServedBundleId(of: release))
     }
 
-    /// Points the host at the current bundle when it serves another: a reload the core performs, so a render of the bundle it
-    /// replaced — the embedded one a host served past the start's bound — settles nothing after it.
     private func loadBundle() {
         guard loader.servedBundleId() != resolveServedBundleId(of: state.currentRelease) else { return }
         loadServedBundle(of: state.currentRelease)
         unsettleStart()
     }
 
-    /// The restart of the web layer: the bundle loads, then the reloaded app goes through the gate.
     private func reloadApp() {
         loadServedBundle(of: state.currentRelease)
         gateReloadedApp()
     }
 
-    /// Every load the core asks of the host: a readiness signal reported before it is the replaced bundle's and counts for nothing.
     private func loadServedBundle(of release: Release?) {
         loader.loadServedBundle(bundleId: resolveServedBundleId(of: release))
         bundleLoadCount.increment()
@@ -684,7 +631,6 @@ public actor Core {
         return bundleLoadCount.value != bundleLoadCountAtSignal
     }
 
-    /// The reloaded app has to come up again: a rollback it has not come up after is announced, then the gate runs.
     private func gateReloadedApp() {
         unsettleStart()
         announceRollback()
@@ -693,13 +639,13 @@ public actor Core {
         }
     }
 
-    /// The reloaded app has to come up again before a restart runs, and it runs what the state says, so a held restart is moot.
+    // A held restart is moot: the reloaded app runs what the state says.
     private func unsettleStart() {
         hasStartSettled = false
         queuedRestart = nil
     }
 
-    /// The apply the SDK performs on its own: the switch and the reload as one act behind the gate, so nothing changes until it runs; the served bundle is the next one already, so the next start switches if this run never does.
+    // The served bundle is persisted first, so the next start switches if this run never does.
     private func restartIntoNextRelease() {
         if let next = state.nextRelease {
             persistServedBundle(of: next.release)
@@ -707,9 +653,8 @@ public actor Core {
         restartThroughGate(isAskedByApp: false) { [self] in applyNextRelease() }
     }
 
-    /// The switch and the reload as one act, once the cached index still lists the release: one revoked or gone from it while the
-    /// restart was held is dropped. With the release gone, discarded or dropped by a rollback or a revert whose own restart yielded
-    /// to this one, the host reloads into the current bundle when it serves another, and else nothing reloads.
+    // The release may have left the index or been dropped while the restart was held.
+    // Then the host only reloads when it serves another bundle than the current one.
     private func applyNextRelease() {
         discardNextReleaseThatLeftTheIndex()
         guard state.nextRelease != nil else {
@@ -722,7 +667,7 @@ public actor Core {
         reloadApp()
     }
 
-    /// A restart waits until the app is up in this run, and the SDK's own also while the app holds restarts. One is held at most: the app's replaces a held one, the SDK's yields to it.
+    // One restart is held at most: the app's replaces a held one, the core's yields to it.
     private func restartThroughGate(isAskedByApp: Bool, _ restart: @escaping () -> Void) {
         if isAskedByApp || queuedRestart == nil {
             queuedRestart = QueuedRestart(isAskedByApp: isAskedByApp, restart: restart)
@@ -736,7 +681,6 @@ public actor Core {
         queued.restart()
     }
 
-    /// The app is up in this run: a rollback announced to it is delivered, and the restart held for it runs.
     private func settleStart() {
         hasStartSettled = true
         if hasAnnouncedRollback {
@@ -746,15 +690,14 @@ public actor Core {
         runQueuedRestart()
     }
 
-    /// The stored notice reaches the JavaScript that just started, once per start; it stays stored until the app is up after it.
+    // The notice stays stored until the app is up after it, so JavaScript that listens late still gets it.
     private func announceRollback() {
         guard let event = state.pendingRollbackEvent else { return }
         hasAnnouncedRollback = true
         listener.updateRolledBack(event)
     }
 
-    /// The release becomes the current one, `nil` for the embedded bundle a revoked release of it leaves, confirmed when the one it
-    /// replaces was, and a release waiting to apply is dropped: the cycle chose the adopted one over it, so it never switches after.
+    // A release waiting to apply is dropped, since the cycle chose the adopted one over it.
     private func adoptInPlace(_ release: Release?) {
         let wasConfirmed = !isCurrentReleaseUnconfirmed()
         state.currentRelease = release
@@ -784,9 +727,7 @@ public actor Core {
         }
     }
 
-    /// The fallback becomes the current release and the failure is reported; the caller reloads. A rollback never waits for the app
-    /// to be up: the app's own reloads at once and the crash a start finds loads the fallback as the start's bundle, while the
-    /// timer's, which settles the start, waits only while the app holds restarts.
+    // The caller reloads. A rollback never waits for the app to be up.
     private func rollbackCurrentRelease(reason: RollbackReason, detail: String?) {
         guard let current = state.currentRelease else { return }
         stopReadyTimer()
@@ -803,8 +744,6 @@ public actor Core {
         persistServedBundle(of: fallback)
     }
 
-    /// The release to fall back to right now: the last confirmed one while it can still run, its files on disk or in the binary, else
-    /// the embedded bundle.
     private func resolveFallbackRelease() -> Release? {
         guard let fallback = state.fallbackRelease,
               !state.failedBundleIds.contains(fallback.bundleId),
@@ -815,8 +754,6 @@ public actor Core {
         return fallback
     }
 
-    /// Every file the release lists is on disk or in the binary; a release of the embedded bundle runs from the binary and needs no
-    /// manifest of ours.
     private func hasEveryFile(of release: Release) -> Bool {
         guard !isCarryingEmbeddedBundle(release) else { return true }
         guard let manifest = files.readManifest(bundleId: release.bundleId) else { return false }
@@ -831,7 +768,7 @@ public actor Core {
         restartThroughGate(isAskedByApp: false) { [self] in reloadApp() }
     }
 
-    /// The readiness window runs in the foreground alone: a gate armed in the background waits for the resume.
+    // The readiness window runs in the foreground only, so a gate armed in the background waits for the resume.
     private func startReadyTimer() {
         stopReadyTimer()
         guard backgroundedAt == nil else {
@@ -855,14 +792,14 @@ public actor Core {
         isReadyTimerPaused = true
     }
 
-    /// The full window starts again: the time already spent in the foreground counts for nothing, as the time in the background does.
+    // The full window starts again: time already spent in the foreground counts for nothing.
     private func resumeReadyTimer() {
         guard isReadyTimerPaused else { return }
         startReadyTimer()
     }
 
-    /// The timeout settles the start before the rollback, so a restart held for the start runs as the reload to the fallback, after the rollback has dropped the release it would switch to.
-    /// A timeout that fires as the timer stops, paused or confirmed, is ignored.
+    // Settling the start before the rollback lets a held restart run as the reload to the fallback.
+    // A timeout that fires as the timer stops is ignored.
     func handleReadyTimeout() {
         guard readyTimer != nil, isCurrentReleaseUnconfirmed() else { return }
         hasStartSettled = true
@@ -878,7 +815,7 @@ public actor Core {
         }
     }
 
-    /// Everything no kept release lists: the served tree of every other bundle first, since its links hold the bytes.
+    // The served trees go first, since their links hold the bytes.
     private func deleteUnusedFiles() {
         let kept = Set([state.currentRelease, state.nextRelease?.release, state.fallbackRelease].compactMap { $0?.bundleId })
         for bundleId in files.bundleIds() where !kept.contains(bundleId) {
@@ -888,18 +825,15 @@ public actor Core {
         files.deleteUnusedFiles(keepingBundleIds: kept)
     }
 
-    // MARK: The index
-
     enum IndexFetch {
         case index(ChannelIndex)
         case offline
         case invalid(String)
         case absent
-        /// The channel set at runtime serves no index: the choice is cleared and the cycle falls back to the build's own channel.
+        // The runtime channel serves no index, so the choice is cleared and the build's channel takes over.
         case gone
     }
 
-    /// The runtime choice, then the configured id; a name resolves through the channels index, offline being offline and not an unknown name.
     private func resolveChannelId() async -> ChannelResolution {
         if let id = channel().id { return .id(id) }
         guard case .name(let name) = state.channel else { return .missing }
@@ -925,7 +859,6 @@ public actor Core {
         }
     }
 
-    /// A device has a channel when the app set one at runtime or the build carries one.
     private var hasChannel: Bool {
         return state.channel != nil || configuration.channelId != nil
     }
@@ -967,13 +900,10 @@ public actor Core {
         }
     }
 
-    /// The never-backwards rule: a fetched index with a lower sequence than the kept one is ignored while the kept one is younger
-    /// than `cachedIndexMaxAge`; an older kept index is treated as absent by the rule.
     private func isMovingBackwards(from cached: CachedIndex, to index: ChannelIndex) -> Bool {
         return clock.now.timeIntervalSince(cached.fetchedAt) < Core.cachedIndexMaxAge && index.sequence < cached.body.sequence
     }
 
-    /// OTA updates are off in a build that embeds no bundle, and in a debug build that has them disabled: every cycle skips with `build_debug`.
     private var isDisabledInThisBuild: Bool {
         return configuration.embeddedBundleManifest == nil || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
     }
@@ -981,8 +911,6 @@ public actor Core {
     private func deviceInfo() -> DeviceInfo {
         return DeviceInfo(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, builtAt: configuration.builtAt, currentRelease: state.currentRelease, deviceId: state.deviceId, failedBundleIds: state.failedBundleIds, fingerprint: configuration.fingerprint, osVersion: device.osVersion, reportedAt: state.reportedAt)
     }
-
-    // MARK: Events
 
     private func recordChecked(_ release: IndexRelease, in index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = nil, condition: ConditionType? = nil) {
         var checked = state.checkedReleaseIds.filter { id in index.releases.contains { $0.id == id } }
@@ -1009,8 +937,6 @@ public actor Core {
         logEntries = Array((logEntries + [entry]).suffix(LogEntry.capacity))
     }
 
-    /// One batch to the events endpoint, the outbox as it stands and the report when it changed and the endpoint reads it: a readable 202 takes both,
-    /// a refusal drops the events and leaves the report unacknowledged, anything else keeps both for the next sync.
     private func sendDeviceEvents() async {
         guard !isSendingDeviceEvents, !isDisabledInThisBuild else { return }
         let events = state.unsentEvents
@@ -1046,14 +972,12 @@ public actor Core {
         }
     }
 
-    /// The batch's events leave the outbox: what stays is exactly what was enqueued while the batch was on its way, the newest 200 of it,
-    /// also when the outbox's cap dropped events of the batch meanwhile.
+    // Only the events enqueued while the batch was in flight stay, also when the outbox cap dropped events of the batch meanwhile.
     private func dropBatchEvents() {
         state.unsentEvents = Array(state.unsentEvents.suffix(eventCountEnqueuedInFlight))
     }
 
-    /// The facts the server should hold: the report when they differ from the acknowledged ones or the month began, else nothing.
-    /// A device without a channel — a runtime name not yet resolved, a build that carries none — reports nothing: a row for it would mislead.
+    // A device without a channel reports nothing, since a row for it would mislead.
     private func buildDeviceReport() -> DeviceReport? {
         let channel = channel()
         guard let channelId = channel.id else { return nil }
@@ -1065,7 +989,7 @@ public actor Core {
     }
 }
 
-/// A count the core raises on its actor and a readiness signal reads where it is reported, before it waits for the actor.
+// A readiness signal reads the count before it waits for the actor, so it lives outside the actor.
 final class BundleLoadCount: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
@@ -1083,7 +1007,6 @@ final class BundleLoadCount: @unchecked Sendable {
     }
 }
 
-/// The start's answer handed from the core's task to the host's waiting thread.
 private final class StartAnswer: @unchecked Sendable {
     private let semaphore = DispatchSemaphore(value: 0)
     private let lock = NSLock()
@@ -1096,7 +1019,7 @@ private final class StartAnswer: @unchecked Sendable {
         semaphore.signal()
     }
 
-    /// The answer, `nil` when none came within the timeout.
+    // Returns `nil` when no answer came within the timeout.
     func wait(timeout: TimeInterval) -> String?? {
         guard semaphore.wait(timeout: .now() + timeout) == .success else { return nil }
         lock.lock()

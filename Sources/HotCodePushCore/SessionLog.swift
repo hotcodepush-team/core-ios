@@ -1,7 +1,7 @@
 import Foundation
 
-/// One line of this session's log: when, the code from the catalog, and the sentence behind it. The log lives in memory
-/// behind the debug screen, never on disk and never on the wire.
+/// One line of the session log: the time, a catalog code and a sentence.
+/// The log lives in memory behind the debug screen, never on disk and never on the wire.
 public struct LogEntry: Equatable {
     public static let capacity = 200
 
@@ -9,13 +9,12 @@ public struct LogEntry: Equatable {
     public let code: String
     public let message: String
 
-    /// A cycle's result: the status, the reason and the condition as the code, the trigger and the release in the sentence.
     static func ofCycle(_ result: SyncResult, trigger: SyncTrigger, at: Date) -> LogEntry {
         let code = [result.status.rawValue, result.reason, result.condition?.rawValue].compactMap { $0 }.joined(separator: " ")
         return LogEntry(at: at, code: code, message: "\(trigger.rawValue): \(resolveCycleSentence(result))")
     }
 
-    /// An outcome event as it enters the outbox; a check event is the cycle's line already.
+    // A check event is logged by its cycle already.
     static func ofDeviceEvent(_ event: DeviceEvent, at: Date) -> LogEntry? {
         switch event.type {
         case "downloaded":
@@ -33,7 +32,6 @@ public struct LogEntry: Equatable {
         }
     }
 
-    /// A batch's answer: acknowledged, refused and its events dropped, or failed and its events kept for the next sync.
     static func ofBatch(_ answer: BatchAnswer, eventCount: Int, at: Date) -> LogEntry {
         switch answer {
         case .acknowledged:

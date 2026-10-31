@@ -87,7 +87,6 @@ final class PackTests: XCTestCase {
         XCTAssertEqual(try inflate(body, maximumBytes: content.count), content)
     }
 
-    /// The content the inflation writes, read back from its file.
     private func inflate(_ data: Data, maximumBytes: Int) throws -> Data {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("hotcodepush-tests-\(UUID().uuidString).inflated")
         defer { try? FileManager.default.removeItem(at: file) }

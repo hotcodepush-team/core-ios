@@ -6,8 +6,8 @@ public struct ChannelIndex: Codable, Equatable {
     public static let platforms = ["android", "ios"]
 
     public let schema: Int
-    /// What the never-backwards rule compares, the rebuild's time in milliseconds: past 32 bits, so it relies on `Int` being 64 bits,
-    /// as it is on every platform the package builds for.
+    /// The rebuild time in milliseconds, which the never-backwards rule compares.
+    /// It needs more than 32 bits, so it relies on `Int` being 64 bits on every target.
     public let sequence: Int
     public let appId: String
     public let channelId: String
@@ -33,7 +33,7 @@ public struct ChannelIndex: Codable, Equatable {
         self.releases = releases
     }
 
-    /// Every field of the format is present, a nullable one as `null`; another schema major or platform fails the whole index.
+    /// Requires every field, a nullable one as `null`; another schema major or platform fails the whole index.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schema = try container.decode(Int.self, forKey: .schema)
@@ -221,7 +221,7 @@ public struct ChannelsIndex: Codable, Equatable {
         self.channels = channels
     }
 
-    /// Another schema major fails the whole index, as the channel's index does.
+    /// Another schema major fails the whole index.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schema = try container.decode(Int.self, forKey: .schema)
@@ -249,9 +249,8 @@ public struct Signature: Codable, Equatable {
     }
 }
 
-/// The document at `/apps/{appId}/bundles/{bundleId}/manifest.json`: the manifest as the signed string, its signature, the
-/// reserved encryption slot and, unsigned beside them, the server's facts — the bundle's id and creation time, and the pack
-/// and the deltas as stored. An envelope stored while bundles carried `patches` still parses; the key is not read.
+/// The document at `/apps/{appId}/bundles/{bundleId}/manifest.json`: the signed manifest string, its signature and the unsigned server facts.
+/// An envelope stored while bundles carried `patches` still parses; the key is not read.
 public struct ManifestEnvelope: Codable, Equatable {
     public struct Pack: Codable, Equatable {
         public let url: String
@@ -337,9 +336,8 @@ public struct ManifestEnvelope: Codable, Equatable {
     }
 }
 
-/// The bundle manifest, the content the CLI knows before the upload and signs as canonical JSON: the files with their hashes
-/// and sizes, the platforms, the bundle version, the fingerprint and the signing key's id. A manifest stored while bundles
-/// carried `patches` still parses; the key is not read.
+/// The bundle manifest the CLI signs as canonical JSON: the files with hashes and sizes, the platforms, the version and the key id.
+/// A manifest stored while bundles carried `patches` still parses; the key is not read.
 public struct BundleManifest: Codable, Equatable {
     public struct File: Codable, Equatable {
         public let path: String
@@ -401,33 +399,28 @@ public struct BundleManifest: Codable, Equatable {
         try container.encode(platforms, forKey: .platforms)
     }
 
-    /// Whether the manifest names the device's app and lists its platform, signed or not: neither an index pointing at another
-    /// app's bundle nor a cache serving one puts it on the device.
+    /// Whether the manifest names the app of the device and lists its platform, signed or not.
+    /// So neither an index that points at the bundle of another app nor a cache that serves one puts it on the device.
     public func isForDevice(appId: String, platform: String) -> Bool {
         return self.appId == appId && platforms.contains(platform)
     }
 }
 
-/// The embedded bundle's manifest in the resource file, the bundle manifest itself.
+/// The manifest of the embedded bundle in the resource file.
 public typealias EmbeddedBundleManifest = BundleManifest
 
-/// What a value may hold before it names a file, a directory or a host: nothing that climbs out of its directory, nothing off the wire's format.
+// A value is checked before it names a file, a directory or a host, so nothing climbs out of its directory.
 enum WireRule {
-    /// Letters, digits, `_` and `-`, at most 64: a bundle id names a directory.
     case identifier
-    /// 64 lowercase hexadecimal characters: a file hash names a file.
     case sha256
-    /// A UUID in its textual form, hexadecimal in either case in groups of 8, 4, 4, 4 and 12: a channel id names a path on the files host.
     case uuid
-    /// Relative and `/`-separated, with no empty, `.` or `..` segment, no backslash and no NUL.
+    // Relative and `/`-separated, with no empty, `.` or `..` segment, no backslash and no NUL.
     case relativePath
-    /// At least one character.
     case nonEmpty
-    /// At least one character and no control character: the text a device reports, which the server stores as sent.
+    // The text a device reports, which the server stores as sent.
     case printable
-    /// An absolute `http` or `https` URL with a host: `javascript:`, `file:`, `data:` and every other scheme are refused.
     case url
-    /// The scheme, a colon and the base64 of the signature.
+    // The scheme, a colon and the base64 of the signature.
     case signatureValue
 
     private static let urlSchemes: Set = ["http", "https"]
@@ -460,12 +453,12 @@ enum WireRule {
         }
     }
 
-    /// Unicode's `Cc`: the C0 controls, DEL and the C1 controls.
+    // Unicode's `Cc` category: the C0 controls, DEL and the C1 controls.
     static func isControlCharacter(_ scalar: Unicode.Scalar) -> Bool {
         return scalar.properties.generalCategory == .control
     }
 
-    /// The segments are split on the `/` scalar, never on characters: a slash followed by a combining mark is still a separator, so `..` cannot hide behind one.
+    // Split on the `/` scalar, never on characters: a slash followed by a combining mark is still a separator, so `..` cannot hide behind one.
     private static func isRelativePath(_ value: String) -> Bool {
         let scalars = value.unicodeScalars
         guard !scalars.contains("\\"), !scalars.contains("\0") else { return false }
@@ -488,7 +481,6 @@ enum WireRule {
 }
 
 extension KeyedDecodingContainer {
-    /// A string the rule accepts; anything else fails the decode before it can name a file, a directory or a host.
     func decode(_ rule: WireRule, forKey key: Key) throws -> String {
         let value = try decode(String.self, forKey: key)
         guard rule.accepts(value) else {
@@ -497,7 +489,6 @@ extension KeyedDecodingContainer {
         return value
     }
 
-    /// An optional string the rule accepts when it is there, `null` or absent when it is not.
     func decodeIfPresent(_ rule: WireRule, forKey key: Key) throws -> String? {
         guard let value = try decodeIfPresent(String.self, forKey: key) else { return nil }
         guard rule.accepts(value) else {
@@ -506,7 +497,7 @@ extension KeyedDecodingContainer {
         return value
     }
 
-    /// A key that must be present, `null` when it holds nothing: the wire carries every field, so an absent one is a broken document, never an empty value.
+    // The wire carries every field, so an absent key is a broken document, never an empty value.
     func decodeNullable<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? {
         guard contains(key) else {
             throw DecodingError.keyNotFound(key, DecodingError.Context(codingPath: codingPath, debugDescription: "\(key.stringValue) is absent; the wire carries it as null when there is none"))
@@ -522,7 +513,6 @@ extension KeyedDecodingContainer {
         return value
     }
 
-    /// An integer within its bounds; a fraction, a string or a number outside them fails the decode.
     func decodeInt(forKey key: Key, minimum: Int, maximum: Int = Int.max) throws -> Int {
         let value = try decode(Int.self, forKey: key)
         guard (minimum...maximum).contains(value) else {
@@ -531,7 +521,7 @@ extension KeyedDecodingContainer {
         return value
     }
 
-    /// The platforms a bundle serves, each a non-empty name; a reader keeps a platform it does not know.
+    // A reader keeps a platform it does not know.
     func decodePlatforms(forKey key: Key) throws -> [String] {
         let platforms = try decode([String].self, forKey: key)
         guard platforms.allSatisfy({ !$0.isEmpty }) else {

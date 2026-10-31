@@ -6,7 +6,7 @@ public final class FileStore {
         case hashMismatch(expected: String, actual: String)
     }
 
-    /// Where every SDK keeps its store: `hotcodepush` in the app's Application Support, under which its loader may lay its bundles out too.
+    /// `hotcodepush` in Application Support, where every SDK keeps its store; its loader may lay bundles out there too.
     public static let defaultRootDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.appendingPathComponent("hotcodepush", isDirectory: true)
 
     public let rootDirectory: URL
@@ -35,8 +35,8 @@ public final class FileStore {
         try content.write(to: fileURL(sha256: sha256), options: .atomic)
     }
 
-    /// Verifies the file at `source` against its hash, read in chunks, then moves it into the store: a large file is never read
-    /// whole. A file that exists is the file, and the source goes.
+    /// Verifies the file at `source` against its hash in chunks, then moves it into the store.
+    /// A file that exists already is kept, and the source is removed.
     public func writeFile(at source: URL, sha256: String) throws {
         let actual = try Hashing.sha256Hex(fileAt: source)
         guard actual == sha256 else { throw Failure.hashMismatch(expected: sha256, actual: actual) }
@@ -64,7 +64,7 @@ public final class FileStore {
         try Json.encoder.encode(manifest).write(to: url, options: .atomic)
     }
 
-    /// Creates a directory inside the store; the store stays out of device backups, since everything in it downloads again.
+    // The store stays out of device backups, since everything in it downloads again.
     private func createDirectory(_ directory: URL) throws {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         try BackupExclusion.exclude(rootDirectory)
@@ -79,8 +79,8 @@ public final class FileStore {
         try? fileManager.removeItem(at: bundlesDirectory.appendingPathComponent(bundleId, isDirectory: true))
     }
 
-    /// Every stored file no kept bundle lists: the cleanup after a start, no setting. The other bundles go first, through
-    /// `deleteBundle(bundleId:)`.
+    /// Deletes every stored file no kept bundle lists.
+    /// Delete the other bundles first, through `deleteBundle(bundleId:)`.
     public func deleteUnusedFiles(keepingBundleIds kept: Set<String>) {
         let referenced = Set(kept.compactMap { readManifest(bundleId: $0) }.flatMap { $0.files.map { $0.sha256 } })
         let stored = (try? fileManager.contentsOfDirectory(atPath: filesDirectory.path)) ?? []
@@ -93,7 +93,7 @@ public final class FileStore {
         try? fileManager.removeItem(at: rootDirectory)
     }
 
-    /// The bytes free on the store's volume for a download the user expects, measured on its nearest existing directory; nil where the platform cannot tell.
+    /// The bytes free on the volume of the store, `nil` where the platform cannot tell.
     public func availableBytes() -> Int? {
         let directory = sequence(first: rootDirectory) { $0.deletingLastPathComponent() }.first { fileManager.fileExists(atPath: $0.path) }
         let values = try? directory?.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
@@ -113,8 +113,7 @@ public protocol EmbeddedBundle {
     func copyFile(sha256: String, to destination: URL) throws
 }
 
-/// The files compiled into the binary, by path under the root directory the framework ships them in, addressed by the embedded
-/// manifest's hashes; none in a build without a manifest.
+/// The files compiled into the binary, addressed by the hashes of the embedded manifest; none in a build without a manifest.
 public final class AppBundleEmbeddedBundle: EmbeddedBundle {
     private let pathsBySha256: [String: String]
     private let rootDirectory: URL
@@ -165,7 +164,6 @@ public enum BundleProjection {
     }
 }
 
-/// Keeps a directory and everything in it out of iCloud and computer backups and device-to-device transfers.
 enum BackupExclusion {
     static func exclude(_ directory: URL) throws {
         var values = URLResourceValues()

@@ -32,15 +32,15 @@ public struct CachedIndex: Codable, Equatable {
     public let body: ChannelIndex
 }
 
-/// The downloaded release waiting to be applied, and the moment the cycle that downloaded it chose: the start and the resume read
-/// it here, never in the configuration, so a per-call strategy holds until the release is applied.
+/// A downloaded release waiting to apply, with the apply moment the cycle chose.
+/// The start and the resume read the moment here, never the configuration, so a per-call strategy holds until the release applies.
 public struct NextRelease: Codable, Equatable {
     public let release: Release
     public let applyStrategy: ApplyStrategy
 }
 
-/// The SDK's keys, `hotcodepush.<name>` each: three identity keys kept for the install's life,
-/// the rest a cache under `stateVersion` that is dropped and rebuilt when unreadable.
+/// The SDK's keys, each `hotcodepush.<name>`.
+/// Three identity keys last for the life of the install; the rest is a cache under `stateVersion`, dropped and rebuilt when unreadable.
 public final class StateStore {
     public static let stateVersion = 5
     static let prefix = "hotcodepush."
@@ -53,8 +53,6 @@ public final class StateStore {
             deleteCacheKeys()
         }
     }
-
-    // MARK: Identity
 
     public var deviceId: String {
         if let id = string("deviceId") { return id }
@@ -72,8 +70,6 @@ public final class StateStore {
         get { return read("channel") }
         set { write("channel", newValue) }
     }
-
-    // MARK: Cache
 
     public var currentRelease: Release? {
         get { return read("currentRelease") }
@@ -136,7 +132,7 @@ public final class StateStore {
         set { write("lastRollback", newValue) }
     }
 
-    /// The `updateRolledBack` event the app has not come up after yet: announced at every start until it does.
+    /// The `updateRolledBack` event, announced at every start until the app is up after it.
     public var pendingRollbackEvent: UpdateRolledBackEvent? {
         get { return read("pendingRollbackEvent") }
         set { write("pendingRollbackEvent", newValue) }
@@ -154,8 +150,6 @@ public final class StateStore {
         }
         store.set(StateStore.stateVersion, forKey: StateStore.prefix + "stateVersion")
     }
-
-    // MARK: Plumbing
 
     private func read<T: Decodable>(_ key: String) -> T? {
         guard let raw = string(key) else { return nil }

@@ -17,7 +17,7 @@ public final class DebugScreenViewController: UITableViewController {
         nil
     }
 
-    /// The screen inside a navigation controller, modally over the presenter.
+    /// Presents the screen modally inside a navigation controller.
     public static func present(core: Core, from presenter: UIViewController) {
         let navigation = UINavigationController(rootViewController: DebugScreenViewController(core: core))
         presenter.present(navigation, animated: true)
@@ -61,8 +61,6 @@ public final class DebugScreenViewController: UITableViewController {
     @objc private func dismissScreen() {
         dismiss(animated: true)
     }
-
-    // MARK: The table
 
     override public func numberOfSections(in tableView: UITableView) -> Int {
         return sections.count

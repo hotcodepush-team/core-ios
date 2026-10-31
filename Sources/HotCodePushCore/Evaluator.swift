@@ -38,24 +38,26 @@ public struct ReleaseVerdict: Equatable {
     public let condition: ConditionType?
 }
 
-/// The outcome for the device. On `skipped` with `release_revoked`, the release is the one the device resolves to —
-/// `nil` for the embedded bundle; on every other `skipped` it is the newest release the device will not take.
+/// The outcome for the device.
+/// On `skipped` with `release_revoked` the release is the one the device falls back to, `nil` for the embedded bundle.
+/// On any other `skipped` it is the newest release the device will not take.
 public enum Evaluation: Equatable {
     case upToDate(IndexRelease?)
     case available(IndexRelease, isMandatory: Bool)
     case skipped(IndexRelease?, reason: SkippedReason, condition: ConditionType?)
 }
 
-/// The outcome with the verdicts behind it, newest release first; an index the device does not evaluate, a capped one, leaves them empty.
+/// The outcome with the verdicts behind it, newest release first.
+/// A capped index is not evaluated, so its verdicts are empty.
 public struct IndexEvaluation: Equatable {
     public let outcome: Evaluation
     public let verdicts: [ReleaseVerdict]
 }
 
-/// The device protocol's evaluation, the same rules as `@hotcodepush/protocol`'s, pinned by its fixture suite.
+/// Evaluates a channel index for the device by the rules of `@hotcodepush/protocol`, pinned by its fixture suite.
 public enum Evaluator {
     private static let embeddedReleaseNumber = 0
-    /// The components a binary version fills before the build: major, minor and patch.
+    // Major, minor and patch come before the build number.
     private static let binaryVersionMinimumComponents = 3
 
     public static func evaluation(of index: ChannelIndex, device: DeviceInfo) -> IndexEvaluation {
@@ -132,8 +134,7 @@ public enum Evaluator {
         }
     }
 
-    /// The binary version with the build number after it, when both are numbers: a version of fewer than three components
-    /// reads with zeros, so the build is always at least the fourth component and `1.0` build `57` is `1.0.0.57`.
+    // A short version is padded with zeros, so `1.0` build `57` reads as `1.0.0.57`.
     static func resolveBinaryVersion(_ device: DeviceInfo) -> [Int]? {
         guard let version = VersionRange.parseVersion(device.binaryVersion) else { return nil }
         guard let build = VersionRange.parseVersion(device.binaryBuild), build.count == 1 else { return version }
@@ -147,8 +148,7 @@ public enum Evaluator {
         return reportedAt >= cappedAt
     }
 
-    /// A release is mandatory for the device when it or any release it skips over is, counting only the releases the device could
-    /// take: one a condition, the floor, a revocation, an earlier failure or the rollout keeps from it never makes the move mandatory.
+    // Only releases the device could take count, so a release it is kept from never makes the move mandatory.
     static func isMandatoryTransitively(_ target: IndexRelease, currentNumber: Int, eligibleVerdicts: [ReleaseVerdict]) -> Bool {
         return eligibleVerdicts.contains { $0.release.isMandatory && $0.release.number > currentNumber && $0.release.number <= target.number }
     }
