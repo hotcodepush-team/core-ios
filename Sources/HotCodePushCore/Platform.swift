@@ -40,8 +40,12 @@ extension DeviceFacts {
 }
 
 extension Core {
-    /// Follows the app between background and foreground for the lifetime of the core. Call it once, after creating the core.
+    /// Follows the app between background and foreground for the lifetime of the core; a second call does nothing.
     public nonisolated func observeAppLifecycle() {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        if isObservingAppLifecycle { return }
+        isObservingAppLifecycle = true
         let center = NotificationCenter.default
         _ = center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { [weak self] _ in
             Task { await self?.handleAppPause() }

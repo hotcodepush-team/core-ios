@@ -55,6 +55,8 @@ public actor Core {
     private var backgroundedAt: Date?
     private var resolvedChannelName: (name: String, id: String)?
     private var hasAnnouncedRollback = false
+    nonisolated(unsafe) var isObservingAppLifecycle = false
+    nonisolated let lifecycleLock = NSLock()
     // Answered once as the `previousRelease` of `notifyReady()`.
     private var releaseBeforeSwitch: Release?
     private var logEntries: [LogEntry] = []
