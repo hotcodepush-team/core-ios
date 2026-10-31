@@ -37,7 +37,7 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(try keys(SyncResult.downloaded(release, notes: nil, applyStrategy: .manual)).keys, ["status", "release", "notes", "applyStrategy"])
         XCTAssertEqual(try keys(SyncResult.applied(release, notes: nil)).keys, ["status", "release", "notes"])
         XCTAssertEqual(try keys(SyncResult.skipped(nil, reason: .channelPaused)).keys, ["status", "release", "reason"])
-        XCTAssertEqual(try keys(SyncResult.skipped(release, reason: .deviceIncompatible, condition: .os)).keys, ["status", "release", "reason", "condition"])
+        XCTAssertEqual(try keys(SyncResult.skipped(release, reason: .deviceIncompatible, conditionType: .os)).keys, ["status", "release", "reason", "conditionType"])
         XCTAssertEqual(try keys(SyncResult.failed(nil, reason: .deviceOffline, message: "m")).keys, ["status", "release", "reason", "message"])
         XCTAssertEqual(try keys(NotifyReadyResult(currentRelease: nil, previousRelease: nil, isRolledBack: false, rollbackReason: nil)).keys, ["currentRelease", "previousRelease", "isRolledBack"])
         XCTAssertEqual(try keys(ApplyUpdateResult(status: .nothingToApply, release: nil)).keys, ["status", "release"])

@@ -64,9 +64,8 @@ final class CatalogTests: XCTestCase {
             .applied(releaseId: "r1"),
             .checked(releaseId: "r1", status: .available),
             .confirmed(releaseId: "r1"),
-            .downloaded(releaseId: "r1", bundleId: "b1", downloadSizeBytes: 4096, packKind: .full),
-            .failed(releaseId: "r1", reason: FailedReason.downloadFailed.rawValue),
-            .rolledBack(fromReleaseId: "r1", toReleaseId: nil)
+            .downloaded(releaseId: "r1", downloadSizeBytes: 4096, packKind: .full),
+            .failed(releaseId: "r1", reason: FailedReason.downloadFailed.rawValue)
         ]
         XCTAssertEqual(events.map(\.type), try loadCatalog().deviceEventTypes)
     }

@@ -342,11 +342,11 @@ public actor Core {
             }
             let outcome = await downloadAndApply(target, isMandatory: true, strategy: .immediate, trigger: trigger)
             return outcome.status == .failed ? outcome : .skipped(target.release, reason: .releaseRevoked)
-        case .skipped(let release, let reason, let condition):
+        case .skipped(let release, let reason, let conditionType):
             if let release = release {
-                recordChecked(release, in: index, status: .skipped, reason: reason, condition: condition)
+                recordChecked(release, in: index, status: .skipped, reason: reason, conditionType: conditionType)
             }
-            return .skipped(release?.release, reason: reason, condition: condition)
+            return .skipped(release?.release, reason: reason, conditionType: conditionType)
         }
     }
 
@@ -425,7 +425,7 @@ public actor Core {
             listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes: downloadSizeBytes, progressBytes: progressBytes, releaseId: target.id))
         }
         try BundleProjection.project(outcome.manifest, from: files, embedded: embedded, into: loader.projectionDirectory(bundleId: target.bundleId))
-        enqueueDeviceEvent(.downloaded(releaseId: target.id, bundleId: target.bundleId, downloadSizeBytes: outcome.downloadSizeBytes, packKind: outcome.packKind))
+        enqueueDeviceEvent(.downloaded(releaseId: target.id, downloadSizeBytes: outcome.downloadSizeBytes, packKind: outcome.packKind))
     }
 
     // The apply moment is stored with the release, so the start and the resume read it, never the configuration.
@@ -740,7 +740,7 @@ public actor Core {
         state.pendingRollbackEvent = rollback
         hasAnnouncedRollback = false
         enqueueDeviceEvent(.failed(releaseId: current.id, reason: reason.rawValue, detail: detail))
-        enqueueDeviceEvent(.rolledBack(fromReleaseId: current.id, toReleaseId: fallback?.id))
+        record(LogEntry.ofRollback(rollback, at: clock.now))
         persistServedBundle(of: fallback)
     }
 
@@ -912,7 +912,7 @@ public actor Core {
         return DeviceInfo(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, builtAt: configuration.builtAt, currentRelease: state.currentRelease, deviceId: state.deviceId, failedBundleIds: state.failedBundleIds, fingerprint: configuration.fingerprint, osVersion: device.osVersion, reportedAt: state.reportedAt)
     }
 
-    private func recordChecked(_ release: IndexRelease, in index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = nil, condition: ConditionType? = nil) {
+    private func recordChecked(_ release: IndexRelease, in index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = nil, conditionType: ConditionType? = nil) {
         var checked = state.checkedReleaseIds.filter { id in index.releases.contains { $0.id == id } }
         guard !checked.contains(release.id) else {
             state.checkedReleaseIds = checked
@@ -920,7 +920,7 @@ public actor Core {
         }
         checked.append(release.id)
         state.checkedReleaseIds = checked
-        enqueueDeviceEvent(.checked(releaseId: release.id, status: status, reason: reason, condition: condition))
+        enqueueDeviceEvent(.checked(releaseId: release.id, status: status, reason: reason, conditionType: conditionType))
     }
 
     private func enqueueDeviceEvent(_ event: DeviceEvent) {

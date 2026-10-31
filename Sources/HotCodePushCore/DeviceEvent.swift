@@ -4,33 +4,27 @@ import Foundation
 public struct DeviceEvent: Codable, Equatable {
     public let type: String
     public let releaseId: String?
-    public let bundleId: String?
     public let status: String?
     public let reason: String?
-    public let condition: ConditionType?
+    public let conditionType: ConditionType?
     public let downloadSizeBytes: Int?
     public let packKind: String?
-    public let fromReleaseId: String?
-    public let toReleaseId: String?
     /// The app's `rollback({ reason })` on `app_requested`: printable, at most 256 characters.
     public let detail: String?
 
-    private init(type: String, releaseId: String? = nil, bundleId: String? = nil, status: String? = nil, reason: String? = nil, condition: ConditionType? = nil, downloadSizeBytes: Int? = nil, packKind: String? = nil, fromReleaseId: String? = nil, toReleaseId: String? = nil, detail: String? = nil) {
+    private init(type: String, releaseId: String? = nil, status: String? = nil, reason: String? = nil, conditionType: ConditionType? = nil, downloadSizeBytes: Int? = nil, packKind: String? = nil, detail: String? = nil) {
         self.type = type
         self.releaseId = releaseId
-        self.bundleId = bundleId
         self.status = status
         self.reason = reason
-        self.condition = condition
+        self.conditionType = conditionType
         self.downloadSizeBytes = downloadSizeBytes
         self.packKind = packKind
-        self.fromReleaseId = fromReleaseId
-        self.toReleaseId = toReleaseId
         self.detail = detail
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, releaseId, bundleId, status, reason, condition, downloadSizeBytes, packKind, fromReleaseId, toReleaseId, detail
+        case type, releaseId, status, reason, conditionType, downloadSizeBytes, packKind, detail
     }
 
     /// Writes only the keys the schema names for the event type.
@@ -43,30 +37,26 @@ public struct DeviceEvent: Codable, Equatable {
             try container.encode(releaseId, forKey: .releaseId)
             try container.encode(status, forKey: .status)
             try container.encodeIfPresent(reason, forKey: .reason)
-            try container.encodeIfPresent(condition, forKey: .condition)
+            try container.encodeIfPresent(conditionType, forKey: .conditionType)
         case "downloaded":
             try container.encode(releaseId, forKey: .releaseId)
-            try container.encode(bundleId, forKey: .bundleId)
             try container.encode(downloadSizeBytes, forKey: .downloadSizeBytes)
             try container.encode(packKind, forKey: .packKind)
         case "failed":
             try container.encode(releaseId, forKey: .releaseId)
             try container.encode(reason, forKey: .reason)
             try container.encodeIfPresent(detail, forKey: .detail)
-        case "rolled_back":
-            try container.encode(fromReleaseId, forKey: .fromReleaseId)
-            try container.encode(toReleaseId, forKey: .toReleaseId)
         default:
             try container.encode(releaseId, forKey: .releaseId)
         }
     }
 
-    public static func checked(releaseId: String, status: SyncStatus, reason: SkippedReason? = nil, condition: ConditionType? = nil) -> DeviceEvent {
-        return DeviceEvent(type: "checked", releaseId: releaseId, status: status.rawValue, reason: reason?.rawValue, condition: condition)
+    public static func checked(releaseId: String, status: SyncStatus, reason: SkippedReason? = nil, conditionType: ConditionType? = nil) -> DeviceEvent {
+        return DeviceEvent(type: "checked", releaseId: releaseId, status: status.rawValue, reason: reason?.rawValue, conditionType: conditionType)
     }
 
-    public static func downloaded(releaseId: String, bundleId: String, downloadSizeBytes: Int, packKind: PackKind) -> DeviceEvent {
-        return DeviceEvent(type: "downloaded", releaseId: releaseId, bundleId: bundleId, downloadSizeBytes: downloadSizeBytes, packKind: packKind.rawValue)
+    public static func downloaded(releaseId: String, downloadSizeBytes: Int, packKind: PackKind) -> DeviceEvent {
+        return DeviceEvent(type: "downloaded", releaseId: releaseId, downloadSizeBytes: downloadSizeBytes, packKind: packKind.rawValue)
     }
 
     public static func applied(releaseId: String) -> DeviceEvent {
@@ -79,10 +69,6 @@ public struct DeviceEvent: Codable, Equatable {
 
     public static func failed(releaseId: String, reason: String, detail: String? = nil) -> DeviceEvent {
         return DeviceEvent(type: "failed", releaseId: releaseId, reason: reason, detail: detail)
-    }
-
-    public static func rolledBack(fromReleaseId: String, toReleaseId: String?) -> DeviceEvent {
-        return DeviceEvent(type: "rolled_back", fromReleaseId: fromReleaseId, toReleaseId: toReleaseId)
     }
 }
 

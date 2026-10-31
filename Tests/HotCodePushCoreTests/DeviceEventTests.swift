@@ -2,23 +2,21 @@ import XCTest
 @testable import HotCodePushCore
 
 final class DeviceEventTests: XCTestCase {
-    // The batch of the schema test in `@hotcodepush/protocol`, plus a check that found a release and a rollback to a release.
-    // `DeviceEventsRequestSchema` accepts it as it stands, but refuses it without `toReleaseId` or a nullable report key.
-    // It also refuses a `null` on the optional `reason`, `condition` or `detail`.
+    // The batch of the schema test in `@hotcodepush/protocol`, plus a check that found a release.
+    // `DeviceEventsRequestSchema` accepts it as it stands, but refuses it without a nullable report key.
+    // It also refuses a `null` on the optional `reason`, `conditionType` or `detail`.
     private static let batch = """
     {
       "deviceId": "d1",
       "events": [
-        { "condition": "binary", "reason": "device_incompatible", "releaseId": "r2", "status": "skipped", "type": "checked" },
+        { "conditionType": "binary", "reason": "device_incompatible", "releaseId": "r2", "status": "skipped", "type": "checked" },
         { "releaseId": "r3", "status": "available", "type": "checked" },
-        { "bundleId": "b1", "downloadSizeBytes": 4096, "packKind": "delta", "releaseId": "r1", "type": "downloaded" },
+        { "downloadSizeBytes": 4096, "packKind": "delta", "releaseId": "r1", "type": "downloaded" },
         { "releaseId": "r1", "type": "applied" },
         { "releaseId": "r1", "type": "confirmed" },
         { "reason": "readiness_timed_out", "releaseId": "r1", "type": "failed" },
         { "detail": "checkout crashed on launch", "reason": "app_requested", "releaseId": "r1", "type": "failed" },
-        { "reason": "signature_invalid", "releaseId": "r2", "type": "failed" },
-        { "fromReleaseId": "r2", "toReleaseId": "r1", "type": "rolled_back" },
-        { "fromReleaseId": "r1", "toReleaseId": null, "type": "rolled_back" }
+        { "reason": "signature_invalid", "releaseId": "r2", "type": "failed" }
       ],
       "platform": "ios",
       "report": {
@@ -37,16 +35,14 @@ final class DeviceEventTests: XCTestCase {
     """
 
     private static let events: [DeviceEvent] = [
-        .checked(releaseId: "r2", status: .skipped, reason: .deviceIncompatible, condition: .binary),
+        .checked(releaseId: "r2", status: .skipped, reason: .deviceIncompatible, conditionType: .binary),
         .checked(releaseId: "r3", status: .available),
-        .downloaded(releaseId: "r1", bundleId: "b1", downloadSizeBytes: 4096, packKind: .delta),
+        .downloaded(releaseId: "r1", downloadSizeBytes: 4096, packKind: .delta),
         .applied(releaseId: "r1"),
         .confirmed(releaseId: "r1"),
         .failed(releaseId: "r1", reason: RollbackReason.readinessTimedOut.rawValue),
         .failed(releaseId: "r1", reason: RollbackReason.appRequested.rawValue, detail: "checkout crashed on launch"),
-        .failed(releaseId: "r2", reason: FailedReason.signatureInvalid.rawValue),
-        .rolledBack(fromReleaseId: "r2", toReleaseId: "r1"),
-        .rolledBack(fromReleaseId: "r1", toReleaseId: nil)
+        .failed(releaseId: "r2", reason: FailedReason.signatureInvalid.rawValue)
     ]
 
     private static let report = DeviceReport(attributes: [:], binaryBuild: "57", binaryVersion: "2.4.1", channelId: "c1", channelSource: .config, embeddedBundleId: nil, fingerprint: nil, osVersion: "17.4", releaseId: nil)
@@ -75,12 +71,6 @@ final class DeviceEventTests: XCTestCase {
         let state = StateStore(store: InMemoryStore())
         state.unsentEvents = DeviceEventTests.events
         XCTAssertEqual(state.unsentEvents, DeviceEventTests.events)
-    }
-
-    func testShouldWriteARollbackToTheEmbeddedBundleWithANullRelease() throws {
-        let event = try XCTUnwrap(try jsonObject(DeviceEvent.rolledBack(fromReleaseId: "r1", toReleaseId: nil)) as? [String: Any])
-        XCTAssertEqual(Set(event.keys), ["fromReleaseId", "toReleaseId", "type"])
-        XCTAssertTrue(event["toReleaseId"] is NSNull)
     }
 
     func testShouldLeaveAnOptionalFieldOutWhenItIsEmpty() throws {

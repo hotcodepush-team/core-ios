@@ -12,22 +12,22 @@ public struct ChannelIndex: Codable, Equatable {
     public let appId: String
     public let channelId: String
     public let platform: String
-    public let isPaused: Bool
+    public let pausedAt: Date?
     public let cappedAt: Date?
     public let revokedReleaseIds: [String]
     public let releases: [IndexRelease]
 
     enum CodingKeys: String, CodingKey {
-        case schema, sequence, appId, channelId, platform, isPaused, cappedAt, revokedReleaseIds, releases
+        case schema, sequence, appId, channelId, platform, pausedAt, cappedAt, revokedReleaseIds, releases
     }
 
-    public init(schema: Int = ChannelIndex.schema, sequence: Int, appId: String, channelId: String, platform: String, isPaused: Bool = false, cappedAt: Date? = nil, revokedReleaseIds: [String] = [], releases: [IndexRelease]) {
+    public init(schema: Int = ChannelIndex.schema, sequence: Int, appId: String, channelId: String, platform: String, pausedAt: Date? = nil, cappedAt: Date? = nil, revokedReleaseIds: [String] = [], releases: [IndexRelease]) {
         self.schema = schema
         self.sequence = sequence
         self.appId = appId
         self.channelId = channelId
         self.platform = platform
-        self.isPaused = isPaused
+        self.pausedAt = pausedAt
         self.cappedAt = cappedAt
         self.revokedReleaseIds = revokedReleaseIds
         self.releases = releases
@@ -47,7 +47,7 @@ public struct ChannelIndex: Codable, Equatable {
         guard ChannelIndex.platforms.contains(platform) else {
             throw DecodingError.dataCorruptedError(forKey: .platform, in: container, debugDescription: "Not a platform: \(platform)")
         }
-        isPaused = try container.decode(Bool.self, forKey: .isPaused)
+        pausedAt = try container.decodeNullable(Date.self, forKey: .pausedAt)
         cappedAt = try container.decodeNullable(Date.self, forKey: .cappedAt)
         revokedReleaseIds = try container.decode([String].self, forKey: .revokedReleaseIds)
         for id in revokedReleaseIds where !WireRule.identifier.accepts(id) {
@@ -63,7 +63,7 @@ public struct ChannelIndex: Codable, Equatable {
         try container.encode(appId, forKey: .appId)
         try container.encode(channelId, forKey: .channelId)
         try container.encode(platform, forKey: .platform)
-        try container.encode(isPaused, forKey: .isPaused)
+        try container.encode(pausedAt, forKey: .pausedAt)
         try container.encode(cappedAt, forKey: .cappedAt)
         try container.encode(revokedReleaseIds, forKey: .revokedReleaseIds)
         try container.encode(releases, forKey: .releases)
@@ -76,7 +76,7 @@ public struct IndexRelease: Codable, Equatable {
     public let createdAt: Date
     public let isMandatory: Bool
     public let notes: String?
-    public let rolloutPercentage: Int
+    public let rolloutPercent: Int
     public let conditions: [Condition]
     public let bundleId: String
     public let bundleVersion: String
@@ -85,16 +85,16 @@ public struct IndexRelease: Codable, Equatable {
     public let sizeBytes: Int
 
     enum CodingKeys: String, CodingKey {
-        case id, number, createdAt, isMandatory, notes, rolloutPercentage, conditions, bundleId, bundleVersion, manifestUrl, manifestSha256, sizeBytes
+        case id, number, createdAt, isMandatory, notes, rolloutPercent, conditions, bundleId, bundleVersion, manifestUrl, manifestSha256, sizeBytes
     }
 
-    public init(id: String, number: Int, createdAt: Date, isMandatory: Bool = false, notes: String? = nil, rolloutPercentage: Int = 100, conditions: [Condition] = [], bundleId: String, bundleVersion: String, manifestUrl: String, manifestSha256: String, sizeBytes: Int) {
+    public init(id: String, number: Int, createdAt: Date, isMandatory: Bool = false, notes: String? = nil, rolloutPercent: Int = 100, conditions: [Condition] = [], bundleId: String, bundleVersion: String, manifestUrl: String, manifestSha256: String, sizeBytes: Int) {
         self.id = id
         self.number = number
         self.createdAt = createdAt
         self.isMandatory = isMandatory
         self.notes = notes
-        self.rolloutPercentage = rolloutPercentage
+        self.rolloutPercent = rolloutPercent
         self.conditions = conditions
         self.bundleId = bundleId
         self.bundleVersion = bundleVersion
@@ -110,7 +110,7 @@ public struct IndexRelease: Codable, Equatable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         isMandatory = try container.decode(Bool.self, forKey: .isMandatory)
         notes = try container.decodeNullable(String.self, forKey: .notes)
-        rolloutPercentage = try container.decodeInt(forKey: .rolloutPercentage, minimum: 0, maximum: 100)
+        rolloutPercent = try container.decodeInt(forKey: .rolloutPercent, minimum: 0, maximum: 100)
         conditions = try container.decode([Condition].self, forKey: .conditions)
         bundleId = try container.decode(.identifier, forKey: .bundleId)
         bundleVersion = try container.decode(String.self, forKey: .bundleVersion)
@@ -126,7 +126,7 @@ public struct IndexRelease: Codable, Equatable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(isMandatory, forKey: .isMandatory)
         try container.encode(notes, forKey: .notes)
-        try container.encode(rolloutPercentage, forKey: .rolloutPercentage)
+        try container.encode(rolloutPercent, forKey: .rolloutPercent)
         try container.encode(conditions, forKey: .conditions)
         try container.encode(bundleId, forKey: .bundleId)
         try container.encode(bundleVersion, forKey: .bundleVersion)

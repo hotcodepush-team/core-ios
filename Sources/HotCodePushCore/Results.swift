@@ -49,18 +49,18 @@ public struct SyncResult: Codable, Equatable {
     public let status: SyncStatus
     public let release: Release?
     public let reason: String?
-    public let condition: ConditionType?
+    public let conditionType: ConditionType?
     public let notes: String?
     /// `next_start`, `next_resume` or `manual` on `downloaded`, never `immediate`, which answers `applied`.
     public let applyStrategy: ApplyStrategy?
     public let downloadSizeBytes: Int?
     public let message: String?
 
-    private init(status: SyncStatus, release: Release?, reason: String? = nil, condition: ConditionType? = nil, notes: String? = nil, applyStrategy: ApplyStrategy? = nil, downloadSizeBytes: Int? = nil, message: String? = nil) {
+    private init(status: SyncStatus, release: Release?, reason: String? = nil, conditionType: ConditionType? = nil, notes: String? = nil, applyStrategy: ApplyStrategy? = nil, downloadSizeBytes: Int? = nil, message: String? = nil) {
         self.status = status
         self.release = release
         self.reason = reason
-        self.condition = condition
+        self.conditionType = conditionType
         self.notes = notes
         self.applyStrategy = applyStrategy
         self.downloadSizeBytes = downloadSizeBytes
@@ -85,7 +85,7 @@ public struct SyncResult: Codable, Equatable {
             try container.encode(notes, forKey: .notes)
         case .skipped:
             try container.encode(reason, forKey: .reason)
-            try container.encodeIfPresent(condition, forKey: .condition)
+            try container.encodeIfPresent(conditionType, forKey: .conditionType)
         case .failed:
             try container.encode(reason, forKey: .reason)
             try container.encode(message, forKey: .message)
@@ -108,8 +108,8 @@ public struct SyncResult: Codable, Equatable {
         return SyncResult(status: .applied, release: release, notes: notes)
     }
 
-    public static func skipped(_ release: Release?, reason: SkippedReason, condition: ConditionType? = nil) -> SyncResult {
-        return SyncResult(status: .skipped, release: release, reason: reason.rawValue, condition: condition)
+    public static func skipped(_ release: Release?, reason: SkippedReason, conditionType: ConditionType? = nil) -> SyncResult {
+        return SyncResult(status: .skipped, release: release, reason: reason.rawValue, conditionType: conditionType)
     }
 
     public static func failed(_ release: Release?, reason: FailedReason, message: String) -> SyncResult {

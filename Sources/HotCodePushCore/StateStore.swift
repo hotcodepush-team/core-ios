@@ -42,7 +42,7 @@ public struct NextRelease: Codable, Equatable {
 /// The SDK's keys, each `hotcodepush.<name>`.
 /// Three identity keys last for the life of the install; the rest is a cache under `stateVersion`, dropped and rebuilt when unreadable.
 public final class StateStore {
-    public static let stateVersion = 5
+    public static let stateVersion = 6
     static let prefix = "hotcodepush."
 
     private let store: KeyValueStore

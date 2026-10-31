@@ -35,7 +35,7 @@ public struct ReleaseVerdict: Equatable {
     public let release: IndexRelease
     public let isEligible: Bool
     public let reason: SkippedReason?
-    public let condition: ConditionType?
+    public let conditionType: ConditionType?
 }
 
 /// The outcome for the device.
@@ -44,7 +44,7 @@ public struct ReleaseVerdict: Equatable {
 public enum Evaluation: Equatable {
     case upToDate(IndexRelease?)
     case available(IndexRelease, isMandatory: Bool)
-    case skipped(IndexRelease?, reason: SkippedReason, condition: ConditionType?)
+    case skipped(IndexRelease?, reason: SkippedReason, conditionType: ConditionType?)
 }
 
 /// The outcome with the verdicts behind it, newest release first.
@@ -63,7 +63,7 @@ public enum Evaluator {
     public static func evaluation(of index: ChannelIndex, device: DeviceInfo) -> IndexEvaluation {
         let currentIndexRelease = device.currentRelease.flatMap { current in index.releases.first { $0.id == current.id } }
         if isDeviceBeyondCap(index, device: device) {
-            return IndexEvaluation(outcome: .skipped(nil, reason: .spendingCapReached, condition: nil), verdicts: [])
+            return IndexEvaluation(outcome: .skipped(nil, reason: .spendingCapReached, conditionType: nil), verdicts: [])
         }
         let verdicts = index.releases.sorted { $0.number > $1.number }.map { verdict(for: $0, in: index, device: device) }
         return IndexEvaluation(outcome: outcome(of: verdicts, in: index, device: device, currentIndexRelease: currentIndexRelease), verdicts: verdicts)
@@ -76,42 +76,42 @@ public enum Evaluator {
         let eligibleVerdicts = verdicts.filter(\.isEligible)
         let newerEligible = eligibleVerdicts.first { $0.release.number > currentNumber }
         let olderEligible = eligibleVerdicts.first { $0.release.number < currentNumber }
-        if !index.isPaused, let target = newerEligible?.release {
+        if index.pausedAt == nil, let target = newerEligible?.release {
             return .available(target, isMandatory: isMandatoryTransitively(target, currentNumber: currentNumber, eligibleVerdicts: eligibleVerdicts))
         }
         if isCurrentRevoked {
-            return .skipped(olderEligible?.release, reason: .releaseRevoked, condition: nil)
+            return .skipped(olderEligible?.release, reason: .releaseRevoked, conditionType: nil)
         }
-        if index.isPaused, let newer = newerVerdict {
-            return .skipped(newer.release, reason: .channelPaused, condition: nil)
+        if index.pausedAt != nil, let newer = newerVerdict {
+            return .skipped(newer.release, reason: .channelPaused, conditionType: nil)
         }
         if let newer = newerVerdict, let reason = newer.reason {
-            return .skipped(newer.release, reason: reason, condition: newer.condition)
+            return .skipped(newer.release, reason: reason, conditionType: newer.conditionType)
         }
         return .upToDate(currentIndexRelease)
     }
 
     public static func verdict(for release: IndexRelease, in index: ChannelIndex, device: DeviceInfo) -> ReleaseVerdict {
         if isRevoked(id: release.id, in: index) {
-            return ReleaseVerdict(release: release, isEligible: false, reason: .releaseRevoked, condition: nil)
+            return ReleaseVerdict(release: release, isEligible: false, reason: .releaseRevoked, conditionType: nil)
         }
         if release.createdAt < device.builtAt {
-            return ReleaseVerdict(release: release, isEligible: false, reason: .releaseOlderThanBinary, condition: nil)
+            return ReleaseVerdict(release: release, isEligible: false, reason: .releaseOlderThanBinary, conditionType: nil)
         }
         if device.failedBundleIds.contains(release.bundleId) {
-            return ReleaseVerdict(release: release, isEligible: false, reason: .bundleFailedBefore, condition: nil)
+            return ReleaseVerdict(release: release, isEligible: false, reason: .bundleFailedBefore, conditionType: nil)
         }
         for condition in release.conditions where !isSatisfied(condition, device: device) {
             guard let type = condition.type else {
-                return ReleaseVerdict(release: release, isEligible: false, reason: .conditionUnsupported, condition: nil)
+                return ReleaseVerdict(release: release, isEligible: false, reason: .conditionUnsupported, conditionType: nil)
             }
             let reason: SkippedReason = (type == .attribute || type == .device) ? .deviceNotTargeted : .deviceIncompatible
-            return ReleaseVerdict(release: release, isEligible: false, reason: reason, condition: type)
+            return ReleaseVerdict(release: release, isEligible: false, reason: reason, conditionType: type)
         }
-        if Hashing.rolloutBucket(deviceId: device.deviceId, releaseId: release.id) >= release.rolloutPercentage {
-            return ReleaseVerdict(release: release, isEligible: false, reason: .deviceNotInRollout, condition: nil)
+        if Hashing.rolloutBucket(deviceId: device.deviceId, releaseId: release.id) >= release.rolloutPercent {
+            return ReleaseVerdict(release: release, isEligible: false, reason: .deviceNotInRollout, conditionType: nil)
         }
-        return ReleaseVerdict(release: release, isEligible: true, reason: nil, condition: nil)
+        return ReleaseVerdict(release: release, isEligible: true, reason: nil, conditionType: nil)
     }
 
     /// Whether the device satisfies the condition; an unknown type never does.
