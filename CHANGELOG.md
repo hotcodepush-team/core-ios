@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/hotcodepush-team/core-ios/compare/0.1.0...0.2.0) (2026-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* protocol b485e58, the readers refuse what the protocol refuses, the core owns the metered check, and the names follow the protocol ([#29](https://github.com/hotcodepush-team/core-ios/issues/29))
+* the wire after the contract audit: no rolled_back event, conditionType, pausedAt, rolloutPercent, stateVersion 6 ([#27](https://github.com/hotcodepush-team/core-ios/issues/27))
+
+### Features
+
+* protocol b485e58, the readers refuse what the protocol refuses, the core owns the metered check, and the names follow the protocol ([#29](https://github.com/hotcodepush-team/core-ios/issues/29)) ([b4d3e8e](https://github.com/hotcodepush-team/core-ios/commit/b4d3e8ec54df807e395c8203b4fe84cb361465b9))
+* the wire after the contract audit: no rolled_back event, conditionType, pausedAt, rolloutPercent, stateVersion 6 ([#27](https://github.com/hotcodepush-team/core-ios/issues/27)) ([4bc9d41](https://github.com/hotcodepush-team/core-ios/commit/4bc9d4121749a264f6c563b634e9b0d9dd0646b7))
+
 ## 0.1.0 (2026-10-28)
 
 
