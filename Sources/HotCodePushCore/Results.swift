@@ -117,14 +117,14 @@ public struct SyncResult: Codable, Equatable {
     }
 }
 
-public enum ApplyStatus: String, CaseIterable, Codable {
+public enum ApplyUpdateStatus: String, CaseIterable, Codable {
     case applied
     case nothingToApply = "nothing_to_apply"
 }
 
 /// What `applyUpdate()` answers: the update is the current release and the reload follows, or nothing waits.
 public struct ApplyUpdateResult: Codable, Equatable {
-    public let status: ApplyStatus
+    public let status: ApplyUpdateStatus
     public let release: Release?
 
     public func encode(to encoder: Encoder) throws {
@@ -161,7 +161,7 @@ public struct IndexState: Codable, Equatable {
 }
 
 /// The SDK's state, a snapshot: everything the debug screen shows.
-public struct StateResult: Codable, Equatable {
+public struct GetStateResult: Codable, Equatable {
     public let currentRelease: Release?
     public let nextRelease: Release?
     public let fallbackRelease: Release?
@@ -190,7 +190,7 @@ public enum ChannelSource: String, CaseIterable, Codable {
     case runtime, config
 }
 
-public struct ChannelResult: Codable, Equatable {
+public struct GetChannelResult: Codable, Equatable {
     /// `nil` while no id is known: a build without a channel, or a runtime name no sync has resolved yet.
     public let id: String?
     public let name: String?
@@ -204,7 +204,7 @@ public struct ChannelResult: Codable, Equatable {
     }
 }
 
-public struct DeviceResult: Codable, Equatable {
+public struct GetDeviceResult: Codable, Equatable {
     public let id: String
     public let platform: String
     public let binaryVersion: String
@@ -212,7 +212,7 @@ public struct DeviceResult: Codable, Equatable {
     public let osVersion: String
     public let sdkVersion: String
     public let fingerprint: String?
-    public let channel: ChannelResult
+    public let channel: GetChannelResult
     public let attributes: [String: String]
 
     public func encode(to encoder: Encoder) throws {

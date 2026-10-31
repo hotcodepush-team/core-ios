@@ -20,7 +20,7 @@ final class ContractTests: XCTestCase {
 
     func testShouldCarryEveryDeviceKeyWithNullsForTheEmptyOnes() async throws {
         let harness = Harness(configuration: Fixture.configuration(fingerprint: nil, channelId: nil))
-        let (keys, object) = try keys(await harness.core.deviceResult())
+        let (keys, object) = try keys(await harness.core.getDevice())
         XCTAssertEqual(keys, ["id", "platform", "binaryVersion", "binaryBuild", "osVersion", "sdkVersion", "fingerprint", "channel", "attributes"])
         XCTAssertTrue(object["fingerprint"] is NSNull)
         let channel = try XCTUnwrap(object["channel"] as? [String: Any])

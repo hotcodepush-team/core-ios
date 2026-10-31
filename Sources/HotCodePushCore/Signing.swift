@@ -6,6 +6,18 @@ import Security
 public struct DevicePublicKey: Codable, Equatable {
     public let der: String
     public let keyId: String
+
+    init(der: String, keyId: String) {
+        self.der = der
+        self.keyId = keyId
+    }
+
+    /// Refuses a `der` that is not canonical base64 and an empty `keyId`.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        der = try container.decode(.base64, forKey: .der)
+        keyId = try container.decode(.nonEmpty, forKey: .keyId)
+    }
 }
 
 /// Why a manifest's signature was refused, one case per cause.

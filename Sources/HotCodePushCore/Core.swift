@@ -35,6 +35,7 @@ public actor Core {
     private let scheduler: Scheduler
     private let clock: Clock
     private let applicationState: ApplicationState
+    private let network: NetworkState
 
     private var readyTimer: ScheduledTask?
     private var isReadyTimerPaused = false
@@ -54,6 +55,8 @@ public actor Core {
     private var backgroundedAt: Date?
     private var resolvedChannelName: (name: String, id: String)?
     private var hasAnnouncedRollback = false
+    nonisolated(unsafe) var isObservingAppLifecycle = false
+    nonisolated let lifecycleLock = NSLock()
     // Answered once as the `previousRelease` of `notifyReady()`.
     private var releaseBeforeSwitch: Release?
     private var logEntries: [LogEntry] = []
@@ -62,7 +65,7 @@ public actor Core {
     private var unusedFilesDeletion: Task<Void, Never>?
 
     /// Creates the core. The defaults are the production wiring every SDK on iOS uses; tests replace them.
-    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore = UserDefaultsStore(), files: FileStore = FileStore(rootDirectory: FileStore.defaultRootDirectory), embedded: EmbeddedBundle, http: HttpClient = UrlSessionHttpClient(), loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), applicationState: ApplicationState = SystemApplicationState(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
+    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore = UserDefaultsStore(), files: FileStore = FileStore(rootDirectory: FileStore.defaultRootDirectory), embedded: EmbeddedBundle, http: HttpClient = UrlSessionHttpClient(), loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), applicationState: ApplicationState = SystemApplicationState(), network: NetworkState = NetworkMonitor(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
         self.configuration = configuration
         self.device = device
         self.state = StateStore(store: store)
@@ -75,6 +78,7 @@ public actor Core {
         self.scheduler = scheduler
         self.clock = clock
         self.applicationState = applicationState
+        self.network = network
     }
 
     /// The longest `handleAppStartBlocking` waits for an answer before it serves the embedded bundle.
@@ -88,12 +92,12 @@ public actor Core {
     /// A headless start, for a host that will render no screen, applies no waiting release, arms no readiness gate and loads nothing.
     @discardableResult
     public func handleAppStart(isHeadless: Bool = false) async -> String? {
-        let isInBackground = await MainActor.run { applicationState.isInBackground }
-        return handleAppStart(isHeadless: isHeadless, isInBackground: isInBackground)
+        let isInForeground = await MainActor.run { applicationState.isInForeground }
+        return handleAppStart(isHeadless: isHeadless, isInForeground: isInForeground)
     }
 
-    private func handleAppStart(isHeadless: Bool, isInBackground: Bool) -> String? {
-        if isInBackground {
+    private func handleAppStart(isHeadless: Bool, isInForeground: Bool) -> String? {
+        if !isInForeground {
             backgroundedAt = clock.now
         }
         if state.pendingRollbackEvent == nil {
@@ -134,10 +138,10 @@ public actor Core {
 
     nonisolated func handleAppStartBlocking(isHeadless: Bool = false, timeout: TimeInterval) -> String? {
         let answer = StartAnswer()
-        let isInBackground = Thread.isMainThread ? applicationState.isInBackground : nil
+        let isInForeground = Thread.isMainThread ? applicationState.isInForeground : nil
         Task.detached(priority: .userInitiated) {
-            if let isInBackground = isInBackground {
-                answer.resolve(await self.handleAppStart(isHeadless: isHeadless, isInBackground: isInBackground))
+            if let isInForeground = isInForeground {
+                answer.resolve(await self.handleAppStart(isHeadless: isHeadless, isInForeground: isInForeground))
             } else {
                 answer.resolve(await self.handleAppStart(isHeadless: isHeadless))
             }
@@ -371,7 +375,7 @@ public actor Core {
         switch resolveDownloadStrategy(of: release, stage: stage, options: options) {
         case .manual:
             return .available(release, notes: target.notes, downloadSizeBytes: downloadSizeBytes)
-        case .unmetered where loader.isConnectionMetered():
+        case .unmetered where network.isConnectionMetered():
             return .skipped(release, reason: .connectionMetered)
         case .auto, .unmetered:
             return await downloadAndApply(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
@@ -479,8 +483,8 @@ public actor Core {
         runQueuedRestart()
     }
 
-    public func getState() -> StateResult {
-        return StateResult(
+    public func getState() -> GetStateResult {
+        return GetStateResult(
             currentRelease: state.currentRelease,
             nextRelease: state.nextRelease?.release,
             fallbackRelease: state.fallbackRelease,
@@ -491,11 +495,11 @@ public actor Core {
             reportedAt: state.reportedAt)
     }
 
-    public func channel() -> ChannelResult {
+    public func getChannel() -> GetChannelResult {
         switch state.channel {
-        case .id(let id): return ChannelResult(id: id, name: nil, source: .runtime)
-        case .name(let name): return ChannelResult(id: resolvedChannelName?.name == name ? resolvedChannelName?.id : nil, name: name, source: .runtime)
-        case nil: return ChannelResult(id: configuration.channelId, name: nil, source: .config)
+        case .id(let id): return GetChannelResult(id: id, name: nil, source: .runtime)
+        case .name(let name): return GetChannelResult(id: resolvedChannelName?.name == name ? resolvedChannelName?.id : nil, name: name, source: .runtime)
+        case nil: return GetChannelResult(id: configuration.channelId, name: nil, source: .config)
         }
     }
 
@@ -512,7 +516,7 @@ public actor Core {
     // An id stored by an earlier version or written by hand into the resource file is refused like the app's own.
     // A channel name is checked where the channels index resolves it.
     private func verifyChannelId() throws {
-        if let id = channel().id {
+        if let id = getChannel().id {
             try verifyChannelId(id)
         }
     }
@@ -524,13 +528,13 @@ public actor Core {
         }
     }
 
-    public func deviceResult() -> DeviceResult {
-        return DeviceResult(id: state.deviceId, platform: device.platform, binaryVersion: device.binaryVersion, binaryBuild: device.binaryBuild, osVersion: device.osVersion, sdkVersion: device.sdkVersion, fingerprint: configuration.fingerprint, channel: channel(), attributes: state.attributes)
+    public func getDevice() -> GetDeviceResult {
+        return GetDeviceResult(id: state.deviceId, platform: device.platform, binaryVersion: device.binaryVersion, binaryBuild: device.binaryBuild, osVersion: device.osVersion, sdkVersion: device.sdkVersion, fingerprint: configuration.fingerprint, channel: getChannel(), attributes: state.attributes)
     }
 
     /// Everything the debug screen shows: the device, the configuration, the state and this session's log.
     public func debugSnapshot() -> DebugSnapshot {
-        return DebugSnapshot(takenAt: clock.now, device: deviceResult(), configuration: configuration, isDebugBuild: device.isDebugBuild, state: getState(), log: logEntries)
+        return DebugSnapshot(takenAt: clock.now, device: getDevice(), configuration: configuration, isDebugBuild: device.isDebugBuild, state: getState(), log: logEntries)
     }
 
     public func setAttributes(_ changes: [String: String?]) throws {
@@ -835,7 +839,7 @@ public actor Core {
     }
 
     private func resolveChannelId() async -> ChannelResolution {
-        if let id = channel().id { return .id(id) }
+        if let id = getChannel().id { return .id(id) }
         guard case .name(let name) = state.channel else { return .missing }
         guard let url = URL(string: "\(configuration.filesBaseUrl)/apps/\(configuration.appId)/channels/v1/index.json") else {
             return .invalid("Invalid channels index URL")
@@ -847,9 +851,6 @@ public actor Core {
                 return .invalid("The channels index could not be parsed")
             }
             guard let entry = index.channels.first(where: { $0.name == name }) else { return .unknown }
-            guard WireRule.uuid.accepts(entry.id) else {
-                return .invalid("The channels index names the channel \(name) by an id that is not a UUID")
-            }
             resolvedChannelName = (name, entry.id)
             return .id(entry.id)
         case 404:
@@ -979,7 +980,7 @@ public actor Core {
 
     // A device without a channel reports nothing, since a row for it would mislead.
     private func buildDeviceReport() -> DeviceReport? {
-        let channel = channel()
+        let channel = getChannel()
         guard let channelId = channel.id else { return nil }
         let report = DeviceReport(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, channelId: channelId, channelSource: channel.source, embeddedBundleId: configuration.embeddedBundleId, fingerprint: configuration.fingerprint, osVersion: device.osVersion, releaseId: state.currentRelease?.id)
         if report == state.acknowledgedReport, let reportedAt = state.reportedAt, Iso8601.resolveUtcMonth(of: reportedAt) == Iso8601.resolveUtcMonth(of: clock.now) {

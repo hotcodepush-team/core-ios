@@ -10,7 +10,7 @@ final class DebugReportTests: XCTestCase {
         _ = try await harness.core.sync(trigger: .manual)
         let snapshot = await harness.core.debugSnapshot()
         let text = DebugReport.text(of: snapshot)
-        let device = await harness.core.deviceResult()
+        let device = await harness.core.getDevice()
         XCTAssertTrue(text.contains("Device id: \(device.id)"), text)
         XCTAssertTrue(text.contains("Result: skipped device_incompatible binary"), text)
         XCTAssertTrue(text.contains("Published at: 2025-10-08T05:06:40.123Z"), text)

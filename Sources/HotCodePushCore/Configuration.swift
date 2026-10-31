@@ -77,22 +77,22 @@ public struct Configuration: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         appId = try container.decode(.identifier, forKey: .appId)
         channelId = try container.decodeNullable(.nonEmpty, forKey: .channelId)
-        checkStrategy = try container.decodeIfPresent(CheckStrategy.self, forKey: .checkStrategy) ?? .auto
+        checkStrategy = try container.decodeOption(CheckStrategy.self, forKey: .checkStrategy) ?? .auto
         checkIntervalSeconds = try container.decodeSeconds(forKey: .checkIntervalSeconds, minimum: Configuration.minimumCheckIntervalSeconds, default: 900)
-        downloadStrategy = try container.decodeIfPresent(DownloadStrategy.self, forKey: .downloadStrategy) ?? .auto
-        applyStrategy = try container.decodeIfPresent(ApplyStrategy.self, forKey: .applyStrategy) ?? .nextStart
-        mandatoryApplyStrategy = try container.decodeIfPresent(MandatoryApplyStrategy.self, forKey: .mandatoryApplyStrategy) ?? .immediate
+        downloadStrategy = try container.decodeOption(DownloadStrategy.self, forKey: .downloadStrategy) ?? .auto
+        applyStrategy = try container.decodeOption(ApplyStrategy.self, forKey: .applyStrategy) ?? .nextStart
+        mandatoryApplyStrategy = try container.decodeOption(MandatoryApplyStrategy.self, forKey: .mandatoryApplyStrategy) ?? .immediate
         nextResumeMinimumBackgroundSeconds = try container.decodeSeconds(forKey: .nextResumeMinimumBackgroundSeconds, minimum: 0, default: 300)
-        readySignal = try container.decodeIfPresent(ReadySignal.self, forKey: .readySignal) ?? .render
+        readySignal = try container.decodeOption(ReadySignal.self, forKey: .readySignal) ?? .render
         readyTimeoutSeconds = try container.decodeSeconds(forKey: .readyTimeoutSeconds, minimum: Configuration.minimumReadyTimeoutSeconds, default: 10)
-        isEnabledInDebugBuilds = try container.decodeIfPresent(Bool.self, forKey: .isEnabledInDebugBuilds) ?? true
-        publicKeys = try container.decodeIfPresent([DevicePublicKey].self, forKey: .publicKeys) ?? []
+        isEnabledInDebugBuilds = try container.decodeOption(Bool.self, forKey: .isEnabledInDebugBuilds) ?? true
+        publicKeys = try container.decodeOption([DevicePublicKey].self, forKey: .publicKeys) ?? []
         builtAt = try container.decode(Date.self, forKey: .builtAt)
-        fingerprint = try container.decodeIfPresent(String.self, forKey: .fingerprint)
+        fingerprint = try container.decodeNullable(.nonEmpty, forKey: .fingerprint)
         embeddedBundleManifest = try container.decodeNullable(EmbeddedBundleManifest.self, forKey: .embeddedBundleManifest)
-        embeddedBundleId = try container.decodeIfPresent(.identifier, forKey: .embeddedBundleId)
-        filesBaseUrl = try container.decodeIfPresent(.url, forKey: .filesBaseUrl) ?? Configuration.defaultFilesBaseUrl
-        updatesBaseUrl = try container.decodeIfPresent(.url, forKey: .updatesBaseUrl) ?? Configuration.defaultUpdatesBaseUrl
+        embeddedBundleId = try container.decodeNullable(.identifier, forKey: .embeddedBundleId)
+        filesBaseUrl = try container.decodeOption(.url, forKey: .filesBaseUrl) ?? Configuration.defaultFilesBaseUrl
+        updatesBaseUrl = try container.decodeOption(.url, forKey: .updatesBaseUrl) ?? Configuration.defaultUpdatesBaseUrl
     }
 
     /// Whether a manifest, pack or delta URL lies under the files or the updates host.
@@ -157,7 +157,7 @@ public struct DownloadUpdateOptions: Equatable {
 private extension KeyedDecodingContainer {
     // A value below its floor refuses the file and is never clamped.
     func decodeSeconds(forKey key: Key, minimum: Double, default defaultSeconds: Double) throws -> Double {
-        let seconds = try decodeIfPresent(Double.self, forKey: key) ?? defaultSeconds
+        let seconds = try decodeOption(Double.self, forKey: key) ?? defaultSeconds
         guard seconds >= minimum else {
             throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "\(key.stringValue) is below its floor of \(minimum) seconds: \(seconds)")
         }

@@ -140,7 +140,7 @@ public struct DeviceEventsRequest: Encodable {
     }
 
     var isReadable: Bool {
-        return [deviceId, sdkVersion].allSatisfy(WireRule.printable.accepts) && ChannelIndex.platforms.contains(platform)
+        return WireRule.uuid.accepts(deviceId) && WireRule.printable.accepts(sdkVersion) && ChannelIndex.platforms.contains(platform)
             && events.count <= DeviceEventsRequest.maximumEventCount && (report?.isReadable ?? true)
     }
 }

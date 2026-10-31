@@ -49,10 +49,7 @@ public struct ChannelIndex: Codable, Equatable {
         }
         pausedAt = try container.decodeNullable(Date.self, forKey: .pausedAt)
         cappedAt = try container.decodeNullable(Date.self, forKey: .cappedAt)
-        revokedReleaseIds = try container.decode([String].self, forKey: .revokedReleaseIds)
-        for id in revokedReleaseIds where !WireRule.identifier.accepts(id) {
-            throw DecodingError.dataCorruptedError(forKey: .revokedReleaseIds, in: container, debugDescription: "Not a valid release id: \(id)")
-        }
+        revokedReleaseIds = try container.decodeEach(.identifier, forKey: .revokedReleaseIds)
         releases = try container.decode([IndexRelease].self, forKey: .releases)
     }
 
@@ -164,7 +161,7 @@ public enum Condition: Codable, Equatable {
         case "binary": self = .binary(range: try container.decode(.nonEmpty, forKey: .range))
         case "fingerprint": self = .fingerprint(fingerprint: try container.decode(.nonEmpty, forKey: .fingerprint))
         case "os": self = .os(range: try container.decode(.nonEmpty, forKey: .range))
-        case "device": self = .device(hashedIds: try container.decode([String].self, forKey: .hashedIds))
+        case "device": self = .device(hashedIds: try container.decodeEach(.sha256, forKey: .hashedIds))
         case "attribute": self = .attribute(key: try container.decode(.nonEmpty, forKey: .key), valueSha256: try container.decode(.sha256, forKey: .valueSha256))
         default: self = .unknown(type: type)
         }
@@ -211,6 +208,17 @@ public struct ChannelsIndex: Codable, Equatable {
     public struct Entry: Codable, Equatable {
         public let id: String
         public let name: String
+
+        init(id: String, name: String) {
+            self.id = id
+            self.name = name
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(.uuid, forKey: .id)
+            name = try container.decode(.nonEmpty, forKey: .name)
+        }
     }
 
     public let schema: Int
@@ -221,7 +229,7 @@ public struct ChannelsIndex: Codable, Equatable {
         self.channels = channels
     }
 
-    /// Another schema major fails the whole index.
+    /// Another schema major or one entry that breaks the shape, an id that is not a UUID included, fails the whole index.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schema = try container.decode(Int.self, forKey: .schema)
@@ -422,13 +430,16 @@ enum WireRule {
     case url
     // The scheme, a colon and the base64 of the signature.
     case signatureValue
+    // Canonical base64: padded, and the bits the padding leaves over are zero, so one value has one spelling.
+    case base64
 
     private static let urlSchemes: Set = ["http", "https"]
     private static let identifierScalars = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-".unicodeScalars)
     private static let sha256Scalars = Set("0123456789abcdef".unicodeScalars)
     private static let hexadecimalScalars = Set("0123456789abcdefABCDEF".unicodeScalars)
     private static let schemeScalars = Set("abcdefghijklmnopqrstuvwxyz0123456789_-".unicodeScalars)
-    private static let base64Scalars = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".unicodeScalars)
+    private static let base64Alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".unicodeScalars)
+    private static let base64Scalars = Set(base64Alphabet)
 
     func accepts(_ value: String) -> Bool {
         switch self {
@@ -450,6 +461,8 @@ enum WireRule {
             return WireRule.urlSchemes.contains(scheme) && !host.isEmpty
         case .signatureValue:
             return WireRule.isSignatureValue(value)
+        case .base64:
+            return WireRule.isCanonicalBase64(value)
         }
     }
 
@@ -466,6 +479,20 @@ enum WireRule {
             let segmentScalars = Array(segment)
             return !segmentScalars.isEmpty && segmentScalars != ["."] && segmentScalars != [".", "."]
         }
+    }
+
+    private static func isCanonicalBase64(_ value: String) -> Bool {
+        let scalars = Array(value.unicodeScalars)
+        let padding = scalars.reversed().prefix { $0 == "=" }.count
+        let body = scalars.dropLast(padding)
+        guard !scalars.isEmpty, scalars.count % 4 == 0, padding <= 2, body.allSatisfy(WireRule.base64Scalars.contains) else { return false }
+        guard padding > 0, let last = body.last else { return true }
+        let unusedBitMask: UInt8 = padding == 2 ? 0b1111 : 0b11
+        return base64Digit(last) & unusedBitMask == 0
+    }
+
+    private static func base64Digit(_ scalar: Unicode.Scalar) -> UInt8 {
+        return UInt8(base64Alphabet.firstIndex(of: scalar) ?? 0)
     }
 
     private static func isSignatureValue(_ value: String) -> Bool {
@@ -489,12 +516,23 @@ extension KeyedDecodingContainer {
         return value
     }
 
-    func decodeIfPresent(_ rule: WireRule, forKey key: Key) throws -> String? {
-        guard let value = try decodeIfPresent(String.self, forKey: key) else { return nil }
-        guard rule.accepts(value) else {
-            throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Not a valid \(key.stringValue): \(value)")
+    func decodeEach(_ rule: WireRule, forKey key: Key) throws -> [String] {
+        let values = try decode([String].self, forKey: key)
+        for value in values where !rule.accepts(value) {
+            throw DecodingError.dataCorruptedError(forKey: key, in: self, debugDescription: "Not a valid entry of \(key.stringValue): \(value)")
         }
-        return value
+        return values
+    }
+
+    // An option the file leaves out takes its default; a `null` is a wrong type, never the default.
+    func decodeOption<T: Decodable>(_ type: T.Type, forKey key: Key) throws -> T? {
+        guard contains(key) else { return nil }
+        return try decode(type, forKey: key)
+    }
+
+    func decodeOption(_ rule: WireRule, forKey key: Key) throws -> String? {
+        guard contains(key) else { return nil }
+        return try decode(rule, forKey: key)
     }
 
     // The wire carries every field, so an absent key is a broken document, never an empty value.

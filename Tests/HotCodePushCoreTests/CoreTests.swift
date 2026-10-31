@@ -821,7 +821,7 @@ final class CoreTests: XCTestCase {
         let configuration = Fixture.configuration(downloadStrategy: .unmetered)
         let harness = Harness()
         try await startOnAConfirmedRelease(harness, configuration: configuration)
-        harness.loader.isMetered = true
+        harness.network.isMetered = true
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         let embedded = Fixture.release(number: 2, bundleId: "embedded", content: Fixture.embeddedIndexHtml)
         harness.publish([v2, embedded], sequence: 2, etag: "\"e2\"")
@@ -1245,7 +1245,7 @@ final class CoreTests: XCTestCase {
 
     func testShouldSkipOnAMeteredConnectionUnderTheUnmeteredStrategy() async throws {
         let harness = Harness()
-        harness.loader.isMetered = true
+        harness.network.isMetered = true
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1260,8 +1260,8 @@ final class CoreTests: XCTestCase {
         try await harness.core.setChannel(.name("staging"))
         let result = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result, .upToDate(nil))
-        let channel = await harness.core.channel()
-        XCTAssertEqual(channel, ChannelResult(id: Fixture.stagingChannelId, name: "staging", source: .runtime))
+        let channel = await harness.core.getChannel()
+        XCTAssertEqual(channel, GetChannelResult(id: Fixture.stagingChannelId, name: "staging", source: .runtime))
         try await harness.core.setChannel(.name("nowhere"))
         let unknown = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(unknown.reason, FailedReason.channelUnknown.rawValue)
@@ -1272,11 +1272,11 @@ final class CoreTests: XCTestCase {
         harness.http.stubJson(Fixture.channelsIndexUrl(), ChannelsIndex(channels: [.init(id: Fixture.stagingChannelId, name: "staging")]))
         harness.http.stubJson("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/channels/\(Fixture.stagingChannelId)/ios/v1/index.json", ChannelIndex(sequence: 1, appId: Fixture.appId, channelId: Fixture.stagingChannelId, platform: "ios", releases: []))
         try await harness.core.setChannel(.name("staging"))
-        let unresolved = await harness.core.channel()
-        XCTAssertEqual(unresolved, ChannelResult(id: nil, name: "staging", source: .runtime))
+        let unresolved = await harness.core.getChannel()
+        XCTAssertEqual(unresolved, GetChannelResult(id: nil, name: "staging", source: .runtime))
         _ = try await harness.core.sync(trigger: .manual)
-        let resolved = await harness.core.channel()
-        XCTAssertEqual(resolved, ChannelResult(id: Fixture.stagingChannelId, name: "staging", source: .runtime))
+        let resolved = await harness.core.getChannel()
+        XCTAssertEqual(resolved, GetChannelResult(id: Fixture.stagingChannelId, name: "staging", source: .runtime))
     }
 
     func testShouldRefuseAChannelIdThatIsNotAUuidAndRequestOnlyTheConfiguredChannel() async throws {
@@ -1286,8 +1286,8 @@ final class CoreTests: XCTestCase {
             try await harness.core.setChannel(.id("../../a0000000-0000-4000-8000-0000000000ff/channels/c1/ios/v1/index.json?"))
             XCTFail("expected a plain error")
         } catch is PlainError {}
-        let channel = await harness.core.channel()
-        XCTAssertEqual(channel, ChannelResult(id: Fixture.channelId, name: nil, source: .config))
+        let channel = await harness.core.getChannel()
+        XCTAssertEqual(channel, GetChannelResult(id: Fixture.channelId, name: nil, source: .config))
         _ = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(harness.http.requests.map { $0.url.absoluteString }, [Fixture.indexUrl()])
     }
@@ -1337,9 +1337,9 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(otherPlatform.reason, FailedReason.indexInvalid.rawValue)
     }
 
-    func testShouldFailWithInvalidIndexWhenTheChannelsIndexNamesTheChannelByAnIdThatIsNotAUuid() async throws {
+    func testShouldFailWithInvalidIndexWhenAnotherChannelOfTheChannelsIndexHasAnIdThatIsNotAUuid() async throws {
         let harness = Harness()
-        harness.http.stubJson(Fixture.channelsIndexUrl(), ChannelsIndex(channels: [.init(id: "../evil", name: "staging")]))
+        harness.http.stubJson(Fixture.channelsIndexUrl(), ChannelsIndex(channels: [.init(id: Fixture.stagingChannelId, name: "staging"), .init(id: "../evil", name: "beta")]))
         try await harness.core.setChannel(.name("staging"))
         let result = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result.reason, FailedReason.indexInvalid.rawValue)
@@ -1350,7 +1350,7 @@ final class CoreTests: XCTestCase {
         let harness = Harness()
         try await harness.core.setAttributes(["plan": "beta", "userId": "42"])
         try await harness.core.setAttributes(["plan": nil])
-        let device = await harness.core.deviceResult()
+        let device = await harness.core.getDevice()
         XCTAssertEqual(device.attributes, ["userId": "42"])
         XCTAssertEqual(device.channel.source, .config)
         XCTAssertEqual(device.fingerprint, "fp1:abc")
@@ -1369,7 +1369,7 @@ final class CoreTests: XCTestCase {
             try await harness.core.setAttributes(["plan": "beta\u{0085}", "tenant": "acme"])
             XCTFail("expected a plain error")
         } catch is PlainError {}
-        let device = await harness.core.deviceResult()
+        let device = await harness.core.getDevice()
         XCTAssertEqual(device.attributes, ["plan": "beta"])
     }
 
@@ -1678,11 +1678,11 @@ final class CoreTests: XCTestCase {
         _ = try await harness.core.sync(trigger: .manual)
         harness.loader.served = "b2"
         harness.restart()
-        harness.applicationState.isInBackground = true
+        harness.applicationState.isInForeground = false
         let started = await harness.core.handleAppStart()
         XCTAssertEqual(started, "b2")
         XCTAssertTrue(harness.scheduler.tasks.isEmpty)
-        harness.applicationState.isInBackground = false
+        harness.applicationState.isInForeground = true
         await harness.core.handleAppResume()
         XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [10])
     }
@@ -1696,7 +1696,7 @@ final class CoreTests: XCTestCase {
         _ = try await harness.core.sync(trigger: .manual)
         harness.loader.served = "b2"
         harness.restart()
-        harness.applicationState.isInBackground = true
+        harness.applicationState.isInForeground = false
         let started = harness.core.handleAppStartBlocking()
         XCTAssertEqual(started, "b2")
         XCTAssertTrue(harness.scheduler.tasks.isEmpty)
@@ -1781,7 +1781,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(status.failedBundleIds, [])
         XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex("<html>v2</html>")))
         XCTAssertEqual(harness.loader.loaded.last, .some(nil))
-        let device = await harness.core.deviceResult()
+        let device = await harness.core.getDevice()
         XCTAssertEqual(device.attributes, ["plan": "beta"])
     }
 
@@ -1866,7 +1866,7 @@ final class CoreTests: XCTestCase {
 
     func testShouldDownloadOnCallWhateverTheConnectionUnderTheUnmeteredStrategy() async throws {
         let harness = Harness(configuration: Fixture.configuration(downloadStrategy: .unmetered))
-        harness.loader.isMetered = true
+        harness.network.isMetered = true
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()

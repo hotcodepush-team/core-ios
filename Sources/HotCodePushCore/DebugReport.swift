@@ -3,10 +3,10 @@ import Foundation
 /// Everything the debug screen shows, read from the core in one call.
 public struct DebugSnapshot: Equatable {
     public let takenAt: Date
-    public let device: DeviceResult
+    public let device: GetDeviceResult
     public let configuration: Configuration
     public let isDebugBuild: Bool
-    public let state: StateResult
+    public let state: GetStateResult
     public let log: [LogEntry]
 }
 
@@ -123,7 +123,7 @@ public enum DebugReport {
         return DebugSection(title: "Log", rows: rows.isEmpty ? [DebugRow(label: "Entries", value: "none this session")] : rows)
     }
 
-    private static func describeChannelId(_ channel: ChannelResult, configuration: Configuration) -> String {
+    private static func describeChannelId(_ channel: GetChannelResult, configuration: Configuration) -> String {
         if let id = channel.id { return id }
         if channel.source == .runtime { return "unresolved" }
         if configuration.embeddedBundleManifest == nil { return "none: a build without an embedded bundle resolves no channel name" }
