@@ -455,7 +455,7 @@ public actor Core {
     }
 
     /// Drops every downloaded update and the failed list and reloads into the embedded bundle; the device identity stays.
-    /// Before the app is up in this run, the reload waits until it is.
+    /// Before the app is up in this run, the whole call waits until it is, the deletion included.
     public func clearUpdates() {
         restartThroughGate(isAskedByApp: true) { [self] in
             stopReadyTimer()
