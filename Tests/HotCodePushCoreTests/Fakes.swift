@@ -128,7 +128,6 @@ final class FakeLoader: BundleLoader {
     @Locked var persisted: String??
     @Locked var loaded: [String?] = []
     @Locked var served: String?
-    @Locked var isMetered = false
     // Runs inside the next read of the served bundle, like a host slow to answer while the start waits.
     @Locked var whileReadingServedBundle: (() -> Void)?
 
@@ -161,10 +160,6 @@ final class FakeLoader: BundleLoader {
             whileReadingServedBundle()
         }
         return served
-    }
-
-    func isConnectionMetered() -> Bool {
-        return isMetered
     }
 }
 
@@ -213,7 +208,15 @@ final class ManualScheduler: Scheduler {
 }
 
 final class FakeApplicationState: ApplicationState, @unchecked Sendable {
-    @Locked var isInBackground = false
+    @Locked var isInForeground = true
+}
+
+final class FakeNetworkState: NetworkState {
+    @Locked var isMetered = false
+
+    func isConnectionMetered() -> Bool {
+        return isMetered
+    }
 }
 
 final class FixedClock: Clock {
@@ -321,6 +324,7 @@ final class Harness {
     let embedded = InMemoryEmbeddedBundle()
     let clock = FixedClock(now: Fixture.builtAt.addingTimeInterval(3600))
     let applicationState = FakeApplicationState()
+    let network = FakeNetworkState()
     let files: FileStore
     private let device: DeviceFacts
     var core: Core
@@ -331,12 +335,12 @@ final class Harness {
         files = FileStore(rootDirectory: root.appendingPathComponent("store"))
         device = DeviceFacts(platform: "ios", binaryVersion: "2.4.1", binaryBuild: "57", osVersion: "17.4", sdkVersion: "0.0.0", isDebugBuild: isDebugBuild)
         embedded.files[Hashing.sha256Hex(Fixture.embeddedIndexHtml)] = Fixture.embeddedIndexHtml
-        core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, applicationState: applicationState, temporaryDirectory: root.appendingPathComponent("tmp"))
+        core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, applicationState: applicationState, network: network, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
     // A second core over the same store and files is the next start of the app.
     func restart(configuration: Configuration = Fixture.configuration()) {
-        core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, applicationState: applicationState, temporaryDirectory: root.appendingPathComponent("tmp"))
+        core = Core(configuration: configuration, device: device, store: store, files: files, embedded: embedded, http: http, loader: loader, listener: listener, scheduler: scheduler, clock: clock, applicationState: applicationState, network: network, temporaryDirectory: root.appendingPathComponent("tmp"))
     }
 
     func acknowledgeEvents(reportedAt: String = "2023-11-14T23:00:00.000Z") {

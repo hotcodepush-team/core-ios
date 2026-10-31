@@ -432,12 +432,14 @@ final class FixtureTests: XCTestCase {
 
     func testShouldAcceptEveryAcceptedWireRulesFixture() throws {
         try assertAccepted(ChannelIndex.self, in: "wire-rules.json", listed: "acceptedIndexes", holding: "index")
+        try assertAccepted(ChannelsIndex.self, in: "wire-rules.json", listed: "acceptedChannelsIndexes", holding: "channelsIndex")
         try assertAccepted(BundleManifest.self, in: "wire-rules.json", listed: "acceptedManifests", holding: "manifest")
         try assertAccepted(ManifestEnvelope.self, in: "wire-rules.json", listed: "acceptedEnvelopes", holding: "envelope")
     }
 
     func testShouldRefuseEveryRefusedWireRulesFixture() throws {
         try assertRefused(ChannelIndex.self, in: "wire-rules.json", listed: "refusedIndexes", holding: "index")
+        try assertRefused(ChannelsIndex.self, in: "wire-rules.json", listed: "refusedChannelsIndexes", holding: "channelsIndex")
         try assertRefused(BundleManifest.self, in: "wire-rules.json", listed: "refusedManifests", holding: "manifest")
         try assertRefused(ManifestEnvelope.self, in: "wire-rules.json", listed: "refusedEnvelopes", holding: "envelope")
     }

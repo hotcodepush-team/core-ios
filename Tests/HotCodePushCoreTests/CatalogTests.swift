@@ -43,7 +43,7 @@ final class CatalogTests: XCTestCase {
     }
 
     func testShouldCarryTheCatalogsApplyUpdateStatusesInItsOrder() throws {
-        XCTAssertEqual(ApplyStatus.allCases.map(\.rawValue), try loadCatalog().applyUpdateStatuses)
+        XCTAssertEqual(ApplyUpdateStatus.allCases.map(\.rawValue), try loadCatalog().applyUpdateStatuses)
     }
 
     func testShouldCarryTheCatalogsChannelSources() throws {

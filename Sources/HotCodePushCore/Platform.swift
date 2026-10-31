@@ -65,8 +65,6 @@ public protocol BundleLoader: AnyObject {
     func loadServedBundle(bundleId: String?)
     /// The bundle the WebView runs right now, `nil` for the embedded bundle.
     func servedBundleId() -> String?
-    /// Whether the connection is metered or constrained, for the `unmetered` download strategy.
-    func isConnectionMetered() -> Bool
 }
 
 /// Receives the five core events; the start and the end of a cycle fire nothing.
@@ -101,31 +99,36 @@ public struct SystemClock: Clock {
     }
 }
 
-/// Whether the app runs in the background.
+/// Whether the app runs in the foreground.
 /// The start cannot learn it from a notification: a launch straight into the background, for a push or a background fetch, posts none.
 public protocol ApplicationState: Sendable {
     /// Read on the main thread.
-    var isInBackground: Bool { get }
+    var isInForeground: Bool { get }
 }
 
 /// The application state as UIKit reports it; without UIKit the app is in the foreground.
 public struct SystemApplicationState: ApplicationState {
     public init() {}
 
-    public var isInBackground: Bool {
+    public var isInForeground: Bool {
         #if canImport(UIKit)
         // `inactive` is a launch on its way to the foreground, which posts no foreground notification.
         // A scene-based app reads `background` while its first scene connects, and UIKit posts the foreground notification right after.
-        return UIApplication.shared.applicationState == .background
+        return UIApplication.shared.applicationState != .background
         #else
-        return false
+        return true
         #endif
     }
 }
 
+/// Whether the connection is metered, for the `unmetered` download strategy.
+public protocol NetworkState: AnyObject {
+    func isConnectionMetered() -> Bool
+}
+
 /// Whether the connection is metered, as the system path monitor last reported it.
 /// Metered is an expensive path, such as cellular or a personal hotspot, or a constrained one in Low Data Mode.
-public final class NetworkMonitor {
+public final class NetworkMonitor: NetworkState {
     private let lock = NSLock()
     private let monitor = NWPathMonitor()
     private var isMetered = false
