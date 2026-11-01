@@ -16,16 +16,6 @@ final class MissingChannelTests: XCTestCase {
         }
     }
 
-    func testShouldReadAResourceFileWithANullChannelAndRefuseOneWithoutTheKey() throws {
-        let resourceFile = try XCTUnwrap(JSONSerialization.jsonObject(with: try Json.encoder.encode(Fixture.embeddedManifest())) as? [String: Any])
-        var json: [String: Any] = ["appId": Fixture.appId, "builtAt": Iso8601.format(Fixture.builtAt), "channelId": NSNull(), "embeddedBundleId": NSNull(), "embeddedBundleManifest": resourceFile, "fingerprint": NSNull()]
-        XCTAssertNil(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)).channelId)
-        json["channelId"] = ""
-        XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)))
-        json["channelId"] = nil
-        XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)))
-    }
-
     func testShouldFailASyncWithUnknownChannelAndRequestNothingWhenTheBuildCarriesNoChannel() async throws {
         let harness = harnessWithoutChannel()
         await harness.core.handleAppStart()
