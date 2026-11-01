@@ -176,9 +176,20 @@ public final class Downloader {
     }
 
     func downloadPackEntries(_ source: PackSource, bundleId: String, wanted: [String: Int], progress: @escaping (Int, Int) -> Void) async throws -> Int {
-        let url = try resolvePinnedUrl(source.url)
         // Named by bundle and URL, so a later attempt or cycle resumes it. The one running cycle keeps two downloads from sharing it.
         let file = temporaryDirectory.appendingPathComponent("\(bundleId)-\(Hashing.sha256Hex(source.url).prefix(16)).pack")
+        try await downloadPackFile(source, to: file, progress: progress)
+        defer { try? FileManager.default.removeItem(at: file) }
+        guard let data = try? Data(contentsOf: file, options: .alwaysMapped) else { throw DownloadFailure.downloadFailed("The pack could not be read") }
+        if let sizeBytes = source.sizeBytes, data.count != sizeBytes {
+            throw DownloadFailure.contentMismatched("The pack holds \(data.count) of its \(sizeBytes) bytes")
+        }
+        try writePackEntries(of: data, wanted: wanted)
+        return data.count
+    }
+
+    private func downloadPackFile(_ source: PackSource, to file: URL, progress: @escaping (Int, Int) -> Void) async throws {
+        let url = try resolvePinnedUrl(source.url)
         do {
             try await fetchWithRetries { try await http.download(url, to: file, maximumBytes: source.packBytesLimit, progress: progress) }
         } catch let failure as DownloadFailure {
@@ -188,11 +199,9 @@ public final class Downloader {
         } catch {
             throw DownloadFailure.downloadFailed("The pack could not be downloaded: \(error.localizedDescription)")
         }
-        defer { try? FileManager.default.removeItem(at: file) }
-        guard let data = try? Data(contentsOf: file, options: .alwaysMapped) else { throw DownloadFailure.downloadFailed("The pack could not be read") }
-        if let sizeBytes = source.sizeBytes, data.count != sizeBytes {
-            throw DownloadFailure.contentMismatched("The pack holds \(data.count) of its \(sizeBytes) bytes")
-        }
+    }
+
+    private func writePackEntries(of data: Data, wanted: [String: Int]) throws {
         do {
             try PackReader.forEachEntry(in: data) { entry in
                 switch entry {
@@ -210,7 +219,6 @@ public final class Downloader {
         } catch {
             throw DownloadFailure.contentMismatched("The pack did not verify: \(error)")
         }
-        return data.count
     }
 
     private func writeInflatedFile(_ body: Data, sha256: String, maximumBytes: Int) throws {

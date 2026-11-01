@@ -197,6 +197,8 @@ private final class TransferDelegate: NSObject, URLSessionDataDelegate {
     }
 
     // A download stays on the URL the core pinned, so its redirect is the answer.
+    // URLSessionTaskDelegate's shape.
+    // swiftlint:disable:next function_parameter_count
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         completionHandler(transfer(for: task) == nil ? request : nil)
     }
