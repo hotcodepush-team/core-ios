@@ -125,21 +125,18 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(lastCheck.result, .upToDate(nil))
     }
 
-    func testShouldFireUpdateFailedOnceWhenAnAutomaticCheckFindsItsRuntimeChannelGoneAndTheBuildCarriesNoneAndStartNoCheckAfterIt() async throws {
+    func testShouldKeepCheckingAtTheIntervalAndOnResumeWhenTheRuntimeChannelServesNoIndexAndTheBuildCarriesNone() async throws {
         let harness = harnessWithoutChannel()
         try await harness.core.setChannel(.id(Fixture.goneChannelId))
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.channelUnknown])
-        XCTAssertEqual(harness.listener.updateFailed.map { $0.trigger }, [.start])
         await harness.scheduler.fire()
         await harness.core.handleAppPause()
         harness.clock.now = harness.clock.now.addingTimeInterval(1000)
         await harness.core.handleAppResume()
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(harness.listener.updateFailed.count, 1)
-        XCTAssertEqual(StateStore(store: harness.store).lastCheck?.trigger, .start)
-        XCTAssertEqual(harness.http.requests.count, 1)
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.channelUnknown, .channelUnknown, .channelUnknown])
+        XCTAssertEqual(harness.listener.updateFailed.map { $0.trigger }, [.start, .interval, .resume])
     }
 
     func testShouldUpdateAndReportOnceAChannelIsSetAtRuntimeOnABuildWithoutOne() async throws {
@@ -168,27 +165,27 @@ final class MissingChannelTests: XCTestCase {
         XCTAssertEqual(cleared, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
     }
 
-    func testShouldClearARuntimeChannelThatServesNoIndexAndAnswerUnknownChannel() async throws {
+    func testShouldFailWithUnknownChannelAndKeepTheChoiceWhenTheRuntimeChannelServesNoIndex() async throws {
         let harness = harnessWithoutChannel()
         await harness.core.handleAppStart()
         try await harness.core.setChannel(.id(Fixture.goneChannelId))
         let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
+        XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: "The channel \(Fixture.goneChannelId) set at runtime serves no index."))
         let channel = await harness.core.getChannel()
-        XCTAssertEqual(channel.source, .config)
+        XCTAssertEqual(channel, GetChannelResult(id: Fixture.goneChannelId, name: nil, source: .runtime))
         XCTAssertEqual(harness.http.requests.count, 1)
+        XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [900])
     }
 
-    func testShouldFallBackToTheConfiguredChannelWhenTheRuntimeChannelServesNoIndex() async throws {
-        let harness = Harness()
-        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
-        harness.publish([v2], sequence: 1)
+    func testShouldFailWithUnknownChannelAndKeepCheckingWhenTheConfiguredChannelServesNoIndex() async throws {
+        let harness = Harness(configuration: Fixture.configuration(checkStrategy: .auto))
         await harness.core.handleAppStart()
-        try await harness.core.setChannel(.id(Fixture.goneChannelId))
-        let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result.status, .downloaded)
+        await harness.core.waitForBackgroundWork()
+        let lastCheck = try XCTUnwrap(StateStore(store: harness.store).lastCheck)
+        XCTAssertEqual(lastCheck.result, .failed(nil, reason: .channelUnknown, message: "The channel \(Fixture.channelId) of this build serves no index."))
         let channel = await harness.core.getChannel()
         XCTAssertEqual(channel, GetChannelResult(id: Fixture.channelId, name: nil, source: .config))
+        XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [900])
     }
 
     // No check, no log entry, no event, no request and no interval timer.

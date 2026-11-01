@@ -2,7 +2,8 @@
 import UIKit
 
 /// The debug screen every SDK presents: the device, the channel, the releases, the last check, the index, the configuration
-/// and this session's log, a check-now button and a share button that opens the share sheet with the screen as text.
+/// and this session's log, a check-now button, a return-to-configured-channel button while a runtime choice is in effect
+/// and a share button that opens the share sheet with the screen as text.
 public final class DebugScreenViewController: UITableViewController {
     private let core: Core
     private var sections: [DebugSection] = []
@@ -31,6 +32,11 @@ public final class DebugScreenViewController: UITableViewController {
             UIBarButtonItem(barButtonSystemItem: .action, target: self, action: #selector(share)),
             UIBarButtonItem(title: "Check now", style: .plain, target: self, action: #selector(checkNow))
         ]
+        toolbarItems = [
+            UIBarButtonItem(systemItem: .flexibleSpace),
+            UIBarButtonItem(title: "Return to configured channel", style: .plain, target: self, action: #selector(returnToConfiguredChannel)),
+            UIBarButtonItem(systemItem: .flexibleSpace)
+        ]
         reload()
     }
 
@@ -39,12 +45,20 @@ public final class DebugScreenViewController: UITableViewController {
             let snapshot = await core.debugSnapshot()
             sections = DebugReport.sections(of: snapshot)
             tableView.reloadData()
+            navigationController?.setToolbarHidden(snapshot.device.channel.source != .runtime, animated: false)
         }
     }
 
     @objc private func checkNow() {
         Task {
             _ = try? await core.sync(trigger: .manual)
+            reload()
+        }
+    }
+
+    @objc private func returnToConfiguredChannel() {
+        Task {
+            try? await core.setChannel(nil)
             reload()
         }
     }
