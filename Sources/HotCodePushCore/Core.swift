@@ -321,10 +321,9 @@ public actor Core {
         case .index(let fetched): index = fetched
         case .offline: return .failed(nil, reason: .deviceOffline, message: "The channel index could not be fetched and no cached copy exists")
         case .invalid(let message): return .failed(nil, reason: .indexInvalid, message: message)
-        case .absent: return .upToDate(current)
-        case .gone:
-            state.channel = nil
-            return await resolveCycle(trigger: trigger, stage: stage, options: options)
+        case .missing:
+            let source = state.channel == nil ? "of this build" : "set at runtime"
+            return .failed(nil, reason: .channelUnknown, message: "The channel \(channelId) \(source) serves no index.")
         }
         switch Evaluator.evaluation(of: index, device: deviceInfo()).outcome {
         case .upToDate:
@@ -833,9 +832,7 @@ public actor Core {
         case index(ChannelIndex)
         case offline
         case invalid(String)
-        case absent
-        // The runtime channel serves no index, so the choice is cleared and the build's channel takes over.
-        case gone
+        case missing
     }
 
     private func resolveChannelId() async -> ChannelResolution {
@@ -894,8 +891,7 @@ public actor Core {
             state.cachedIndex = CachedIndex(etag: response.header("ETag"), fetchedAt: clock.now, body: index)
             return .index(index)
         case 404:
-            if case .some = state.channel { return .gone }
-            return .absent
+            return .missing
         default:
             return cached.map { .index($0.body) } ?? .offline
         }
