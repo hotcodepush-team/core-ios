@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/hotcodepush-team/core-ios/compare/0.2.0...0.3.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* Signatures is SignatureVerifier, Configuration.isOnConfiguredHost is isUrlOnConfiguredHost, and FileStore.writeFile(_:sha256:) and PackReader.entries(in:) are gone.
+* a channel whose index is gone fails the check and is never changed by the SDK ([#33](https://github.com/hotcodepush-team/core-ios/issues/33))
+
+### Features
+
+* a channel whose index is gone fails the check and is never changed by the SDK ([#33](https://github.com/hotcodepush-team/core-ios/issues/33)) ([712de75](https://github.com/hotcodepush-team/core-ios/commit/712de7506d82d21f77d57d905b8c993404b89749))
+* one signature verifier, refusals and host check named as in core-android and the protocol ([#37](https://github.com/hotcodepush-team/core-ios/issues/37)) ([eb33ea9](https://github.com/hotcodepush-team/core-ios/commit/eb33ea9811f2e4c65c64ee6d703944cc1636eed1))
+
 ## [0.2.0](https://github.com/hotcodepush-team/core-ios/compare/0.1.0...0.2.0) (2026-10-31)
 
 
