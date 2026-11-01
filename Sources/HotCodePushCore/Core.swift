@@ -433,7 +433,7 @@ public actor Core {
 
     // The apply moment is stored with the release, so the start and the resume read it, never the configuration.
     private func applyDownloaded(_ release: Release, notes: String?, strategy: ApplyStrategy) -> SyncResult {
-        setNextRelease(NextRelease(release: release, applyStrategy: strategy))
+        state.nextRelease = NextRelease(release: release, applyStrategy: strategy)
         switch strategy {
         case .immediate:
             restartIntoNextRelease()
@@ -566,10 +566,6 @@ public actor Core {
         state.pendingRollbackEvent = nil
         state.lastBuiltAt = configuration.builtAt
         persistServedBundle(of: nil)
-    }
-
-    private func setNextRelease(_ next: NextRelease) {
-        state.nextRelease = next
     }
 
     private func discardNextReleaseThatLeftTheIndex() {

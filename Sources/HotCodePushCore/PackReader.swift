@@ -21,12 +21,6 @@ public enum PackReader {
     private static let prefixRange = 345..<500
     private static let sizeRange = 124..<136
 
-    public static func entries(in data: Data) throws -> [PackEntry] {
-        var entries: [PackEntry] = []
-        try forEachEntry(in: data) { entries.append($0) }
-        return entries
-    }
-
     /// Calls `body` for each entry up to the two end-of-archive blocks.
     /// A cut pack or a header whose checksum does not add up throws. An entry of an unknown name is skipped, so a later kind does not break this reader.
     public static func forEachEntry(in data: Data, _ body: (PackEntry) throws -> Void) throws {

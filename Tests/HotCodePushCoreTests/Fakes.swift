@@ -1,4 +1,5 @@
 import Foundation
+import Security
 @testable import HotCodePushCore
 
 // The test and the tasks of the core reach the value from different threads.
@@ -314,6 +315,88 @@ struct Fixture {
     }
 }
 
+final class DownloaderHarness {
+    static let bundleId = "b2"
+    static let packUrl = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/pack"
+    // Leaves every file to the single-file fetch.
+    static let emptyPack = PackWriter.pack([])
+
+    static func deltaUrl(baseBundleId: String, bundleId: String = bundleId) -> String {
+        return "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/deltas/\(baseBundleId)"
+    }
+
+    static func streamedDeltaUrl(baseBundleId: String) -> String {
+        return "\(Fixture.updatesBaseUrl)/v1/apps/\(Fixture.appId)/bundles/\(bundleId)/deltas/\(baseBundleId)"
+    }
+
+    static func fileUrl(sha256: String) -> String {
+        return "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/files/\(sha256)"
+    }
+
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("hotcodepush-tests-\(UUID().uuidString)")
+    let http = FakeHttpClient()
+    let embedded = InMemoryEmbeddedBundle()
+    let clock = FixedClock(now: Fixture.builtAt)
+    let files: FileStore
+    let downloader: Downloader
+
+    init(configuration: Configuration = Fixture.configuration()) {
+        files = FileStore(rootDirectory: root.appendingPathComponent("store"))
+        downloader = Downloader(configuration: configuration, platform: "ios", files: files, embedded: embedded, http: http, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
+    }
+
+    // Each pack entry holds the gzip bytes the bucket serves.
+    static func bundle(_ files: [String: Data]) -> (manifest: BundleManifest, pack: Data) {
+        let sorted = files.sorted { $0.key < $1.key }
+        let pack = PackWriter.pack(sorted.map { PackEntry.file(sha256: Hashing.sha256Hex($0.value), body: try! Gzip.compress($0.value)) })
+        let entries = sorted.map { BundleManifest.File(path: $0.key, sha256: Hashing.sha256Hex($0.value), sizeBytes: $0.value.count) }
+        return (manifest(files: entries), pack)
+    }
+
+    static func manifest(files: [BundleManifest.File]) -> BundleManifest {
+        return BundleManifest(appId: Fixture.appId, bundleVersion: "1.2.0", files: files, platforms: ["ios"])
+    }
+
+    static func replacingFiles(of manifest: BundleManifest, with files: [BundleManifest.File]) -> BundleManifest {
+        return BundleManifest(appId: manifest.appId, bundleVersion: manifest.bundleVersion, files: files, fingerprint: manifest.fingerprint, keyId: manifest.keyId, platforms: manifest.platforms)
+    }
+
+    // Serves the envelope, pack and deltas where the returned index entry says they are. A signing key signs the manifest.
+    func publish(_ manifest: BundleManifest, pack: Data? = nil, packUrl: String = packUrl, packSizeBytes: Int? = nil, deltas: [String: Data] = [:], bundleId: String = bundleId, manifestUrl: String = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/manifest.json", signingKey: SecKey? = nil) -> IndexRelease {
+        let signed = signingKey.map { key in BundleManifest(appId: manifest.appId, bundleVersion: manifest.bundleVersion, files: manifest.files, fingerprint: manifest.fingerprint, keyId: SigningFixture.keyId(of: key), platforms: manifest.platforms) } ?? manifest
+        let json = String(bytes: try! Json.encoder.encode(signed), encoding: .utf8) ?? ""
+        var envelopeDeltas: [ManifestEnvelope.Delta] = []
+        for (baseBundleId, delta) in deltas {
+            let url = DownloaderHarness.deltaUrl(baseBundleId: baseBundleId, bundleId: bundleId)
+            http.stub(url, body: delta)
+            envelopeDeltas.append(.init(baseBundleId: baseBundleId, url: url, sizeBytes: delta.count))
+        }
+        http.stubJson(manifestUrl, ManifestEnvelope(bundleId: bundleId, createdAt: Fixture.builtAt, manifest: json, signature: signingKey.map { SigningFixture.sign(json, with: $0) }, pack: .init(url: packUrl, sizeBytes: packSizeBytes ?? pack?.count ?? 0), deltas: envelopeDeltas))
+        if let pack = pack {
+            http.stub(packUrl, body: pack)
+        }
+        return IndexRelease(id: "r2", number: 2, createdAt: Fixture.builtAt, bundleId: DownloaderHarness.bundleId, bundleVersion: manifest.bundleVersion, manifestUrl: manifestUrl, manifestSha256: Hashing.sha256Hex(json), sizeBytes: 0)
+    }
+
+    func download(_ release: IndexRelease, baseBundleId: String? = nil) async throws -> DownloadOutcome {
+        return try await downloader.downloadRelease(release, baseBundleId: baseBundleId) { _, _ in }
+    }
+
+    // The packs come first, then the single files.
+    func requestUrlsAfterManifest() -> [String] {
+        return http.requests.dropFirst().map { $0.url.absoluteString }
+    }
+
+    func downloadFailure(_ release: IndexRelease, baseBundleId: String? = nil) async -> DownloadFailure? {
+        do {
+            _ = try await download(release, baseBundleId: baseBundleId)
+            return nil
+        } catch {
+            return error as? DownloadFailure
+        }
+    }
+}
+
 final class Harness {
     let root: URL
     let store = InMemoryStore()
@@ -353,5 +436,13 @@ final class Harness {
             http.stubJson(entry.release.manifestUrl, entry.envelope)
             http.stub(entry.envelope.pack.url, body: entry.pack)
         }
+    }
+}
+
+extension FileStore {
+    func writeFile(_ content: Data, sha256: String) throws {
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try content.write(to: source)
+        try writeFile(at: source, sha256: sha256)
     }
 }

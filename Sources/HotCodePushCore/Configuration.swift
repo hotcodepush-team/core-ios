@@ -97,7 +97,7 @@ public struct Configuration: Codable, Equatable {
 
     /// Whether a manifest, pack or delta URL lies under the files or the updates host.
     /// The base URL must be followed by a `/`, so a look-alike host, userinfo or another port does not match.
-    public func isOnConfiguredHost(_ url: String) -> Bool {
+    public func isUrlOnConfiguredHost(_ url: String) -> Bool {
         return [filesBaseUrl, updatesBaseUrl].contains { url.hasPrefix("\($0)/") }
     }
 

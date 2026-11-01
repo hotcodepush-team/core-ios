@@ -108,19 +108,19 @@ public final class Downloader {
         guard actual == expectedSha256 else { throw DownloadFailure.manifestInvalid("The manifest's hash does not match the index") }
         guard !configuration.publicKeys.isEmpty else { return }
         do {
-            try Signatures.verifyManifestSignature(envelope, publicKeys: configuration.publicKeys)
+            try SignatureVerifier.verifyManifestSignature(envelope, publicKeys: configuration.publicKeys)
         } catch let refusal as SignatureRefusal {
-            throw DownloadFailure.signatureInvalid(Downloader.describe(refusal, keyId: envelope.signature?.keyId ?? ""))
+            throw DownloadFailure.signatureInvalid(Downloader.resolveSignatureRefusalMessage(refusal, keyId: envelope.signature?.keyId ?? ""))
         }
     }
 
-    static func describe(_ refusal: SignatureRefusal, keyId: String) -> String {
+    static func resolveSignatureRefusalMessage(_ refusal: SignatureRefusal, keyId: String) -> String {
         switch refusal {
-        case .unsigned: return "The manifest is unsigned and the app accepts only signed bundles"
-        case .unknownScheme: return "The manifest's signature is not of the scheme \(Signatures.scheme)"
+        case .unsigned: return "The manifest is unsigned and the app accepts only signed manifests"
+        case .unknownScheme: return "The manifest's signature is not of the scheme \(SignatureVerifier.scheme)"
         case .unlistedKey: return "The manifest is signed by a key the app does not list: \(keyId)"
         case .unimportableKey: return "The app's configuration is wrong: the system cannot import the public key \(keyId) of the resource file as an RSA key"
-        case .weakKey: return "The public key \(keyId) is smaller than \(Signatures.minimumKeyBits) bits"
+        case .weakKey: return "The public key \(keyId) is smaller than \(SignatureVerifier.minimumKeyBits) bits"
         case .mismatch: return "The manifest's signature does not verify under the public key \(keyId)"
         }
     }
@@ -243,7 +243,7 @@ public final class Downloader {
 
     // The SDK fetches from its configured hosts and nowhere else.
     func resolvePinnedUrl(_ string: String) throws -> URL {
-        guard configuration.isOnConfiguredHost(string), let url = URL(string: string) else {
+        guard configuration.isUrlOnConfiguredHost(string), let url = URL(string: string) else {
             throw DownloadFailure.manifestInvalid("\(string) is not on a configured host")
         }
         return url

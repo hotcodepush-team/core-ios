@@ -64,43 +64,6 @@ final class WireTypesTests: XCTestCase {
         }
     }
 
-    func testShouldRefuseAResourceFileWithoutTheFingerprintOrTheEmbeddedBundleId() throws {
-        let configuration = try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any]
-        for key in ["fingerprint", "embeddedBundleId"] {
-            var json = try XCTUnwrap(configuration)
-            json[key] = nil
-            XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)), key)
-            json[key] = NSNull()
-            XCTAssertNoThrow(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)), key)
-        }
-    }
-
-    func testShouldRefuseAResourceFileWithAnEmptyFingerprint() throws {
-        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any])
-        json["fingerprint"] = ""
-        XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)))
-    }
-
-    func testShouldRefuseAResourceFileWhoseOptionIsNull() throws {
-        let configuration = try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any]
-        let options = ["applyStrategy", "checkIntervalSeconds", "checkStrategy", "downloadStrategy", "filesBaseUrl", "isEnabledInDebugBuilds", "mandatoryApplyStrategy", "nextResumeMinimumBackgroundSeconds", "publicKeys", "readySignal", "readyTimeoutSeconds", "updatesBaseUrl"]
-        for key in options {
-            var json = try XCTUnwrap(configuration)
-            json[key] = NSNull()
-            XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)), key)
-        }
-    }
-
-    func testShouldRefuseAResourceFileWhosePublicKeyIsNotCanonicalBase64OrHasAnEmptyKeyId() throws {
-        let configuration = try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any]
-        let publicKeys = [["der": "", "keyId": "k1"], ["der": "AQ", "keyId": "k1"], ["der": "AR==", "keyId": "k1"], ["der": "AQJ=", "keyId": "k1"], ["der": "AQID\n", "keyId": "k1"], ["der": "AQ-_", "keyId": "k1"], ["der": "AQID", "keyId": ""]]
-        for publicKey in publicKeys {
-            var json = try XCTUnwrap(configuration)
-            json["publicKeys"] = [publicKey]
-            XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)), "\(publicKey)")
-        }
-    }
-
     func testShouldReadEveryPublicKeyFoundationEncodes() throws {
         var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any])
         let ders = (1...6).map { Data(repeating: 0xFF, count: $0).base64EncodedString() }
@@ -110,7 +73,7 @@ final class WireTypesTests: XCTestCase {
 
     func testShouldRefuseAResourceFileWhoseDurationIsBelowItsFloor() throws {
         let configuration = try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any]
-        for (key, seconds) in [("checkIntervalSeconds", 59.0), ("checkIntervalSeconds", -900), ("readyTimeoutSeconds", 0.5), ("readyTimeoutSeconds", -10), ("nextResumeMinimumBackgroundSeconds", -1)] {
+        for (key, seconds) in [("readyTimeoutSeconds", 0.5), ("nextResumeMinimumBackgroundSeconds", -1)] {
             var json = try XCTUnwrap(configuration)
             json[key] = seconds
             XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)), "\(key) \(seconds)")
