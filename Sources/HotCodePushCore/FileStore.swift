@@ -27,14 +27,6 @@ public final class FileStore {
         return fileManager.fileExists(atPath: fileURL(sha256: sha256).path)
     }
 
-    /// Verifies the content against its hash, then writes it atomically; a file that exists is the file.
-    public func writeFile(_ content: Data, sha256: String) throws {
-        let actual = Hashing.sha256Hex(content)
-        guard actual == sha256 else { throw Failure.hashMismatch(expected: sha256, actual: actual) }
-        try createDirectory(filesDirectory)
-        try content.write(to: fileURL(sha256: sha256), options: .atomic)
-    }
-
     /// Verifies the file at `source` against its hash in chunks, then moves it into the store.
     /// A file that exists already is kept, and the source is removed.
     public func writeFile(at source: URL, sha256: String) throws {

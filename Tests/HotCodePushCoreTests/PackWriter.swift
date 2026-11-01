@@ -37,6 +37,14 @@ enum PackWriter {
     }
 }
 
+extension PackReader {
+    static func entries(in data: Data) throws -> [PackEntry] {
+        var entries: [PackEntry] = []
+        try forEachEntry(in: data) { entries.append($0) }
+        return entries
+    }
+}
+
 // Gzip as the CLI writes every file it uploads.
 extension Gzip {
     static func compress(_ data: Data) throws -> Data {

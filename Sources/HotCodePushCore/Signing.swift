@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 /// A public key from the resource file: the base64 of its PKCS #1 DER and its key id.
-/// The key id is the fingerprint a signature names, which a device cannot recompute from the key bytes.
+/// The key id is the id a signature names, which a device cannot recompute from the key bytes.
 public struct DevicePublicKey: Codable, Equatable {
     public let der: String
     public let keyId: String
@@ -36,7 +36,7 @@ public enum SignatureRefusal: Error, Equatable {
     case mismatch
 }
 
-public enum Signatures {
+public enum SignatureVerifier {
     /// The pinned allow-list's one scheme: RSASSA-PKCS1-v1_5 with SHA-256, verified by the system's Security framework.
     public static let scheme = "rsa-v1_5-sha256"
     public static let minimumKeyBits = 2048

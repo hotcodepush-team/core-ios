@@ -240,7 +240,7 @@ public struct ChannelsIndex: Codable, Equatable {
     }
 }
 
-/// A signature as the envelope carries it: the signing key's fingerprint and the self-describing `<scheme>:<base64>` value.
+/// A signature as the envelope carries it: the key id of the signing key and the self-describing `<scheme>:<base64>` value.
 public struct Signature: Codable, Equatable {
     public let keyId: String
     public let value: String
@@ -370,7 +370,7 @@ public struct BundleManifest: Codable, Equatable {
     public let bundleVersion: String
     public let files: [File]
     public let fingerprint: String?
-    /// The fingerprint of the key that signed the manifest, `nil` when unsigned.
+    /// The key id of the signing key, `nil` when unsigned.
     public let keyId: String?
     public let platforms: [String]
 

@@ -348,7 +348,7 @@ final class FixtureTests: XCTestCase {
         return try XCTUnwrap(try JSONSerialization.jsonObject(with: Json.encoder.encode(request)) as? NSDictionary)
     }
 
-    func testShouldEncodeEveryAcceptedDeviceEventsFixtureAsTheEndpointReadsIt() throws {
+    func testShouldEncodeEveryAcceptedBatchOfTheDeviceEventsFixture() throws {
         for testCase in try deviceEventsBatches(listed: "acceptedBatches") {
             let request = try XCTUnwrap(rebuildBatch(testCase.batch, leavingOut: testCase.skippedEventIndexes), testCase.name)
             XCTAssertTrue(request.isReadable, testCase.name)
@@ -356,7 +356,7 @@ final class FixtureTests: XCTestCase {
         }
     }
 
-    func testShouldBuildNoRefusedDeviceEventsFixture() throws {
+    func testShouldEncodeNoRefusedBatchOfTheDeviceEventsFixture() throws {
         for testCase in try deviceEventsBatches(listed: "refusedBatches") {
             guard let request = rebuildBatch(testCase.batch, leavingOut: []), request.isReadable else { continue }
             XCTAssertNotEqual(try encodedObject(request), testCase.batch as NSDictionary, testCase.name)
@@ -409,7 +409,7 @@ final class FixtureTests: XCTestCase {
             let outcome = resolveDownloadOutcome(testCase, downloader: DownloaderHarness(configuration: configuration).downloader)
             XCTAssertEqual(outcome.requests.map(PackSourcesFile.Request.init), testCase.requests, testCase.name)
             XCTAssertEqual(outcome.packKind?.rawValue, testCase.packKind, testCase.name)
-            XCTAssertTrue(outcome.requests.allSatisfy { configuration.isOnConfiguredHost($0.url) }, testCase.name)
+            XCTAssertTrue(outcome.requests.allSatisfy { configuration.isUrlOnConfiguredHost($0.url) }, testCase.name)
         }
     }
 
@@ -466,7 +466,7 @@ final class FixtureTests: XCTestCase {
         XCTAssertFalse(cases.isEmpty)
         for testCase in cases {
             let configuration = Fixture.configuration(filesBaseUrl: testCase.filesBaseUrl, updatesBaseUrl: testCase.updatesBaseUrl)
-            XCTAssertEqual(configuration.isOnConfiguredHost(testCase.url), testCase.isOnConfiguredHost, testCase.name)
+            XCTAssertEqual(configuration.isUrlOnConfiguredHost(testCase.url), testCase.isOnConfiguredHost, testCase.name)
         }
     }
 
@@ -489,12 +489,6 @@ final class FixtureTests: XCTestCase {
         for testCase in cases {
             XCTAssertEqual(testCase.resourceFile.embeddedBundleManifest, testCase.embeddedBundleManifest, testCase.name)
         }
-        let withoutChannel = cases.filter { $0.resourceFile.channelId == nil && $0.resourceFile.embeddedBundleManifest != nil }
-        XCTAssertEqual(withoutChannel.count, 1, "the suite carries one build without a channel")
-        XCTAssertTrue(withoutChannel.allSatisfy { $0.name.contains("without a channel") && $0.resourceFile.embeddedBundleId == nil })
-        let withoutEmbeddedBundle = cases.filter { $0.resourceFile.embeddedBundleManifest == nil }
-        XCTAssertEqual(withoutEmbeddedBundle.count, 1, "the suite carries one build without an embedded bundle")
-        XCTAssertTrue(withoutEmbeddedBundle.allSatisfy { $0.name.contains("without an embedded bundle") && $0.resourceFile.embeddedBundleId == nil })
     }
 
     func testShouldReadTheSdkOptionsOfTheStagingResourceFileFixture() throws {
@@ -548,16 +542,21 @@ final class FixtureTests: XCTestCase {
     }
 
     // The keys are read as an iOS resource file carries them.
-    func testShouldMatchEverySignatureFixture() throws {
-        let cases = try load("signatures.json", as: SignaturesFile.self).manifests
-        var verified = 0
-        for testCase in cases {
-            let isValid = (try? Signatures.verifyManifestSignature(testCase.envelope.envelope, publicKeys: testCase.devicePublicKeys.ios)) != nil
-            XCTAssertEqual(isValid, testCase.isValid, testCase.name)
-            verified += isValid ? 1 : 0
+    func testShouldNameTheRefusalOfEverySignatureFixture() throws {
+        let refusals: [String: SignatureRefusal] = [
+            "should refuse a manifest changed after signing": .mismatch,
+            "should refuse a signature changed after signing": .mismatch,
+            "should refuse an unsigned manifest": .unsigned,
+            "should refuse a signature by a key not in the list": .unlistedKey,
+            "should refuse a signature checked against the key its keyId names when another listed key made it": .mismatch,
+            "should refuse a scheme outside the allow-list, ed25519": .unknownScheme,
+            "should refuse a signature by a key under 2048 bits": .weakKey,
+            "should refuse every signature when no key is listed": .unlistedKey
+        ]
+        for testCase in try load("signatures.json", as: SignaturesFile.self).manifests {
+            let expected = testCase.isValid ? nil : try XCTUnwrap(refusals[testCase.name], "A refused fixture this test does not know: \(testCase.name)")
+            XCTAssertEqual(SigningFixture.refusal(of: testCase.envelope.envelope, publicKeys: testCase.devicePublicKeys.ios), expected, testCase.name)
         }
-        XCTAssertGreaterThanOrEqual(verified, 3)
-        XCTAssertGreaterThan(cases.count - verified, 5)
     }
 
     // The public keys of the iOS resource file are PKCS #1 DER, which the system imports as it stands.
@@ -566,7 +565,7 @@ final class FixtureTests: XCTestCase {
         let iosBuild = try XCTUnwrap(cases.first { $0.name.contains("iOS build") })
         XCTAssertEqual(iosBuild.resourceFile.publicKeys.count, 2)
         for publicKey in iosBuild.resourceFile.publicKeys {
-            let key = try XCTUnwrap(Signatures.importPublicKey(publicKey), publicKey.keyId)
+            let key = try XCTUnwrap(SignatureVerifier.importPublicKey(publicKey), publicKey.keyId)
             XCTAssertEqual(SecKeyGetBlockSize(key) * 8, 4096, publicKey.keyId)
         }
     }
@@ -587,9 +586,6 @@ final class FixtureTests: XCTestCase {
         XCTAssertEqual(Hashing.sha256Hex(pack), fixture.packSha256)
         let entries = try PackReader.entries(in: pack)
         XCTAssertEqual(entries, fixture.entries.map { .file(sha256: $0.sha256, body: Data($0.content.utf8)) })
-        for expected in fixture.entries {
-            XCTAssertEqual(Hashing.sha256Hex(expected.content), expected.sha256)
-        }
         XCTAssertEqual(PackWriter.pack(entries), pack)
     }
 

@@ -49,9 +49,10 @@ public final class DebugScreenViewController: UITableViewController {
         }
     }
 
+    // Only the check runs, so nothing downloads or reloads behind the screen.
     @objc private func checkNow() {
         Task {
-            _ = try? await core.sync(trigger: .manual)
+            _ = try? await core.checkForUpdate()
             reload()
         }
     }

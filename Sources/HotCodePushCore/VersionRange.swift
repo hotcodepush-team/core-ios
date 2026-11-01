@@ -2,22 +2,32 @@ import Foundation
 
 /// The range subset the three evaluators share, over dotted numeric versions: comparators `>=`, `>`, `<=`, `<`, `=`,
 /// a bare version as equality, `x` or `*` wildcards and partial versions as intervals, alternatives joined by `||`.
-/// Anything else does not parse, and a condition that does not parse is not satisfied.
+/// Anything else does not parse, and a condition that does not parse is not satisfied; a component above `componentMaximum`
+/// does not parse either.
 public enum VersionRange {
+    /// The largest component a version or a range holds: the largest integer the TypeScript evaluator holds exactly,
+    /// `Number.MAX_SAFE_INTEGER`, so a component compares here as it does there.
+    public static let componentMaximum = 9_007_199_254_740_991
+
     private struct Comparator {
         let op: String
         let version: [Int]
     }
 
-    /// A version's numeric components; `nil` when the string is not a dotted number.
+    /// A version's numeric components; `nil` when the string is not a dotted number of components up to `componentMaximum`.
     public static func parseVersion(_ value: String) -> [Int]? {
-        let components = value.trimmingCharacters(in: .whitespaces).split(separator: ".", omittingEmptySubsequences: false)
+        let components = value.trimmingCharacters(in: .whitespaces).split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        guard components.allSatisfy({ component in !component.isEmpty && component.allSatisfy { $0.isASCII && $0.isNumber } }) else { return nil }
+        return parseComponents(components)
+    }
+
+    private static func parseComponents(_ components: [String]) -> [Int]? {
         var parsed: [Int] = []
         for component in components {
-            guard !component.isEmpty, component.allSatisfy({ $0.isASCII && $0.isNumber }), let number = Int(component) else { return nil }
+            guard let number = Int(component), number <= componentMaximum else { return nil }
             parsed.append(number)
         }
-        return parsed.isEmpty ? nil : parsed
+        return parsed
     }
 
     /// Whether the version satisfies the range: `nil` when the range does not parse.
@@ -77,9 +87,9 @@ public enum VersionRange {
         let wildcardIndex = components.firstIndex { $0 == "x" || $0 == "X" || $0 == "*" }
         if wildcardIndex != nil && op != nil { return nil }
         if wildcardIndex == nil && (op != nil || components.count >= 3) {
-            return [Comparator(op: op ?? "=", version: components.compactMap(Int.init))]
+            return parseComponents(components).map { [Comparator(op: op ?? "=", version: $0)] }
         }
-        return intervalComparators(components.prefix(wildcardIndex ?? components.count).compactMap(Int.init))
+        return parseComponents(Array(components.prefix(wildcardIndex ?? components.count))).map(intervalComparators)
     }
 
     // `1.2` and `1.2.x` name the interval `>=1.2 <1.3`, and `x` names everything.

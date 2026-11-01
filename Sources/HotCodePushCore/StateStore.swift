@@ -44,6 +44,10 @@ public struct NextRelease: Codable, Equatable {
 public final class StateStore {
     public static let stateVersion = 6
     static let prefix = "hotcodepush."
+    private static let cacheKeys = [
+        "currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport",
+        "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "pendingRollbackEvent", "lastSyncAt"
+    ]
 
     private let store: KeyValueStore
 
@@ -145,18 +149,24 @@ public final class StateStore {
 
     /// Drops every cache key; the identity keys survive. Called at start on an unknown version, never by the app.
     public func deleteCacheKeys() {
-        for key in ["currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport", "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "pendingRollbackEvent", "lastSyncAt"] {
+        for key in StateStore.cacheKeys {
             set(key, nil)
         }
         store.set(StateStore.stateVersion, forKey: StateStore.prefix + "stateVersion")
     }
 
+    // A value that does not decode, such as one another SDK version wrote under the same `stateVersion`, reads as absent.
+    // It drops the cache with it, or the identity key alone.
     private func read<T: Decodable>(_ key: String) -> T? {
         guard let raw = string(key) else { return nil }
         do {
             return try Json.decoder.decode(T.self, from: Data(raw.utf8))
         } catch {
-            deleteCacheKeys()
+            if StateStore.cacheKeys.contains(key) {
+                deleteCacheKeys()
+            } else {
+                set(key, nil)
+            }
             return nil
         }
     }

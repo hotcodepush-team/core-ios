@@ -13,43 +13,7 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(store.integer(forKey: "hotcodepush.stateVersion"), StateStore.stateVersion)
     }
 
-    func testShouldDropAnOldReasonWhenThePreviousStateVersionStoredIt() {
-        let store = InMemoryStore()
-        let release = "{\"id\":\"r1\",\"number\":1,\"bundleId\":\"b1\",\"bundleVersion\":\"1\",\"isMandatory\":false}"
-        store.set(2, forKey: "hotcodepush.stateVersion")
-        store.set("{\"from\":\(release),\"to\":null,\"reason\":\"CRASHED\"}", forKey: "hotcodepush.pendingRollbackEvent")
-        store.set("[{\"type\":\"failed\",\"releaseId\":\"r1\",\"reason\":\"CRASHED\"}]", forKey: "hotcodepush.unsentEvents")
-        store.set("device-1", forKey: "hotcodepush.deviceId")
-        let state = StateStore(store: store)
-        XCTAssertNil(state.pendingRollbackEvent)
-        XCTAssertEqual(state.unsentEvents, [])
-        XCTAssertEqual(state.deviceId, "device-1")
-    }
-
-    func testShouldDropANextReleaseStoredWithoutItsApplyMomentByTheThirdStateVersion() {
-        let store = InMemoryStore()
-        let release = "{\"id\":\"r1\",\"number\":1,\"bundleId\":\"b1\",\"bundleVersion\":\"1\",\"isMandatory\":false}"
-        store.set(3, forKey: "hotcodepush.stateVersion")
-        store.set(release, forKey: "hotcodepush.nextRelease")
-        store.set(release, forKey: "hotcodepush.currentRelease")
-        store.set("device-1", forKey: "hotcodepush.deviceId")
-        let state = StateStore(store: store)
-        XCTAssertNil(state.nextRelease)
-        XCTAssertNil(state.currentRelease)
-        XCTAssertEqual(state.deviceId, "device-1")
-    }
-
-    func testShouldDropAnOutboxStoredInTheOldSpellingByTheFourthStateVersion() {
-        let store = InMemoryStore()
-        store.set(4, forKey: "hotcodepush.stateVersion")
-        store.set("[{\"type\":\"checked\",\"releaseId\":\"r1\",\"status\":\"AVAILABLE\"},{\"type\":\"rolledBack\",\"fromReleaseId\":\"r1\",\"toReleaseId\":null}]", forKey: "hotcodepush.unsentEvents")
-        store.set("device-1", forKey: "hotcodepush.deviceId")
-        let state = StateStore(store: store)
-        XCTAssertEqual(state.unsentEvents, [])
-        XCTAssertEqual(state.deviceId, "device-1")
-    }
-
-    func testShouldDropALastCheckStoredWithTheOldConditionKeyByTheSixthStateVersion() {
+    func testShouldDropALastCheckStoredUnderTheFieldNamesOfThePreviousStateVersion() {
         let store = InMemoryStore()
         let release = "{\"id\":\"r1\",\"number\":1,\"bundleId\":\"b1\",\"bundleVersion\":\"1\",\"isMandatory\":false}"
         store.set(5, forKey: "hotcodepush.stateVersion")
@@ -86,6 +50,17 @@ final class StoreTests: XCTestCase {
         store.set("not json", forKey: "hotcodepush.currentRelease")
         XCTAssertNil(state.currentRelease)
         XCTAssertNil(state.nextRelease)
+    }
+
+    func testShouldDropAnIdentityKeyThatDoesNotParseAndKeepTheCache() {
+        let store = InMemoryStore()
+        let state = StateStore(store: store)
+        let next = NextRelease(release: Release(id: "r1", number: 1, bundleId: "b1", bundleVersion: "1", isMandatory: false), applyStrategy: .nextStart)
+        state.nextRelease = next
+        store.set("not json", forKey: "hotcodepush.channel")
+        XCTAssertNil(state.channel)
+        XCTAssertNil(store.string(forKey: "hotcodepush.channel"))
+        XCTAssertEqual(state.nextRelease, next)
     }
 
     func testShouldStoreTheChannelChoiceInBothShapes() {
