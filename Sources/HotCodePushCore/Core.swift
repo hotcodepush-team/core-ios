@@ -7,6 +7,17 @@ public actor Core {
         case check, download, sync
     }
 
+    struct Cycle {
+        let trigger: SyncTrigger
+        let stage: Stage
+        let options: SyncOptions
+    }
+
+    private enum CycleIndex {
+        case index(ChannelIndex)
+        case failure(SyncResult)
+    }
+
     private struct QueuedRestart {
         let isAskedByApp: Bool
         let restart: () -> Void
@@ -244,37 +255,37 @@ public actor Core {
     /// Throws a plain error before any fetch when the channel id in effect is not a UUID; so do the other two stages.
     public func sync(trigger: SyncTrigger, options: SyncOptions = SyncOptions()) async throws -> SyncResult {
         try verifyChannelId()
-        return await runCycle(trigger: trigger, stage: .sync, options: options)
+        return await runCycle(Cycle(trigger: trigger, stage: .sync, options: options))
     }
 
     /// `sync()` with the download gate shut: it downloads and applies nothing.
     /// A downloaded release answers `available`, and a release that carries the running bundle is adopted.
     public func checkForUpdate() async throws -> SyncResult {
         try verifyChannelId()
-        return await runCycle(trigger: .manual, stage: .check, options: SyncOptions(downloadStrategy: .manual))
+        return await runCycle(Cycle(trigger: .manual, stage: .check, options: SyncOptions(downloadStrategy: .manual)))
     }
 
     /// `sync()` with the download gate open: it re-checks the index, then downloads and applies per the apply strategies.
     /// It never answers `available`.
     public func downloadUpdate(options: DownloadUpdateOptions = DownloadUpdateOptions()) async throws -> SyncResult {
         try verifyChannelId()
-        return await runCycle(trigger: .manual, stage: .download, options: SyncOptions(applyStrategy: options.applyStrategy, downloadStrategy: .auto, mandatoryApplyStrategy: options.mandatoryApplyStrategy))
+        return await runCycle(Cycle(trigger: .manual, stage: .download, options: SyncOptions(applyStrategy: options.applyStrategy, downloadStrategy: .auto, mandatoryApplyStrategy: options.mandatoryApplyStrategy)))
     }
 
-    private func runCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
+    private func runCycle(_ cycle: Cycle) async -> SyncResult {
         await unusedFilesDeletion?.value
         while let running = runningCycle {
-            if running.stage == stage {
+            if running.stage == cycle.stage {
                 return await running.task.value
             }
             _ = await running.task.value
         }
         let task = Task { () -> SyncResult in
-            let result = await performCycle(trigger: trigger, stage: stage, options: options)
+            let result = await performCycle(cycle)
             runningCycle = nil
             return result
         }
-        runningCycle = (stage, task)
+        runningCycle = (cycle.stage, task)
         return await task.value
     }
 
@@ -288,63 +299,39 @@ public actor Core {
         return ApplyUpdateResult(status: .applied, release: next.release)
     }
 
-    private func performCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
-        let result = await resolveCycle(trigger: trigger, stage: stage, options: options)
-        state.lastCheck = LastCheck(checkedAt: clock.now, trigger: trigger, result: result)
-        if stage == .sync {
+    private func performCycle(_ cycle: Cycle) async -> SyncResult {
+        let result = await resolveCycle(cycle)
+        state.lastCheck = LastCheck(checkedAt: clock.now, trigger: cycle.trigger, result: result)
+        if cycle.stage == .sync {
             state.lastSyncAt = clock.now
             scheduleIntervalSync(after: configuration.checkIntervalSeconds)
         }
-        record(LogEntry.ofCycle(result, trigger: trigger, at: clock.now))
+        record(LogEntry.ofCycle(result, trigger: cycle.trigger, at: clock.now))
         if result.status == .failed, let reason = result.reason.flatMap(FailedReason.init(rawValue:)) {
-            listener.updateFailed(UpdateFailedEvent(release: result.release, reason: reason, message: result.message ?? "", trigger: trigger))
+            listener.updateFailed(UpdateFailedEvent(release: result.release, reason: reason, message: result.message ?? "", trigger: cycle.trigger))
         }
         startBackgroundWork { await self.sendDeviceEvents() }
         return result
     }
 
-    private func resolveCycle(trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
+    private func resolveCycle(_ cycle: Cycle) async -> SyncResult {
         let current = state.currentRelease
         if isDisabledInThisBuild {
             return .skipped(nil, reason: .buildDebug)
         }
-        let channelId: String
-        switch await resolveChannelId() {
-        case .id(let id): channelId = id
-        case .offline: return .failed(nil, reason: .deviceOffline, message: "The channels index could not be fetched to resolve the channel name")
-        case .unknown: return .failed(nil, reason: .channelUnknown, message: "The channel set at runtime is not in the app's channels index")
-        case .invalid(let message): return .failed(nil, reason: .indexInvalid, message: message)
-        case .missing: return .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage)
-        }
         let index: ChannelIndex
-        switch await fetchChannelIndex(channelId: channelId) {
+        switch await fetchCycleIndex() {
         case .index(let fetched): index = fetched
-        case .offline: return .failed(nil, reason: .deviceOffline, message: "The channel index could not be fetched and no cached copy exists")
-        case .invalid(let message): return .failed(nil, reason: .indexInvalid, message: message)
-        case .missing:
-            let source = state.channel == nil ? "of this build" : "set at runtime"
-            return .failed(nil, reason: .channelUnknown, message: "The channel \(channelId) \(source) serves no index.")
+        case .failure(let result): return result
         }
         switch Evaluator.evaluation(of: index, device: deviceInfo()).outcome {
         case .upToDate:
             return .upToDate(current)
         case .available(let target, let isMandatory):
             recordChecked(target, in: index, status: .available)
-            return await update(to: target, isMandatory: isMandatory, trigger: trigger, stage: stage, options: options)
-        case .skipped(let release, .releaseRevoked, _):
-            if (release?.bundleId ?? configuration.embeddedBundleId) == runningBundleId {
-                adoptInPlace(release?.release)
-                return .skipped(release?.release, reason: .releaseRevoked)
-            }
-            if stage == .check {
-                return .skipped(release?.release, reason: .releaseRevoked)
-            }
-            guard let target = release else {
-                revertToEmbedded()
-                return .skipped(nil, reason: .releaseRevoked)
-            }
-            let outcome = await downloadAndApply(target, isMandatory: true, strategy: .immediate, trigger: trigger)
-            return outcome.status == .failed ? outcome : .skipped(target.release, reason: .releaseRevoked)
+            return await update(to: target, isMandatory: isMandatory, cycle: cycle)
+        case .skipped(let fallback, .releaseRevoked, _):
+            return await leaveRevokedRelease(for: fallback, cycle: cycle)
         case .skipped(let release, let reason, let conditionType):
             if let release = release {
                 recordChecked(release, in: index, status: .skipped, reason: reason, conditionType: conditionType)
@@ -353,37 +340,73 @@ public actor Core {
         }
     }
 
+    private func fetchCycleIndex() async -> CycleIndex {
+        let channelId: String
+        switch await resolveChannelId() {
+        case .id(let id): channelId = id
+        case .offline: return .failure(.failed(nil, reason: .deviceOffline, message: "The channels index could not be fetched to resolve the channel name"))
+        case .unknown: return .failure(.failed(nil, reason: .channelUnknown, message: "The channel set at runtime is not in the app's channels index"))
+        case .invalid(let message): return .failure(.failed(nil, reason: .indexInvalid, message: message))
+        case .missing: return .failure(.failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
+        }
+        switch await fetchChannelIndex(channelId: channelId) {
+        case .index(let index): return .index(index)
+        case .offline: return .failure(.failed(nil, reason: .deviceOffline, message: "The channel index could not be fetched and no cached copy exists"))
+        case .invalid(let message): return .failure(.failed(nil, reason: .indexInvalid, message: message))
+        case .missing:
+            let source = state.channel == nil ? "of this build" : "set at runtime"
+            return .failure(.failed(nil, reason: .channelUnknown, message: "The channel \(channelId) \(source) serves no index."))
+        }
+    }
+
+    private func leaveRevokedRelease(for fallback: IndexRelease?, cycle: Cycle) async -> SyncResult {
+        if (fallback?.bundleId ?? configuration.embeddedBundleId) == runningBundleId {
+            adoptInPlace(fallback?.release)
+            return .skipped(fallback?.release, reason: .releaseRevoked)
+        }
+        if cycle.stage == .check {
+            return .skipped(fallback?.release, reason: .releaseRevoked)
+        }
+        guard let target = fallback else {
+            revertToEmbedded()
+            return .skipped(nil, reason: .releaseRevoked)
+        }
+        let next = NextRelease(release: resolveRelease(target, isMandatory: true), applyStrategy: .immediate)
+        let outcome = await downloadAndApply(target, as: next, trigger: cycle.trigger)
+        return outcome.status == .failed ? outcome : .skipped(target.release, reason: .releaseRevoked)
+    }
+
     // An adoption answers `up_to_date`, since nothing waits and nothing reloads.
     // The strategy stored with a downloaded release wins over the configuration, so an automatic cycle never overrides the app.
-    private func update(to target: IndexRelease, isMandatory: Bool, trigger: SyncTrigger, stage: Stage, options: SyncOptions) async -> SyncResult {
+    private func update(to target: IndexRelease, isMandatory: Bool, cycle: Cycle) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
         if target.bundleId == runningBundleId {
             adoptInPlace(release)
             return .upToDate(release)
         }
-        let requestedStrategy = resolveRequestedApplyStrategy(isMandatory: isMandatory, options: options)
+        let requestedStrategy = resolveRequestedApplyStrategy(isMandatory: isMandatory, options: cycle.options)
         let downloadSizeBytes = isCarryingEmbeddedBundle(release) ? 0 : target.sizeBytes
         if let downloaded = readDownloadedRelease(target) {
-            if stage == .check {
+            if cycle.stage == .check {
                 return .available(release, notes: target.notes, downloadSizeBytes: downloadSizeBytes)
             }
             return applyDownloaded(release, notes: target.notes, strategy: requestedStrategy ?? downloaded.applyStrategy)
         }
         let strategy = requestedStrategy ?? resolveConfiguredApplyStrategy(isMandatory: isMandatory)
-        listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadSizeBytes: downloadSizeBytes, trigger: trigger))
-        switch resolveDownloadStrategy(of: release, stage: stage, options: options) {
+        listener.updateAvailable(UpdateAvailableEvent(release: release, notes: target.notes, downloadSizeBytes: downloadSizeBytes, trigger: cycle.trigger))
+        switch resolveDownloadStrategy(of: release, cycle: cycle) {
         case .manual:
             return .available(release, notes: target.notes, downloadSizeBytes: downloadSizeBytes)
         case .unmetered where network.isConnectionMetered():
             return .skipped(release, reason: .connectionMetered)
         case .auto, .unmetered:
-            return await downloadAndApply(target, isMandatory: isMandatory, strategy: strategy, trigger: trigger)
+            return await downloadAndApply(target, as: NextRelease(release: release, applyStrategy: strategy), trigger: cycle.trigger)
         }
     }
 
     // A release of the embedded bundle downloads nothing, so it passes every gate but the check's.
-    private func resolveDownloadStrategy(of release: Release, stage: Stage, options: SyncOptions) -> DownloadStrategy {
-        return isCarryingEmbeddedBundle(release) && stage != .check ? .auto : options.downloadStrategy ?? configuration.downloadStrategy
+    private func resolveDownloadStrategy(of release: Release, cycle: Cycle) -> DownloadStrategy {
+        return isCarryingEmbeddedBundle(release) && cycle.stage != .check ? .auto : cycle.options.downloadStrategy ?? configuration.downloadStrategy
     }
 
     // The mandatory flag is the evaluation's, transitive included.
@@ -404,8 +427,8 @@ public actor Core {
         return next
     }
 
-    private func downloadAndApply(_ target: IndexRelease, isMandatory: Bool, strategy: ApplyStrategy, trigger: SyncTrigger) async -> SyncResult {
-        let release = resolveRelease(target, isMandatory: isMandatory)
+    private func downloadAndApply(_ target: IndexRelease, as next: NextRelease, trigger: SyncTrigger) async -> SyncResult {
+        let release = next.release
         do {
             if !isCarryingEmbeddedBundle(release) {
                 try await downloadBundle(of: target)
@@ -417,10 +440,10 @@ public actor Core {
             enqueueDeviceEvent(.failed(releaseId: target.id, reason: FailedReason.downloadFailed.rawValue))
             return .failed(release, reason: .downloadFailed, message: error.localizedDescription)
         }
-        if strategy != .immediate {
-            listener.updateDownloaded(UpdateDownloadedEvent(release: release, applyStrategy: strategy, trigger: trigger))
+        if next.applyStrategy != .immediate {
+            listener.updateDownloaded(UpdateDownloadedEvent(release: release, applyStrategy: next.applyStrategy, trigger: trigger))
         }
-        return applyDownloaded(release, notes: target.notes, strategy: strategy)
+        return applyDownloaded(release, notes: target.notes, strategy: next.applyStrategy)
     }
 
     private func downloadBundle(of target: IndexRelease) async throws {
@@ -834,6 +857,10 @@ public actor Core {
     private func resolveChannelId() async -> ChannelResolution {
         if let id = getChannel().id { return .id(id) }
         guard case .name(let name) = state.channel else { return .missing }
+        return await fetchChannelId(named: name)
+    }
+
+    private func fetchChannelId(named name: String) async -> ChannelResolution {
         guard let url = URL(string: "\(configuration.filesBaseUrl)/apps/\(configuration.appId)/channels/v1/index.json") else {
             return .invalid("Invalid channels index URL")
         }
@@ -875,22 +902,26 @@ public actor Core {
             state.cachedIndex = CachedIndex(etag: cached.etag, fetchedAt: clock.now, body: cached.body)
             return .index(cached.body)
         case 200:
-            guard let index = try? Json.decoder.decode(ChannelIndex.self, from: response.body) else {
-                return .invalid("The channel index could not be parsed")
-            }
-            guard index.appId == configuration.appId, index.channelId == channelId, index.platform == device.platform else {
-                return .invalid("The channel index names another app, channel or platform")
-            }
-            if let cached = cached, isMovingBackwards(from: cached, to: index) {
-                return .index(cached.body)
-            }
-            state.cachedIndex = CachedIndex(etag: response.header("ETag"), fetchedAt: clock.now, body: index)
-            return .index(index)
+            return acceptFetchedIndex(response, channelId: channelId, cached: cached)
         case 404:
             return .missing
         default:
             return cached.map { .index($0.body) } ?? .offline
         }
+    }
+
+    private func acceptFetchedIndex(_ response: HttpResponse, channelId: String, cached: CachedIndex?) -> IndexFetch {
+        guard let index = try? Json.decoder.decode(ChannelIndex.self, from: response.body) else {
+            return .invalid("The channel index could not be parsed")
+        }
+        guard index.appId == configuration.appId, index.channelId == channelId, index.platform == device.platform else {
+            return .invalid("The channel index names another app, channel or platform")
+        }
+        if let cached = cached, isMovingBackwards(from: cached, to: index) {
+            return .index(cached.body)
+        }
+        state.cachedIndex = CachedIndex(etag: response.header("ETag"), fetchedAt: clock.now, body: index)
+        return .index(index)
     }
 
     private func isMovingBackwards(from cached: CachedIndex, to index: ChannelIndex) -> Bool {

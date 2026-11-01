@@ -61,15 +61,14 @@ public enum Evaluator {
     private static let binaryVersionMinimumComponents = 3
 
     public static func evaluation(of index: ChannelIndex, device: DeviceInfo) -> IndexEvaluation {
-        let currentIndexRelease = device.currentRelease.flatMap { current in index.releases.first { $0.id == current.id } }
         if isDeviceBeyondCap(index, device: device) {
             return IndexEvaluation(outcome: .skipped(nil, reason: .spendingCapReached, conditionType: nil), verdicts: [])
         }
         let verdicts = index.releases.sorted { $0.number > $1.number }.map { verdict(for: $0, in: index, device: device) }
-        return IndexEvaluation(outcome: outcome(of: verdicts, in: index, device: device, currentIndexRelease: currentIndexRelease), verdicts: verdicts)
+        return IndexEvaluation(outcome: outcome(of: verdicts, in: index, device: device), verdicts: verdicts)
     }
 
-    private static func outcome(of verdicts: [ReleaseVerdict], in index: ChannelIndex, device: DeviceInfo, currentIndexRelease: IndexRelease?) -> Evaluation {
+    private static func outcome(of verdicts: [ReleaseVerdict], in index: ChannelIndex, device: DeviceInfo) -> Evaluation {
         let currentNumber = device.currentRelease?.number ?? embeddedReleaseNumber
         let isCurrentRevoked = device.currentRelease.map { isRevoked(id: $0.id, in: index) } ?? false
         let newerVerdict = verdicts.first { $0.release.number > currentNumber && $0.reason != .releaseRevoked }
@@ -88,7 +87,7 @@ public enum Evaluator {
         if let newer = newerVerdict, let reason = newer.reason {
             return .skipped(newer.release, reason: reason, conditionType: newer.conditionType)
         }
-        return .upToDate(currentIndexRelease)
+        return .upToDate(device.currentRelease.flatMap { current in index.releases.first { $0.id == current.id } })
     }
 
     public static func verdict(for release: IndexRelease, in index: ChannelIndex, device: DeviceInfo) -> ReleaseVerdict {
