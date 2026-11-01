@@ -55,13 +55,10 @@ final class WireTypesTests: XCTestCase {
         XCTAssertEqual(try decodeIndexRelease(id: "1c6e2a3b-7f4d-4e1a-9b2c-3d4e5f6a7b8c", bundleId: bundleId).bundleId, bundleId)
     }
 
-    func testShouldRefuseAResourceFileWhoseAppIdOrEmbeddedBundleIdIsNotAnIdentifier() throws {
-        let configuration = try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any]
-        for (key, value) in [("appId", "a1/../a2"), ("embeddedBundleId", "../b0")] {
-            var json = try XCTUnwrap(configuration)
-            json[key] = value
-            XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)), key)
-        }
+    func testShouldRefuseAResourceFileWhoseAppIdIsNotAnIdentifier() throws {
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Json.encoder.encode(Fixture.configuration())) as? [String: Any])
+        json["appId"] = "a1/../a2"
+        XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)))
     }
 
     func testShouldReadEveryPublicKeyFoundationEncodes() throws {

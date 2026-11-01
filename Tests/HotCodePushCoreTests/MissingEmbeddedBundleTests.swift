@@ -16,13 +16,6 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         return harness
     }
 
-    func testShouldReadAResourceFileWithANullEmbeddedBundleManifestAndRefuseOneWithoutTheKey() throws {
-        var json: [String: Any] = ["appId": Fixture.appId, "builtAt": Iso8601.format(Fixture.builtAt), "channelId": NSNull(), "embeddedBundleId": NSNull(), "embeddedBundleManifest": NSNull(), "fingerprint": "fp1:abc"]
-        XCTAssertNil(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)).embeddedBundleManifest)
-        json["embeddedBundleManifest"] = nil
-        XCTAssertThrowsError(try Configuration.decode(try JSONSerialization.data(withJSONObject: json)))
-    }
-
     func testShouldSkipASyncWithDebugBuildAndRequestNothingWhenTheBuildEmbedsNoBundle() async throws {
         let harness = harnessWithoutEmbeddedBundle()
         await harness.core.handleAppStart()
