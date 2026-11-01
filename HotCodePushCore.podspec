@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name = 'HotCodePushCore'
-  s.version = '0.2.0' # x-release-please-version
+  s.version = '0.3.0' # x-release-please-version
   s.summary = 'The HotCodePush device protocol for iOS: index, evaluation, download, verification, state and reporting.'
   s.license = { :type => 'MIT', :file => 'LICENSE' }
   s.homepage = 'https://hotcodepush.com'
