@@ -317,7 +317,7 @@ public actor Core {
     private func resolveCycle(_ cycle: Cycle) async -> SyncResult {
         let current = state.currentRelease
         if isDisabledInThisBuild {
-            return .skipped(nil, reason: .buildDebug)
+            return .skipped(release: nil, reason: .buildDebug)
         }
         let index: ChannelIndex
         switch await fetchCycleIndex() {
@@ -326,7 +326,7 @@ public actor Core {
         }
         switch Evaluator.evaluation(of: index, device: deviceInfo()).outcome {
         case .upToDate:
-            return .upToDate(current)
+            return .upToDate(release: current)
         case .available(let target, let isMandatory):
             recordChecked(target, in: index, status: .available)
             return await update(to: target, isMandatory: isMandatory, cycle: cycle)
@@ -336,7 +336,7 @@ public actor Core {
             if let release = release {
                 recordChecked(release, in: index, status: .skipped, reason: reason, conditionType: conditionType)
             }
-            return .skipped(release?.release, reason: reason, conditionType: conditionType)
+            return .skipped(release: release?.release, reason: reason, conditionType: conditionType)
         }
     }
 
@@ -344,36 +344,36 @@ public actor Core {
         let channelId: String
         switch await resolveChannelId() {
         case .id(let id): channelId = id
-        case .offline: return .failure(.failed(nil, reason: .deviceOffline, message: "The channels index could not be fetched to resolve the channel name"))
-        case .unknown: return .failure(.failed(nil, reason: .channelUnknown, message: "The channel set at runtime is not in the app's channels index"))
-        case .invalid(let message): return .failure(.failed(nil, reason: .indexInvalid, message: message))
-        case .missing: return .failure(.failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
+        case .offline: return .failure(.failed(release: nil, reason: .deviceOffline, message: "The channels index could not be fetched to resolve the channel name"))
+        case .unknown: return .failure(.failed(release: nil, reason: .channelUnknown, message: "The channel set at runtime is not in the app's channels index"))
+        case .invalid(let message): return .failure(.failed(release: nil, reason: .indexInvalid, message: message))
+        case .missing: return .failure(.failed(release: nil, reason: .channelUnknown, message: Core.missingChannelMessage))
         }
         switch await fetchChannelIndex(channelId: channelId) {
         case .index(let index): return .index(index)
-        case .offline: return .failure(.failed(nil, reason: .deviceOffline, message: "The channel index could not be fetched and no cached copy exists"))
-        case .invalid(let message): return .failure(.failed(nil, reason: .indexInvalid, message: message))
+        case .offline: return .failure(.failed(release: nil, reason: .deviceOffline, message: "The channel index could not be fetched and no cached copy exists"))
+        case .invalid(let message): return .failure(.failed(release: nil, reason: .indexInvalid, message: message))
         case .missing:
             let source = state.channel == nil ? "of this build" : "set at runtime"
-            return .failure(.failed(nil, reason: .channelUnknown, message: "The channel \(channelId) \(source) serves no index."))
+            return .failure(.failed(release: nil, reason: .channelUnknown, message: "The channel \(channelId) \(source) serves no index."))
         }
     }
 
     private func leaveRevokedRelease(for fallback: IndexRelease?, cycle: Cycle) async -> SyncResult {
         if (fallback?.bundleId ?? configuration.embeddedBundleId) == runningBundleId {
             adoptInPlace(fallback?.release)
-            return .skipped(fallback?.release, reason: .releaseRevoked)
+            return .skipped(release: fallback?.release, reason: .releaseRevoked)
         }
         if cycle.stage == .check {
-            return .skipped(fallback?.release, reason: .releaseRevoked)
+            return .skipped(release: fallback?.release, reason: .releaseRevoked)
         }
         guard let target = fallback else {
             revertToEmbedded()
-            return .skipped(nil, reason: .releaseRevoked)
+            return .skipped(release: nil, reason: .releaseRevoked)
         }
         let next = NextRelease(release: resolveRelease(target, isMandatory: true), applyStrategy: .immediate)
         let outcome = await downloadAndApply(target, as: next, trigger: cycle.trigger)
-        return outcome.status == .failed ? outcome : .skipped(target.release, reason: .releaseRevoked)
+        return outcome.status == .failed ? outcome : .skipped(release: target.release, reason: .releaseRevoked)
     }
 
     // An adoption answers `up_to_date`, since nothing waits and nothing reloads.
@@ -382,7 +382,7 @@ public actor Core {
         let release = resolveRelease(target, isMandatory: isMandatory)
         if target.bundleId == runningBundleId {
             adoptInPlace(release)
-            return .upToDate(release)
+            return .upToDate(release: release)
         }
         let requestedStrategy = resolveRequestedApplyStrategy(isMandatory: isMandatory, options: cycle.options)
         let downloadSizeBytes = isCarryingEmbeddedBundle(release) ? 0 : target.sizeBytes
@@ -398,7 +398,7 @@ public actor Core {
         case .manual:
             return .available(release, notes: target.notes, downloadSizeBytes: downloadSizeBytes)
         case .unmetered where network.isConnectionMetered():
-            return .skipped(release, reason: .connectionMetered)
+            return .skipped(release: release, reason: .connectionMetered)
         case .auto, .unmetered:
             return await downloadAndApply(target, as: NextRelease(release: release, applyStrategy: strategy), trigger: cycle.trigger)
         }
@@ -435,10 +435,10 @@ public actor Core {
             }
         } catch let failure as DownloadFailure {
             enqueueDeviceEvent(.failed(releaseId: target.id, reason: failure.reason.rawValue))
-            return .failed(release, reason: failure.reason, message: failure.message)
+            return .failed(release: release, reason: failure.reason, message: failure.message)
         } catch {
             enqueueDeviceEvent(.failed(releaseId: target.id, reason: FailedReason.downloadFailed.rawValue))
-            return .failed(release, reason: .downloadFailed, message: error.localizedDescription)
+            return .failed(release: release, reason: .downloadFailed, message: error.localizedDescription)
         }
         if next.applyStrategy != .immediate {
             listener.updateDownloaded(UpdateDownloadedEvent(release: release, applyStrategy: next.applyStrategy, trigger: trigger))

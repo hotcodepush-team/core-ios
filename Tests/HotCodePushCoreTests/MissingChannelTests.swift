@@ -21,7 +21,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual)
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
+        XCTAssertEqual(result, .failed(release: nil, reason: .channelUnknown, message: Core.missingChannelMessage))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents, [])
@@ -36,7 +36,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = try await harness.core.checkForUpdate()
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
+        XCTAssertEqual(result, .failed(release: nil, reason: .channelUnknown, message: Core.missingChannelMessage))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
         XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.channelUnknown])
@@ -47,7 +47,7 @@ final class MissingChannelTests: XCTestCase {
         let harness = Harness(configuration: Fixture.configuration(isEnabledInDebugBuilds: false, channelId: nil), isDebugBuild: true)
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
+        XCTAssertEqual(result, .skipped(release: nil, reason: .buildDebug))
         XCTAssertTrue(harness.listener.updateFailed.isEmpty)
     }
 
@@ -112,7 +112,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.waitForBackgroundWork()
         let lastCheck = try XCTUnwrap(StateStore(store: harness.store).lastCheck)
         XCTAssertEqual(lastCheck.trigger, .resume)
-        XCTAssertEqual(lastCheck.result, .upToDate(nil))
+        XCTAssertEqual(lastCheck.result, .upToDate(release: nil))
     }
 
     func testShouldKeepCheckingAtTheIntervalAndOnResumeWhenTheRuntimeChannelServesNoIndexAndTheBuildCarriesNone() async throws {
@@ -149,10 +149,10 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         try await harness.core.setChannel(.id(Fixture.channelId))
         let followed = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(followed, .upToDate(nil))
+        XCTAssertEqual(followed, .upToDate(release: nil))
         try await harness.core.setChannel(nil)
         let cleared = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(cleared, .failed(nil, reason: .channelUnknown, message: Core.missingChannelMessage))
+        XCTAssertEqual(cleared, .failed(release: nil, reason: .channelUnknown, message: Core.missingChannelMessage))
     }
 
     func testShouldFailWithUnknownChannelAndKeepTheChoiceWhenTheRuntimeChannelServesNoIndex() async throws {
@@ -160,7 +160,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         try await harness.core.setChannel(.id(Fixture.goneChannelId))
         let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .failed(nil, reason: .channelUnknown, message: "The channel \(Fixture.goneChannelId) set at runtime serves no index."))
+        XCTAssertEqual(result, .failed(release: nil, reason: .channelUnknown, message: "The channel \(Fixture.goneChannelId) set at runtime serves no index."))
         let channel = await harness.core.getChannel()
         XCTAssertEqual(channel, GetChannelResult(id: Fixture.goneChannelId, name: nil, source: .runtime))
         XCTAssertEqual(harness.http.requests.count, 1)
@@ -172,7 +172,7 @@ final class MissingChannelTests: XCTestCase {
         await harness.core.handleAppStart()
         await harness.core.waitForBackgroundWork()
         let lastCheck = try XCTUnwrap(StateStore(store: harness.store).lastCheck)
-        XCTAssertEqual(lastCheck.result, .failed(nil, reason: .channelUnknown, message: "The channel \(Fixture.channelId) of this build serves no index."))
+        XCTAssertEqual(lastCheck.result, .failed(release: nil, reason: .channelUnknown, message: "The channel \(Fixture.channelId) of this build serves no index."))
         let channel = await harness.core.getChannel()
         XCTAssertEqual(channel, GetChannelResult(id: Fixture.channelId, name: nil, source: .config))
         XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [900])

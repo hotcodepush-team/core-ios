@@ -92,7 +92,7 @@ public struct SyncResult: Codable, Equatable {
         }
     }
 
-    public static func upToDate(_ release: Release?) -> SyncResult {
+    public static func upToDate(release: Release?) -> SyncResult {
         return SyncResult(status: .upToDate, release: release)
     }
 
@@ -108,11 +108,11 @@ public struct SyncResult: Codable, Equatable {
         return SyncResult(status: .applied, release: release, notes: notes)
     }
 
-    public static func skipped(_ release: Release?, reason: SkippedReason, conditionType: ConditionType? = nil) -> SyncResult {
+    public static func skipped(release: Release?, reason: SkippedReason, conditionType: ConditionType? = nil) -> SyncResult {
         return SyncResult(status: .skipped, release: release, reason: reason.rawValue, conditionType: conditionType)
     }
 
-    public static func failed(_ release: Release?, reason: FailedReason, message: String) -> SyncResult {
+    public static func failed(release: Release?, reason: FailedReason, message: String) -> SyncResult {
         return SyncResult(status: .failed, release: release, reason: reason.rawValue, message: message)
     }
 }
