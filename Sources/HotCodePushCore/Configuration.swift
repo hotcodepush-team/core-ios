@@ -128,6 +128,22 @@ public struct Configuration: Codable, Equatable {
         }
         return "HotCodePush is not configured: the app's hotcodepush.json was refused: \(reason). Check the project's hotcodepush.json and build the app again."
     }
+
+    /// Reads the resource file like `read`, and answers the message an SDK logs when there is none or the reader refused it.
+    public static func load(from bundle: Bundle = .main, subdirectory: String? = nil) -> ConfigurationLoadResult {
+        do {
+            guard let configuration = try read(from: bundle, subdirectory: subdirectory) else { return .notConfigured(message: missingMessage) }
+            return .loaded(configuration)
+        } catch {
+            return .notConfigured(message: resolveRefusedMessage(error))
+        }
+    }
+}
+
+/// What `Configuration.load` found: the configuration, or why the SDK runs without a core.
+public enum ConfigurationLoadResult: Equatable {
+    case loaded(Configuration)
+    case notConfigured(message: String)
 }
 
 /// Each stage's strategy for one `sync()` call, overriding the configuration.
