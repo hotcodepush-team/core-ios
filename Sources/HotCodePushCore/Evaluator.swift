@@ -42,9 +42,9 @@ public struct ReleaseVerdict: Equatable {
 /// On `skipped` with `release_revoked` the release is the one the device falls back to, `nil` for the embedded bundle.
 /// On any other `skipped` it is the newest release the device will not take.
 public enum Evaluation: Equatable {
-    case upToDate(IndexRelease?)
+    case upToDate(release: IndexRelease?)
     case available(IndexRelease, isMandatory: Bool)
-    case skipped(IndexRelease?, reason: SkippedReason, conditionType: ConditionType?)
+    case skipped(release: IndexRelease?, reason: SkippedReason, conditionType: ConditionType?)
 }
 
 /// The outcome with the verdicts behind it, newest release first.
@@ -62,7 +62,7 @@ public enum Evaluator {
 
     public static func evaluation(of index: ChannelIndex, device: DeviceInfo) -> IndexEvaluation {
         if isDeviceBeyondCap(index, device: device) {
-            return IndexEvaluation(outcome: .skipped(nil, reason: .spendingCapReached, conditionType: nil), verdicts: [])
+            return IndexEvaluation(outcome: .skipped(release: nil, reason: .spendingCapReached, conditionType: nil), verdicts: [])
         }
         let verdicts = index.releases.sorted { $0.number > $1.number }.map { verdict(for: $0, in: index, device: device) }
         return IndexEvaluation(outcome: outcome(of: verdicts, in: index, device: device), verdicts: verdicts)
@@ -79,15 +79,15 @@ public enum Evaluator {
             return .available(target, isMandatory: isMandatoryTransitively(target, currentNumber: currentNumber, eligibleVerdicts: eligibleVerdicts))
         }
         if isCurrentRevoked {
-            return .skipped(olderEligible?.release, reason: .releaseRevoked, conditionType: nil)
+            return .skipped(release: olderEligible?.release, reason: .releaseRevoked, conditionType: nil)
         }
         if index.pausedAt != nil, let newer = newerVerdict {
-            return .skipped(newer.release, reason: .channelPaused, conditionType: nil)
+            return .skipped(release: newer.release, reason: .channelPaused, conditionType: nil)
         }
         if let newer = newerVerdict, let reason = newer.reason {
-            return .skipped(newer.release, reason: reason, conditionType: newer.conditionType)
+            return .skipped(release: newer.release, reason: reason, conditionType: newer.conditionType)
         }
-        return .upToDate(device.currentRelease.flatMap { current in index.releases.first { $0.id == current.id } })
+        return .upToDate(release: device.currentRelease.flatMap { current in index.releases.first { $0.id == current.id } })
     }
 
     public static func verdict(for release: IndexRelease, in index: ChannelIndex, device: DeviceInfo) -> ReleaseVerdict {

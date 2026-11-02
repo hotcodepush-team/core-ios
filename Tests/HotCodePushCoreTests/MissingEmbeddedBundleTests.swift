@@ -21,7 +21,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual)
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
+        XCTAssertEqual(result, .skipped(release: nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
     }
@@ -31,7 +31,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = try await harness.core.checkForUpdate()
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
+        XCTAssertEqual(result, .skipped(release: nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
     }
@@ -41,7 +41,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         await harness.core.handleAppStart()
         let result = try await harness.core.downloadUpdate()
         await harness.core.waitForBackgroundWork()
-        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
+        XCTAssertEqual(result, .skipped(release: nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
         XCTAssertTrue(harness.http.posts.isEmpty)
     }
@@ -51,7 +51,7 @@ final class MissingEmbeddedBundleTests: XCTestCase {
         harness.publish([Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))], sequence: 1)
         await harness.core.handleAppStart()
         let result = try await harness.core.sync(trigger: .manual)
-        XCTAssertEqual(result, .skipped(nil, reason: .buildDebug))
+        XCTAssertEqual(result, .skipped(release: nil, reason: .buildDebug))
         XCTAssertTrue(harness.http.requests.isEmpty)
     }
 

@@ -61,7 +61,7 @@ public final class StateStore {
     public var deviceId: String {
         if let id = string("deviceId") { return id }
         let id = UUID().uuidString.lowercased()
-        set("deviceId", id)
+        set("deviceId", to: id)
         return id
     }
 
@@ -98,12 +98,12 @@ public final class StateStore {
     /// The floor of the binary that last started, to notice a new one.
     public var lastBuiltAt: Date? {
         get { return string("lastBuiltAt").flatMap(Iso8601.parse) }
-        set { set("lastBuiltAt", newValue.map(Iso8601.format)) }
+        set { set("lastBuiltAt", to: newValue.map(Iso8601.format)) }
     }
 
     public var reportedAt: Date? {
         get { return string("reportedAt").flatMap(Iso8601.parse) }
-        set { set("reportedAt", newValue.map(Iso8601.format)) }
+        set { set("reportedAt", to: newValue.map(Iso8601.format)) }
     }
 
     public var acknowledgedReport: DeviceReport? {
@@ -144,13 +144,13 @@ public final class StateStore {
 
     public var lastSyncAt: Date? {
         get { return string("lastSyncAt").flatMap(Iso8601.parse) }
-        set { set("lastSyncAt", newValue.map(Iso8601.format)) }
+        set { set("lastSyncAt", to: newValue.map(Iso8601.format)) }
     }
 
     /// Drops every cache key; the identity keys survive. Called at start on an unknown version, never by the app.
     public func deleteCacheKeys() {
         for key in StateStore.cacheKeys {
-            set(key, nil)
+            set(key, to: nil)
         }
         store.set(StateStore.stateVersion, forKey: StateStore.prefix + "stateVersion")
     }
@@ -165,7 +165,7 @@ public final class StateStore {
             if StateStore.cacheKeys.contains(key) {
                 deleteCacheKeys()
             } else {
-                set(key, nil)
+                set(key, to: nil)
             }
             return nil
         }
@@ -173,17 +173,17 @@ public final class StateStore {
 
     private func write<T: Encodable>(_ key: String, _ value: T?) {
         guard let value = value, let data = try? Json.encoder.encode(value) else {
-            set(key, nil)
+            set(key, to: nil)
             return
         }
-        set(key, String(bytes: data, encoding: .utf8))
+        set(key, to: String(bytes: data, encoding: .utf8))
     }
 
     private func string(_ key: String) -> String? {
         return store.string(forKey: StateStore.prefix + key)
     }
 
-    private func set(_ key: String, _ value: String?) {
+    private func set(_ key: String, to value: String?) {
         store.set(value, forKey: StateStore.prefix + key)
     }
 }
