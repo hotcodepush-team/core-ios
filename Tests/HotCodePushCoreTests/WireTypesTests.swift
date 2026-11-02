@@ -113,6 +113,22 @@ final class WireTypesTests: XCTestCase {
         }
     }
 
+    func testShouldLoadTheConfigurationOfTheResourceFile() throws {
+        let resourceFile = try Json.encoder.encode(Fixture.configuration())
+        let bundle = try resourceBundle(files: ["hotcodepush.json": resourceFile])
+        XCTAssertEqual(Configuration.load(from: bundle), .loaded(try Configuration.decode(resourceFile)))
+    }
+
+    func testShouldLoadTheMissingMessageWhenTheResourcesLackTheResourceFile() throws {
+        XCTAssertEqual(Configuration.load(from: try resourceBundle(files: [:])), .notConfigured(message: Configuration.missingMessage))
+    }
+
+    func testShouldLoadTheRefusedMessageWhenTheReaderRefusesTheResourceFile() throws {
+        let bundle = try resourceBundle(files: ["hotcodepush.json": Data("{}".utf8)])
+        guard case .notConfigured(let message) = Configuration.load(from: bundle) else { return XCTFail("the empty file loaded") }
+        XCTAssertTrue(message.hasPrefix("HotCodePush is not configured: the app's hotcodepush.json was refused: "))
+    }
+
     func testShouldPhraseARefusalThatIsNotADecodingErrorByItsDescription() {
         XCTAssertEqual(Configuration.resolveRefusedMessage(PlainError("The file is unreadable")), "HotCodePush is not configured: the app's hotcodepush.json was refused: The file is unreadable. Check the project's hotcodepush.json and build the app again.")
     }
