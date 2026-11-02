@@ -60,3 +60,12 @@ public struct LogEntry: Equatable {
         }
     }
 }
+
+/// The log itself, the newest two hundred lines: the core's cycles write it, the debug screen reads it.
+struct SessionLog {
+    private(set) var entries: [LogEntry] = []
+
+    mutating func record(_ entry: LogEntry) {
+        entries = Array((entries + [entry]).suffix(LogEntry.capacity))
+    }
+}

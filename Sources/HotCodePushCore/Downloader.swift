@@ -62,7 +62,7 @@ public final class Downloader {
     public func downloadRelease(_ target: IndexRelease, baseBundleId: String?, progress: @escaping (Int, Int) -> Void) async throws -> DownloadOutcome {
         let (envelope, manifest) = try await fetchBundleManifest(target)
         let missing = resolveMissingFiles(manifest)
-        let pack = resolvePack(envelope, baseBundleId: baseBundleId, missingFileCount: missing.count)
+        let pack = resolvePackSource(envelope, baseBundleId: baseBundleId, missingFileCount: missing.count)
         try verifyFreeSpace(forBytes: missing.reduce(0) { $0 + $1.sizeBytes } + (pack?.packBytesLimit ?? 0))
         var downloadSizeBytes = 0
         var packKind = PackKind.files
@@ -97,7 +97,7 @@ public final class Downloader {
         try verifyManifestSignature(envelope, expectedSha256: target.manifestSha256)
         guard envelope.bundleId == target.bundleId else { throw DownloadFailure.manifestInvalid("The manifest names another bundle") }
         guard manifest.isForDevice(appId: configuration.appId, platform: platform) else {
-            throw DownloadFailure.manifestInvalid("The manifest is for another app or platform")
+            throw DownloadFailure.manifestInvalid("The manifest is for another app or does not list \(platform)")
         }
         return (envelope, manifest)
     }
@@ -131,30 +131,30 @@ public final class Downloader {
 
     // A device with a base takes a delta even for one missing file, so the main bundle arrives as a patch.
     // Only a listed delta or the streamed pack is used, never a URL guessed on the files host.
-    func resolvePack(_ envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int) -> PackSource? {
+    func resolvePackSource(_ envelope: ManifestEnvelope, baseBundleId: String?, missingFileCount: Int) -> PackSource? {
         guard missingFileCount > 0 else { return nil }
-        guard let baseBundleId = baseBundleId else { return resolveFullPack(envelope) }
-        guard let listedDelta = envelope.deltas.first(where: { $0.baseBundleId == baseBundleId }) else { return resolveStreamedPack(envelope, baseBundleId: baseBundleId) }
+        guard let baseBundleId = baseBundleId else { return resolveFullPackSource(envelope) }
+        guard let listedDelta = envelope.deltas.first(where: { $0.baseBundleId == baseBundleId }) else { return resolveStreamedPackSource(envelope, baseBundleId: baseBundleId) }
         return PackSource(url: listedDelta.url, sizeBytes: listedDelta.sizeBytes, packBytesLimit: listedDelta.sizeBytes, kind: .delta)
     }
 
     // The updates host redirects to the full pack above twenty objects, and a download follows no redirect.
     // So any refusal of the streamed pack falls back to the full pack.
-    func resolveFallbackPack(after source: PackSource, envelope: ManifestEnvelope) -> PackSource? {
+    func resolveFallbackPackSource(_ envelope: ManifestEnvelope, after source: PackSource) -> PackSource? {
         switch source.kind {
         case .delta, .files, .full:
             return nil
         case .streamed:
-            return resolveFullPack(envelope)
+            return resolveFullPackSource(envelope)
         }
     }
 
-    private func resolveFullPack(_ envelope: ManifestEnvelope) -> PackSource {
+    private func resolveFullPackSource(_ envelope: ManifestEnvelope) -> PackSource {
         return PackSource(url: envelope.pack.url, sizeBytes: envelope.pack.sizeBytes, packBytesLimit: envelope.pack.sizeBytes, kind: .full)
     }
 
     // Its length is known only as it arrives, but it never exceeds the full pack whose entries it shares.
-    private func resolveStreamedPack(_ envelope: ManifestEnvelope, baseBundleId: String) -> PackSource {
+    private func resolveStreamedPackSource(_ envelope: ManifestEnvelope, baseBundleId: String) -> PackSource {
         let url = "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/bundles/\(envelope.bundleId)/deltas/\(baseBundleId)"
         return PackSource(url: url, sizeBytes: nil, packBytesLimit: envelope.pack.sizeBytes, kind: .streamed)
     }
@@ -168,7 +168,7 @@ public final class Downloader {
         do {
             return (try await downloadPackEntries(source, bundleId: envelope.bundleId, wanted: wanted, progress: progress), source.kind)
         } catch let refusal as HttpStatusError {
-            guard let fallback = resolveFallbackPack(after: source, envelope: envelope) else {
+            guard let fallback = resolveFallbackPackSource(envelope, after: source) else {
                 throw DownloadFailure.downloadFailed("HTTP \(refusal.status) for the pack")
             }
             return try await downloadPack(fallback, envelope: envelope, wanted: wanted, progress: progress)
@@ -288,7 +288,7 @@ public final class Downloader {
         for pauseSeconds in Downloader.retryPausesSeconds {
             do {
                 return try await attempt()
-            } catch where Downloader.isTransient(error) {
+            } catch where Downloader.isTransientFailure(error) {
                 try await clock.sleep(seconds: pauseSeconds)
             }
         }
@@ -296,7 +296,7 @@ public final class Downloader {
     }
 
     // A dropped connection that cuts the body short is a `URLError` too.
-    private static func isTransient(_ error: Error) -> Bool {
+    private static func isTransientFailure(_ error: Error) -> Bool {
         if let refusal = error as? HttpStatusError {
             return (500...599).contains(refusal.status)
         }

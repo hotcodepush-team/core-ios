@@ -148,7 +148,7 @@ public enum Condition: Codable, Equatable {
     case os(range: String)
     case device(hashedIds: [String])
     case attribute(key: String, valueSha256: String)
-    case unknown(type: String)
+    case unknown(wireType: String)
 
     enum CodingKeys: String, CodingKey {
         case type, range, fingerprint, hashedIds, key, valueSha256
@@ -163,7 +163,7 @@ public enum Condition: Codable, Equatable {
         case "os": self = .os(range: try container.decode(.nonEmpty, forKey: .range))
         case "device": self = .device(hashedIds: try container.decodeEach(.sha256, forKey: .hashedIds))
         case "attribute": self = .attribute(key: try container.decode(.nonEmpty, forKey: .key), valueSha256: try container.decode(.sha256, forKey: .valueSha256))
-        default: self = .unknown(type: type)
+        default: self = .unknown(wireType: type)
         }
     }
 
@@ -186,8 +186,8 @@ public enum Condition: Codable, Equatable {
             try container.encode("attribute", forKey: .type)
             try container.encode(key, forKey: .key)
             try container.encode(valueSha256, forKey: .valueSha256)
-        case .unknown(let type):
-            try container.encode(type, forKey: .type)
+        case .unknown(let wireType):
+            try container.encode(wireType, forKey: .type)
         }
     }
 

@@ -45,8 +45,8 @@ public actor Core {
     private let listener: CoreListener
     private let scheduler: Scheduler
     private let clock: Clock
-    private let applicationState: ApplicationState
-    private let network: NetworkState
+    private let appState: AppState
+    private let networkState: NetworkState
 
     private var readyTimer: ScheduledTask?
     private var isReadyTimerPaused = false
@@ -66,17 +66,18 @@ public actor Core {
     private var backgroundedAt: Date?
     private var resolvedChannelName: (name: String, id: String)?
     private var hasAnnouncedRollback = false
-    nonisolated(unsafe) var isObservingAppLifecycle = false
-    nonisolated let lifecycleLock = NSLock()
+    #if canImport(UIKit)
+    private nonisolated let lifecycleObserver = AppLifecycleObserver()
+    #endif
     // Answered once as the `previousRelease` of `notifyReady()`.
-    private var releaseBeforeSwitch: Release?
-    private var logEntries: [LogEntry] = []
+    private var switchedFromRelease: Release?
+    private var log = SessionLog()
     private var backgroundWork: [UUID: Task<Void, Never>] = [:]
     // Every cycle waits for this cleanup, since a download writes files no kept release lists yet.
     private var unusedFilesDeletion: Task<Void, Never>?
 
     /// Creates the core. The defaults are the production wiring every SDK on iOS uses; tests replace them.
-    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore = UserDefaultsStore(), files: FileStore = FileStore(rootDirectory: FileStore.defaultRootDirectory), embedded: EmbeddedBundle, http: HttpClient = UrlSessionHttpClient(), loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), applicationState: ApplicationState = SystemApplicationState(), network: NetworkState = NetworkMonitor(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
+    public init(configuration: Configuration, device: DeviceFacts, store: KeyValueStore = UserDefaultsStore(), files: FileStore = FileStore(rootDirectory: FileStore.defaultRootDirectory), embedded: EmbeddedBundle, http: HttpClient = UrlSessionHttpClient(), loader: BundleLoader, listener: CoreListener, scheduler: Scheduler = DispatchScheduler(), clock: Clock = SystemClock(), appState: AppState = SystemAppState(), networkState: NetworkState = NetworkMonitor(), temporaryDirectory: URL = FileManager.default.temporaryDirectory) {
         self.configuration = configuration
         self.device = device
         self.state = StateStore(store: store)
@@ -88,8 +89,8 @@ public actor Core {
         self.listener = listener
         self.scheduler = scheduler
         self.clock = clock
-        self.applicationState = applicationState
-        self.network = network
+        self.appState = appState
+        self.networkState = networkState
     }
 
     /// The longest `handleAppStartBlocking` waits for an answer before it serves the embedded bundle.
@@ -103,7 +104,7 @@ public actor Core {
     /// A headless start, for a host that will render no screen, applies no waiting release, arms no readiness gate and loads nothing.
     @discardableResult
     public func handleAppStart(isHeadless: Bool = false) async -> String? {
-        let isInForeground = await MainActor.run { applicationState.isInForeground }
+        let isInForeground = await MainActor.run { appState.isInForeground }
         return handleAppStart(isHeadless: isHeadless, isInForeground: isInForeground)
     }
 
@@ -149,7 +150,7 @@ public actor Core {
 
     nonisolated func handleAppStartBlocking(isHeadless: Bool = false, timeout: TimeInterval) -> String? {
         let answer = StartAnswer()
-        let isInForeground = Thread.isMainThread ? applicationState.isInForeground : nil
+        let isInForeground = Thread.isMainThread ? appState.isInForeground : nil
         Task.detached(priority: .userInitiated) {
             if let isInForeground = isInForeground {
                 answer.resolve(await self.handleAppStart(isHeadless: isHeadless, isInForeground: isInForeground))
@@ -193,12 +194,21 @@ public actor Core {
         confirmCurrentRelease()
         let rollback = state.lastRollback
         state.lastRollback = nil
-        let previousRelease = rollback?.fromRelease ?? releaseBeforeSwitch
-        releaseBeforeSwitch = nil
+        let previousRelease = rollback?.fromRelease ?? switchedFromRelease
+        switchedFromRelease = nil
         let result = NotifyReadyResult(currentRelease: state.currentRelease, previousRelease: previousRelease, isRolledBack: rollback != nil, rollbackReason: rollback?.reason)
         settleStart()
         return result
     }
+
+    #if canImport(UIKit)
+    /// Follows the app between background and foreground for the lifetime of the core; a second call does nothing.
+    public nonisolated func observeAppLifecycle() {
+        lifecycleObserver.start(
+            onPause: { [weak self] in Task { await self?.handleAppPause() } },
+            onResume: { [weak self] in Task { await self?.handleAppResume() } })
+    }
+    #endif
 
     /// Handles the move to the background: stops the interval and readiness timers and notes the time for `next_resume`.
     public func handleAppPause() {
@@ -306,7 +316,7 @@ public actor Core {
             state.lastSyncAt = clock.now
             scheduleIntervalSync(after: configuration.checkIntervalSeconds)
         }
-        record(LogEntry.ofCycle(result, trigger: cycle.trigger, at: clock.now))
+        log.record(LogEntry.ofCycle(result, trigger: cycle.trigger, at: clock.now))
         if result.status == .failed, let reason = result.reason.flatMap(FailedReason.init(rawValue:)) {
             listener.updateFailed(UpdateFailedEvent(release: result.release, reason: reason, message: result.message ?? "", trigger: cycle.trigger))
         }
@@ -360,7 +370,7 @@ public actor Core {
     }
 
     private func leaveRevokedRelease(for fallback: IndexRelease?, cycle: Cycle) async -> SyncResult {
-        if (fallback?.bundleId ?? configuration.embeddedBundleId) == runningBundleId {
+        if (fallback?.bundleId ?? configuration.embeddedBundleId) == resolveRunningBundleId() {
             adoptInPlace(fallback?.release)
             return .skipped(release: fallback?.release, reason: .releaseRevoked)
         }
@@ -380,7 +390,7 @@ public actor Core {
     // The strategy stored with a downloaded release wins over the configuration, so an automatic cycle never overrides the app.
     private func update(to target: IndexRelease, isMandatory: Bool, cycle: Cycle) async -> SyncResult {
         let release = resolveRelease(target, isMandatory: isMandatory)
-        if target.bundleId == runningBundleId {
+        if target.bundleId == resolveRunningBundleId() {
             adoptInPlace(release)
             return .upToDate(release: release)
         }
@@ -397,7 +407,7 @@ public actor Core {
         switch resolveDownloadStrategy(of: release, cycle: cycle) {
         case .manual:
             return .available(release, notes: target.notes, downloadSizeBytes: downloadSizeBytes)
-        case .unmetered where network.isConnectionMetered():
+        case .unmetered where networkState.isConnectionMetered():
             return .skipped(release: release, reason: .connectionMetered)
         case .auto, .unmetered:
             return await downloadAndApply(target, as: NextRelease(release: release, applyStrategy: strategy), trigger: cycle.trigger)
@@ -447,7 +457,7 @@ public actor Core {
     }
 
     private func downloadBundle(of target: IndexRelease) async throws {
-        let outcome = try await downloader.downloadRelease(target, baseBundleId: runningBundleId) { [listener] progressBytes, downloadSizeBytes in
+        let outcome = try await downloader.downloadRelease(target, baseBundleId: resolveRunningBundleId()) { [listener] progressBytes, downloadSizeBytes in
             listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes: downloadSizeBytes, progressBytes: progressBytes, releaseId: target.id))
         }
         try BundleProjection.project(outcome.manifest, from: files, embedded: embedded, into: loader.projectionDirectory(bundleId: target.bundleId))
@@ -556,7 +566,7 @@ public actor Core {
 
     /// Everything the debug screen shows: the device, the configuration, the state and this session's log.
     public func debugSnapshot() -> DebugSnapshot {
-        return DebugSnapshot(takenAt: clock.now, device: getDevice(), configuration: configuration, isDebugBuild: device.isDebugBuild, state: getState(), log: logEntries)
+        return DebugSnapshot(takenAt: clock.now, device: getDevice(), configuration: configuration, isDebugBuild: device.isDebugBuild, state: getState(), log: log.entries)
     }
 
     public func setAttributes(_ changes: [String: String?]) throws {
@@ -605,7 +615,7 @@ public actor Core {
     // The embedded bundle is never gated, so it is never rolled back or blocklisted.
     private func switchToNextRelease() {
         guard let next = state.nextRelease?.release else { return }
-        releaseBeforeSwitch = state.currentRelease
+        switchedFromRelease = state.currentRelease
         state.currentRelease = next
         state.nextRelease = nil
         persistServedBundle(of: next)
@@ -615,7 +625,7 @@ public actor Core {
         }
     }
 
-    private var runningBundleId: String? {
+    private func resolveRunningBundleId() -> String? {
         return state.currentRelease?.bundleId ?? configuration.embeddedBundleId
     }
 
@@ -762,7 +772,7 @@ public actor Core {
         state.pendingRollbackEvent = rollback
         hasAnnouncedRollback = false
         enqueueDeviceEvent(.failed(releaseId: current.id, reason: reason.rawValue, detail: detail))
-        record(LogEntry.ofRollback(rollback, at: clock.now))
+        log.record(LogEntry.ofRollback(rollback, at: clock.now))
         persistServedBundle(of: fallback)
     }
 
@@ -842,7 +852,6 @@ public actor Core {
         let kept = Set([state.currentRelease, state.nextRelease?.release, state.fallbackRelease].compactMap { $0?.bundleId })
         for bundleId in files.bundleIds() where !kept.contains(bundleId) {
             loader.deleteProjection(bundleId: bundleId)
-            files.deleteBundle(bundleId: bundleId)
         }
         files.deleteUnusedFiles(keepingBundleIds: kept)
     }
@@ -917,14 +926,14 @@ public actor Core {
         guard index.appId == configuration.appId, index.channelId == channelId, index.platform == device.platform else {
             return .invalid("The channel index names another app, channel or platform")
         }
-        if let cached = cached, isMovingBackwards(from: cached, to: index) {
+        if let cached = cached, isBehindCachedIndex(index, cached: cached) {
             return .index(cached.body)
         }
         state.cachedIndex = CachedIndex(etag: response.header("ETag"), fetchedAt: clock.now, body: index)
         return .index(index)
     }
 
-    private func isMovingBackwards(from cached: CachedIndex, to index: ChannelIndex) -> Bool {
+    private func isBehindCachedIndex(_ index: ChannelIndex, cached: CachedIndex) -> Bool {
         return clock.now.timeIntervalSince(cached.fetchedAt) < Core.cachedIndexMaxAge && index.sequence < cached.body.sequence
     }
 
@@ -953,12 +962,8 @@ public actor Core {
             eventCountEnqueuedInFlight += 1
         }
         if let entry = LogEntry.ofDeviceEvent(event, at: clock.now) {
-            record(entry)
+            log.record(entry)
         }
-    }
-
-    private func record(_ entry: LogEntry) {
-        logEntries = Array((logEntries + [entry]).suffix(LogEntry.capacity))
     }
 
     private func sendDeviceEvents() async {
@@ -966,13 +971,13 @@ public actor Core {
         let events = state.unsentEvents
         var report = buildDeviceReport()
         if report?.isReadable == false {
-            record(LogEntry(at: clock.now, code: "report_unreadable", message: "the device report stays unsent: a fact or an attribute is one the events endpoint refuses"))
+            log.record(LogEntry(at: clock.now, code: "report_unreadable", message: "the device report stays unsent: a fact or an attribute is one the events endpoint refuses"))
             report = nil
         }
         guard !events.isEmpty || report != nil else { return }
         let request = DeviceEventsRequest(deviceId: state.deviceId, events: events, platform: device.platform, report: report, sdkVersion: device.sdkVersion)
         guard request.isReadable else {
-            record(LogEntry(at: clock.now, code: "report_unreadable", message: "\(events.count) events kept: the SDK's version or the platform is one the events endpoint refuses"))
+            log.record(LogEntry(at: clock.now, code: "report_unreadable", message: "\(events.count) events kept: the device id, the SDK's version or the platform is one the events endpoint refuses"))
             return
         }
         guard let url = URL(string: "\(configuration.updatesBaseUrl)/v1/apps/\(configuration.appId)/events"),
@@ -981,7 +986,7 @@ public actor Core {
         eventCountEnqueuedInFlight = 0
         defer { isSendingDeviceEvents = false }
         let answer = BatchAnswer(try? await http.post(url, headers: ["Content-Type": "application/json"], body: body))
-        record(LogEntry.ofBatch(answer, eventCount: events.count, at: clock.now))
+        log.record(LogEntry.ofBatch(answer, eventCount: events.count, at: clock.now))
         switch answer {
         case .acknowledged(let reportedAt):
             dropBatchEvents()

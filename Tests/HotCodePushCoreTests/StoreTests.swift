@@ -91,6 +91,7 @@ final class FileStoreTests: XCTestCase {
         try files.writeFile(Data("a".utf8), sha256: Hashing.sha256Hex("a"))
         try files.writeFile(Data("b".utf8), sha256: Hashing.sha256Hex("b"))
         files.deleteUnusedFiles(keepingBundleIds: ["kept"])
+        XCTAssertEqual(files.bundleIds(), ["kept"])
         XCTAssertTrue(files.hasFile(sha256: Hashing.sha256Hex("a")))
         XCTAssertFalse(files.hasFile(sha256: Hashing.sha256Hex("b")))
     }
