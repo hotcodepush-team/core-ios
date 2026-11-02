@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0](https://github.com/hotcodepush-team/core-ios/compare/0.3.0...0.4.0) (2026-11-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* Core.init takes appState: and networkState:, ApplicationState and SystemApplicationState are AppState and SystemAppState, and Condition.unknown carries wireType:.
+* SyncResult.upToDate, SyncResult.skipped, SyncResult.failed and the Evaluation cases upToDate and skipped take the release as release:.
+
+### Features
+
+* Configuration.load answers the configuration or the not-configured message ([#43](https://github.com/hotcodepush-team/core-ios/issues/43)) ([5ae1db8](https://github.com/hotcodepush-team/core-ios/commit/5ae1db870cc469f5c6bf69590e9a2089397c6f7a))
+
+
+### Code Refactoring
+
+* label the release of the result factories and the evaluation cases ([#40](https://github.com/hotcodepush-team/core-ios/issues/40)) ([8969b5b](https://github.com/hotcodepush-team/core-ios/commit/8969b5bdd717dcb76c59d174ef7cad35882f5ed5))
+* one shape and one name per seam and function, as in core-android ([#42](https://github.com/hotcodepush-team/core-ios/issues/42)) ([07c2eea](https://github.com/hotcodepush-team/core-ios/commit/07c2eea7c3f0fcf97c9045e1227070fdfa85a527))
+
 ## [0.3.0](https://github.com/hotcodepush-team/core-ios/compare/0.2.0...0.3.0) (2026-11-01)
 
 
