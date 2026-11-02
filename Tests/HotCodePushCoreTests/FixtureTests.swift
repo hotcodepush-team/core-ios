@@ -416,14 +416,14 @@ final class FixtureTests: XCTestCase {
     // Steps through the answers of the case as the runner of the protocol does.
     // The kind is `files` when no pack is requested, and `nil` when no pack is left to turn to.
     private func resolveDownloadOutcome(_ testCase: PackSourcesFile.Case, downloader: Downloader) -> (requests: [PackSource], packKind: PackKind?) {
-        guard var source = downloader.resolvePack(testCase.envelope, baseBundleId: testCase.baseBundleId, missingFileCount: testCase.missingFileCount) else { return ([], .files) }
+        guard var source = downloader.resolvePackSource(testCase.envelope, baseBundleId: testCase.baseBundleId, missingFileCount: testCase.missingFileCount) else { return ([], .files) }
         var requests: [PackSource] = []
         for status in testCase.statuses {
             requests.append(source)
             if [200, 206].contains(status) {
                 return (requests, source.kind)
             }
-            guard let fallback = downloader.resolveFallbackPack(after: source, envelope: testCase.envelope) else { return (requests, nil) }
+            guard let fallback = downloader.resolveFallbackPackSource(testCase.envelope, after: source) else { return (requests, nil) }
             source = fallback
         }
         XCTFail("\(testCase.name): the case answers fewer requests than the download makes")

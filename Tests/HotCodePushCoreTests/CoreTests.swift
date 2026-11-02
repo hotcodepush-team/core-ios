@@ -821,7 +821,7 @@ final class CoreTests: XCTestCase {
         let configuration = Fixture.configuration(downloadStrategy: .unmetered)
         let harness = Harness()
         try await startOnAConfirmedRelease(harness, configuration: configuration)
-        harness.network.isMetered = true
+        harness.networkState.isMetered = true
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         let embedded = Fixture.release(number: 2, bundleId: "embedded", content: Fixture.embeddedIndexHtml)
         harness.publish([v2, embedded], sequence: 2, etag: "\"e2\"")
@@ -1245,7 +1245,7 @@ final class CoreTests: XCTestCase {
 
     func testShouldSkipOnAMeteredConnectionUnderTheUnmeteredStrategy() async throws {
         let harness = Harness()
-        harness.network.isMetered = true
+        harness.networkState.isMetered = true
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()
@@ -1678,11 +1678,11 @@ final class CoreTests: XCTestCase {
         _ = try await harness.core.sync(trigger: .manual)
         harness.loader.served = "b2"
         harness.restart()
-        harness.applicationState.isInForeground = false
+        harness.appState.isInForeground = false
         let started = await harness.core.handleAppStart()
         XCTAssertEqual(started, "b2")
         XCTAssertTrue(harness.scheduler.tasks.isEmpty)
-        harness.applicationState.isInForeground = true
+        harness.appState.isInForeground = true
         await harness.core.handleAppResume()
         XCTAssertEqual(harness.scheduler.tasks.map { $0.seconds }, [10])
     }
@@ -1696,7 +1696,7 @@ final class CoreTests: XCTestCase {
         _ = try await harness.core.sync(trigger: .manual)
         harness.loader.served = "b2"
         harness.restart()
-        harness.applicationState.isInForeground = false
+        harness.appState.isInForeground = false
         let started = harness.core.handleAppStartBlocking()
         XCTAssertEqual(started, "b2")
         XCTAssertTrue(harness.scheduler.tasks.isEmpty)
@@ -1866,7 +1866,7 @@ final class CoreTests: XCTestCase {
 
     func testShouldDownloadOnCallWhateverTheConnectionUnderTheUnmeteredStrategy() async throws {
         let harness = Harness(configuration: Fixture.configuration(downloadStrategy: .unmetered))
-        harness.network.isMetered = true
+        harness.networkState.isMetered = true
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
         await harness.core.handleAppStart()

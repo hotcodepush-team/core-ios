@@ -39,20 +39,19 @@ extension DeviceFacts {
     }
 }
 
-extension Core {
-    /// Follows the app between background and foreground for the lifetime of the core; a second call does nothing.
-    public nonisolated func observeAppLifecycle() {
-        lifecycleLock.lock()
-        defer { lifecycleLock.unlock() }
-        if isObservingAppLifecycle { return }
-        isObservingAppLifecycle = true
+/// Passes the app's moves between background and foreground on; the first `start` registers, a later one does nothing.
+final class AppLifecycleObserver: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isObserving = false
+
+    func start(onPause: @escaping @Sendable () -> Void, onResume: @escaping @Sendable () -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        if isObserving { return }
+        isObserving = true
         let center = NotificationCenter.default
-        _ = center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { [weak self] _ in
-            Task { await self?.handleAppPause() }
-        }
-        _ = center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { [weak self] _ in
-            Task { await self?.handleAppResume() }
-        }
+        _ = center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { _ in onPause() }
+        _ = center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { _ in onResume() }
     }
 }
 #endif
@@ -105,13 +104,13 @@ public struct SystemClock: Clock {
 
 /// Whether the app runs in the foreground.
 /// The start cannot learn it from a notification: a launch straight into the background, for a push or a background fetch, posts none.
-public protocol ApplicationState: Sendable {
+public protocol AppState: Sendable {
     /// Read on the main thread.
     var isInForeground: Bool { get }
 }
 
 /// The application state as UIKit reports it; without UIKit the app is in the foreground.
-public struct SystemApplicationState: ApplicationState {
+public struct SystemAppState: AppState {
     public init() {}
 
     public var isInForeground: Bool {
