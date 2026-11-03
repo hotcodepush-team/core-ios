@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/hotcodepush-team/core-ios/compare/0.4.0...0.4.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* deleteCacheKeys() drops hotcodepush.servedBundleId ([def0eb7](https://github.com/hotcodepush-team/core-ios/commit/def0eb7a39738951771da44d4c3a89931453a8ee))
+
 ## [0.4.0](https://github.com/hotcodepush-team/core-ios/compare/0.3.0...0.4.0) (2026-11-02)
 
 
