@@ -6,10 +6,12 @@ final class StoreTests: XCTestCase {
         let store = InMemoryStore()
         store.set(9, forKey: "hotcodepush.stateVersion")
         store.set("{\"id\":\"r1\",\"number\":1,\"bundleId\":\"b1\",\"bundleVersion\":\"1\",\"isMandatory\":false}", forKey: "hotcodepush.currentRelease")
+        store.set("b1", forKey: "hotcodepush.servedBundleId")
         store.set("device-1", forKey: "hotcodepush.deviceId")
         let state = StateStore(store: store)
         XCTAssertEqual(state.deviceId, "device-1")
         XCTAssertNil(state.currentRelease)
+        XCTAssertNil(store.string(forKey: "hotcodepush.servedBundleId"))
         XCTAssertEqual(store.integer(forKey: "hotcodepush.stateVersion"), StateStore.stateVersion)
     }
 
