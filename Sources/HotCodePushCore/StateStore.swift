@@ -46,7 +46,7 @@ public final class StateStore {
     static let prefix = "hotcodepush."
     private static let cacheKeys = [
         "currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport",
-        "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "pendingRollbackEvent", "lastSyncAt"
+        "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "pendingRollbackEvent", "lastSyncAt", "servedBundleId"
     ]
 
     private let store: KeyValueStore
