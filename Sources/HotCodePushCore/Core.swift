@@ -100,8 +100,6 @@ public actor Core {
     // Past this age, a fetched index replaces the kept one whatever its sequence.
     // A forged far-future sequence then freezes a device for a day at most.
     static let cachedIndexMaxAge: TimeInterval = 24 * 60 * 60
-    // A device cannot tell why a pack failed its check, so it rests the bundle instead of judging it.
-    static let packRefusalRestSeconds: TimeInterval = 86_400
 
     /// Runs the start of the app and answers the bundle to serve, `nil` for the embedded one.
     /// It never awaits the network: the check and the cleanup run after it returns.
@@ -336,8 +334,7 @@ public actor Core {
         case .index(let fetched): index = fetched
         case .failure(let result): return result
         }
-        dropExpiredPackRefusals()
-        switch Evaluator.evaluation(of: index, device: deviceInfo(restingBundleIds: state.packRefusals.map(\.bundleId))).outcome {
+        switch Evaluator.evaluation(of: index, device: deviceInfo()).outcome {
         case .upToDate:
             return .upToDate(release: current)
         case .available(let target, let isMandatory):
@@ -447,9 +444,6 @@ public actor Core {
                 try await downloadBundle(of: target)
             }
         } catch let failure as DownloadFailure {
-            if failure.reason == .contentMismatched {
-                recordPackRefusal(of: target.bundleId)
-            }
             enqueueDeviceEvent(.failed(releaseId: target.id, reason: failure.reason.rawValue))
             return .failed(release: release, reason: failure.reason, message: failure.message)
         } catch {
@@ -498,7 +492,7 @@ public actor Core {
         reloadApp()
     }
 
-    /// Drops every downloaded update, the failed list and the pack refusals and reloads into the embedded bundle; the device identity stays.
+    /// Drops every downloaded update and the failed list and reloads into the embedded bundle; the device identity stays.
     /// Before the app is up in this run, the whole call waits until it is, the deletion included.
     public func clearUpdates() {
         restartThroughGate(isAskedByApp: true) { [self] in
@@ -507,7 +501,6 @@ public actor Core {
             state.nextRelease = nil
             state.fallbackRelease = nil
             state.failedBundleIds = []
-            state.packRefusals = []
             state.lastRollback = nil
             state.pendingRollbackEvent = nil
             for bundleId in files.bundleIds() {
@@ -575,7 +568,7 @@ public actor Core {
 
     /// Everything the debug screen shows: the device, the configuration, the state and this session's log.
     public func debugSnapshot() -> DebugSnapshot {
-        return DebugSnapshot(takenAt: clock.now, device: getDevice(), configuration: configuration, isDebugBuild: device.isDebugBuild, state: getState(), packRefusals: resolveCountingPackRefusals(), log: log.entries)
+        return DebugSnapshot(takenAt: clock.now, device: getDevice(), configuration: configuration, isDebugBuild: device.isDebugBuild, state: getState(), log: log.entries)
     }
 
     public func setAttributes(_ changes: [String: String?]) throws {
@@ -604,7 +597,6 @@ public actor Core {
         state.nextRelease = nil
         state.fallbackRelease = nil
         state.failedBundleIds = []
-        state.packRefusals = []
         state.lastRollback = nil
         state.pendingRollbackEvent = nil
         state.lastBuiltAt = configuration.builtAt
@@ -951,21 +943,8 @@ public actor Core {
         return configuration.embeddedBundleManifest == nil || (device.isDebugBuild && !configuration.isEnabledInDebugBuilds)
     }
 
-    // A bundle whose pack refusal still counts is skipped as a failed one is.
-    private func deviceInfo(restingBundleIds: [String]) -> DeviceInfo {
-        return DeviceInfo(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, builtAt: configuration.builtAt, currentRelease: state.currentRelease, deviceId: state.deviceId, failedBundleIds: state.failedBundleIds + restingBundleIds, fingerprint: configuration.fingerprint, osVersion: device.osVersion, reportedAt: state.reportedAt)
-    }
-
-    private func recordPackRefusal(of bundleId: String) {
-        state.packRefusals += [PackRefusal(bundleId: bundleId, refusedAt: clock.now)]
-    }
-
-    private func dropExpiredPackRefusals() {
-        state.packRefusals = resolveCountingPackRefusals()
-    }
-
-    private func resolveCountingPackRefusals() -> [PackRefusal] {
-        return state.packRefusals.filter { clock.now.timeIntervalSince($0.refusedAt) < Core.packRefusalRestSeconds }
+    private func deviceInfo() -> DeviceInfo {
+        return DeviceInfo(attributes: state.attributes, binaryBuild: device.binaryBuild, binaryVersion: device.binaryVersion, builtAt: configuration.builtAt, currentRelease: state.currentRelease, deviceId: state.deviceId, failedBundleIds: state.failedBundleIds, fingerprint: configuration.fingerprint, osVersion: device.osVersion, reportedAt: state.reportedAt)
     }
 
     private func recordChecked(_ release: IndexRelease, in index: ChannelIndex, status: SyncStatus, reason: SkippedReason? = nil, conditionType: ConditionType? = nil) {

@@ -39,19 +39,13 @@ public struct NextRelease: Codable, Equatable {
     public let applyStrategy: ApplyStrategy
 }
 
-/// A bundle whose full pack failed its check, resting from `refusedAt` for a day.
-public struct PackRefusal: Codable, Equatable {
-    public let bundleId: String
-    public let refusedAt: Date
-}
-
 /// The SDK's keys, each `hotcodepush.<name>`.
 /// Three identity keys last for the life of the install; the rest is a cache under `stateVersion`, dropped and rebuilt when unreadable.
 public final class StateStore {
     public static let stateVersion = 6
     static let prefix = "hotcodepush."
     private static let cacheKeys = [
-        "currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "packRefusals", "lastBuiltAt", "reportedAt", "acknowledgedReport",
+        "currentRelease", "nextRelease", "fallbackRelease", "failedBundleIds", "lastBuiltAt", "reportedAt", "acknowledgedReport",
         "lastCheck", "cachedIndex", "unsentEvents", "checkedReleaseIds", "lastRollback", "pendingRollbackEvent", "lastSyncAt", "servedBundleId"
     ]
 
@@ -99,11 +93,6 @@ public final class StateStore {
     public var failedBundleIds: [String] {
         get { return read("failedBundleIds") ?? [] }
         set { write("failedBundleIds", newValue) }
-    }
-
-    public var packRefusals: [PackRefusal] {
-        get { return read("packRefusals") ?? [] }
-        set { write("packRefusals", newValue) }
     }
 
     /// The floor of the binary that last started, to notice a new one.
