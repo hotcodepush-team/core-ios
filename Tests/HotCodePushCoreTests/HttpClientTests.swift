@@ -73,8 +73,15 @@ final class HttpClientTests: XCTestCase {
     func testShouldStopADownloadPastItsMaximumAndDeleteTheFile() async {
         let client = StubUrlProtocol.client { _ in .init(status: 200, body: Data(count: 200_000)) }
         let error = await download(with: client, maximumBytes: 100_000)
-        XCTAssertEqual((error as? DownloadFailure)?.reason, .downloadFailed)
+        XCTAssertEqual((error as? DownloadFailure)?.reason, .contentMismatched)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testShouldThrowAStorageFailureWhenThePackFileCannotBeWritten() async throws {
+        try Data().write(to: file.deletingLastPathComponent())
+        let client = StubUrlProtocol.client { _ in .init(status: 200, body: Data("abc".utf8)) }
+        let error = await download(with: client, maximumBytes: 8)
+        XCTAssertEqual((error as? DownloadFailure)?.reason, .downloadFailed)
     }
 
     func testShouldAnswerAGetWithItsStatusAndBodyWhenTheStatusIsNotASuccess() async throws {
@@ -106,6 +113,27 @@ final class HttpClientTests: XCTestCase {
         do {
             _ = try await client.get(url, headers: [:])
             XCTFail("The get answered instead of throwing.")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+        }
+    }
+
+    func testShouldSendOneGetAndNeverFollowItsRedirect() async throws {
+        var requests: [(url: URL?, method: String?)] = []
+        let client = StubUrlProtocol.client { request in
+            requests.append((request.url, request.httpMethod))
+            return .init(status: 302, body: Data("moved".utf8), redirectLocation: URL(string: "https://elsewhere.test/pack"))
+        }
+        try await client.send(url)
+        XCTAssertEqual(requests.map(\.url), [url])
+        XCTAssertEqual(requests.map(\.method), ["GET"])
+    }
+
+    func testShouldThrowTheTransportErrorOfASend() async {
+        let client = StubUrlProtocol.client { _ in .init(status: 0, body: Data(), transportError: URLError(.notConnectedToInternet)) }
+        do {
+            try await client.send(url)
+            XCTFail("The send returned instead of throwing.")
         } catch {
             XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
         }

@@ -72,7 +72,7 @@ public actor Core {
     // Answered once as the `previousRelease` of `notifyReady()`.
     private var switchedFromRelease: Release?
     private var log = SessionLog()
-    private var backgroundWork: [UUID: Task<Void, Never>] = [:]
+    private let backgroundWork: BackgroundWork
     // Every cycle waits for this cleanup, since a download writes files no kept release lists yet.
     private var unusedFilesDeletion: Task<Void, Never>?
 
@@ -83,7 +83,9 @@ public actor Core {
         self.state = StateStore(store: store)
         self.files = files
         self.embedded = embedded
-        self.downloader = Downloader(configuration: configuration, platform: device.platform, files: files, embedded: embedded, http: http, clock: clock, temporaryDirectory: temporaryDirectory)
+        let backgroundWork = BackgroundWork()
+        self.backgroundWork = backgroundWork
+        self.downloader = Downloader(configuration: configuration, platform: device.platform, files: files, embedded: embedded, http: http, clock: clock, temporaryDirectory: temporaryDirectory, startBackgroundWork: { backgroundWork.start($0) })
         self.http = http
         self.loader = loader
         self.listener = listener
@@ -248,17 +250,15 @@ public actor Core {
         let id = UUID()
         let task = Task {
             await work()
-            backgroundWork[id] = nil
+            backgroundWork.finish(id: id)
         }
-        backgroundWork[id] = task
+        backgroundWork.add(task, id: id)
         return task
     }
 
-    // Tests wait on this instead of a sleep. It also waits for work started meanwhile.
+    // Tests wait on this instead of a sleep.
     func waitForBackgroundWork() async {
-        while let work = backgroundWork.values.first {
-            await work.value
-        }
+        await backgroundWork.waitForAll()
     }
 
     /// Runs one full cycle, or joins the one that runs.
@@ -461,7 +461,9 @@ public actor Core {
             listener.downloadProgress(DownloadProgressEvent(downloadSizeBytes: downloadSizeBytes, progressBytes: progressBytes, releaseId: target.id))
         }
         try BundleProjection.project(outcome.manifest, from: files, embedded: embedded, into: loader.projectionDirectory(bundleId: target.bundleId))
-        enqueueDeviceEvent(.downloaded(releaseId: target.id, downloadSizeBytes: outcome.downloadSizeBytes, packKind: outcome.packKind))
+        if let packKind = outcome.packKind {
+            enqueueDeviceEvent(.downloaded(releaseId: target.id, downloadSizeBytes: outcome.downloadSizeBytes, packKind: packKind))
+        }
     }
 
     // The apply moment is stored with the release, so the start and the resume read it, never the configuration.

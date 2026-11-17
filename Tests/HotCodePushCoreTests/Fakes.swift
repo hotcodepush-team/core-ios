@@ -46,10 +46,14 @@ final class FakeHttpClient: HttpClient {
     @Locked var requests: [(url: URL, headers: [String: String])] = []
     @Locked var posts: [(url: URL, headers: [String: String], body: Data)] = []
     @Locked var isOffline = false
-    // How many of the next GETs and downloads of a URL drop their connection before the stub answers.
+    // How many of the next GETs, downloads and sends of a URL drop their connection before the stub answers.
     @Locked var droppedRequestCounts: [String: Int] = [:]
     // Runs once inside the next post, like the app acting while a batch is in flight.
     @Locked var whilePosting: (() async -> Void)?
+    // Runs once inside the next download before it answers, like the device changing while a pack arrives.
+    @Locked var whileDownloading: (() async -> Void)?
+    // The error the next download of a URL fails with, like a transport failure the system reports in a type other than `URLError`.
+    @Locked var transportErrors: [String: Error] = [:]
 
     func stub(_ url: String, status: Int = 200, headers: [String: String] = [:], body: Data) {
         $stubs.mutate { $0[url] = Stub(status: status, headers: headers, body: body) }
@@ -81,13 +85,26 @@ final class FakeHttpClient: HttpClient {
 
     func download(_ url: URL, to file: URL, maximumBytes: Int, progress: @escaping (Int, Int) -> Void) async throws {
         $requests.mutate { $0.append((url, [:])) }
+        if let whileDownloading = whileDownloading {
+            self.whileDownloading = nil
+            await whileDownloading()
+        }
+        var transportError: Error?
+        $transportErrors.mutate { transportError = $0.removeValue(forKey: url.absoluteString) }
+        if let transportError = transportError { throw transportError }
         if isOffline { throw URLError(.notConnectedToInternet) }
         try dropIfAsked(url)
         guard let stub = stubs[url.absoluteString], stub.status == 200 else { throw HttpStatusError(status: stubs[url.absoluteString]?.status ?? 404) }
-        guard stub.body.count <= maximumBytes else { throw DownloadFailure.downloadFailed("\(url.lastPathComponent) is larger than its \(maximumBytes) bytes") }
+        guard stub.body.count <= maximumBytes else { throw DownloadFailure.contentMismatched("\(url.lastPathComponent) is larger than its \(maximumBytes) bytes") }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try stub.body.write(to: file)
         progress(stub.body.count, stub.body.count)
+    }
+
+    func send(_ url: URL) async throws {
+        $requests.mutate { $0.append((url, [:])) }
+        if isOffline { throw URLError(.notConnectedToInternet) }
+        try dropIfAsked(url)
     }
 
     private func dropIfAsked(_ url: URL) throws {
@@ -296,6 +313,10 @@ struct Fixture {
         return "\(updatesBaseUrl)/v1/apps/\(appId)/events"
     }
 
+    static func deltaRouteUrl(bundleId: String, baseBundleId: String) -> String {
+        return "\(updatesBaseUrl)/v1/apps/\(appId)/bundles/\(bundleId)/deltas/\(baseBundleId)"
+    }
+
     static func release(number: Int, bundleId: String, content: Data, createdAt: Date = builtAt.addingTimeInterval(60), rolloutPercent: Int = 100, conditions: [Condition] = [], isMandatory: Bool = false) -> (release: IndexRelease, manifest: BundleManifest, envelope: ManifestEnvelope, pack: Data) {
         let sha256 = Hashing.sha256Hex(content)
         let js = Data("js-\(bundleId)".utf8)
@@ -315,22 +336,36 @@ struct Fixture {
     }
 }
 
+// Holds the work the downloader starts in the background until a test runs it.
+final class HeldBackgroundWork {
+    @Locked private var heldWork: [() async -> Void] = []
+
+    func start(_ work: @escaping () async -> Void) {
+        $heldWork.mutate { $0.append(work) }
+    }
+
+    func runAll() async {
+        var work: [() async -> Void] = []
+        $heldWork.mutate { held in
+            work = held
+            held = []
+        }
+        for piece in work {
+            await piece()
+        }
+    }
+}
+
 final class DownloaderHarness {
     static let bundleId = "b2"
     static let packUrl = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/pack"
-    // Leaves every file to the single-file fetch.
-    static let emptyPack = PackWriter.pack([])
 
     static func deltaUrl(baseBundleId: String, bundleId: String = bundleId) -> String {
         return "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/\(bundleId)/deltas/\(baseBundleId)"
     }
 
-    static func streamedDeltaUrl(baseBundleId: String) -> String {
+    static func deltaRouteUrl(baseBundleId: String) -> String {
         return "\(Fixture.updatesBaseUrl)/v1/apps/\(Fixture.appId)/bundles/\(bundleId)/deltas/\(baseBundleId)"
-    }
-
-    static func fileUrl(sha256: String) -> String {
-        return "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/files/\(sha256)"
     }
 
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("hotcodepush-tests-\(UUID().uuidString)")
@@ -338,11 +373,14 @@ final class DownloaderHarness {
     let embedded = InMemoryEmbeddedBundle()
     let clock = FixedClock(now: Fixture.builtAt)
     let files: FileStore
+    let backgroundWork: HeldBackgroundWork
     let downloader: Downloader
 
     init(configuration: Configuration = Fixture.configuration()) {
         files = FileStore(rootDirectory: root.appendingPathComponent("store"))
-        downloader = Downloader(configuration: configuration, platform: "ios", files: files, embedded: embedded, http: http, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"))
+        let backgroundWork = HeldBackgroundWork()
+        self.backgroundWork = backgroundWork
+        downloader = Downloader(configuration: configuration, platform: "ios", files: files, embedded: embedded, http: http, clock: clock, temporaryDirectory: root.appendingPathComponent("tmp"), startBackgroundWork: { backgroundWork.start($0) })
     }
 
     // Each pack entry holds the gzip bytes the bucket serves.
@@ -382,7 +420,6 @@ final class DownloaderHarness {
         return try await downloader.downloadRelease(release, baseBundleId: baseBundleId) { _, _ in }
     }
 
-    // The packs come first, then the single files.
     func requestUrlsAfterManifest() -> [String] {
         return http.requests.dropFirst().map { $0.url.absoluteString }
     }

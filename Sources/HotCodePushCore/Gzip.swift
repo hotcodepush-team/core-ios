@@ -5,6 +5,7 @@ import zlib
 public enum Gzip {
     public enum Failure: Error, Equatable {
         case corrupt(Int32)
+        case outOfMemory
         case tooLarge(maximumBytes: Int)
         case unwritable
     }
@@ -20,7 +21,7 @@ public enum Gzip {
         guard !data.isEmpty else { return }
         var stream = z_stream()
         var status = inflateInit2_(&stream, 15 + 32, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size))
-        guard status == Z_OK else { throw Failure.corrupt(status) }
+        guard status == Z_OK else { throw resolveFailure(of: status) }
         defer { inflateEnd(&stream) }
         var chunk = [UInt8](repeating: 0, count: chunkSize)
         var inflatedBytes = 0
@@ -32,7 +33,7 @@ public enum Gzip {
                     stream.next_out = chunkPointer.baseAddress
                     stream.avail_out = UInt32(chunkSize)
                     status = inflate(&stream, Z_NO_FLUSH)
-                    guard status == Z_OK || status == Z_STREAM_END || status == Z_BUF_ERROR else { throw Failure.corrupt(status) }
+                    guard status == Z_OK || status == Z_STREAM_END || status == Z_BUF_ERROR else { throw resolveFailure(of: status) }
                     let inflated = chunkSize - Int(stream.avail_out)
                     inflatedBytes += inflated
                     guard inflatedBytes <= maximumBytes else { throw Failure.tooLarge(maximumBytes: maximumBytes) }
@@ -41,6 +42,10 @@ public enum Gzip {
             } while status != Z_STREAM_END && (stream.avail_in > 0 || stream.avail_out == 0)
         }
         guard status == Z_STREAM_END else { throw Failure.corrupt(status) }
+    }
+
+    private static func resolveFailure(of status: Int32) -> Failure {
+        return status == Z_MEM_ERROR ? .outOfMemory : .corrupt(status)
     }
 
     private static func write(_ bytes: UnsafeBufferPointer<UInt8>, to output: OutputStream) throws {
