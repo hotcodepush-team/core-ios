@@ -19,6 +19,17 @@ final class DebugReportTests: XCTestCase {
         XCTAssertEqual(DebugReport.sections(of: snapshot).map { $0.title }, ["Device", "Channel", "Releases", "Last check", "Index", "Configuration", "Log"])
     }
 
+    func testShouldListABundleWhosePackRefusalStillCountsAsResting() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        harness.http.stub(v2.envelope.pack.url, body: Data(count: v2.pack.count))
+        await harness.core.handleAppStart()
+        _ = try await harness.core.sync(trigger: .manual)
+        let text = DebugReport.text(of: await harness.core.debugSnapshot())
+        XCTAssertTrue(text.contains("Resting bundles: b2"), text)
+    }
+
     func testShouldShowTheCheckStrategyAndTheStrategiesOfTheConfiguration() async throws {
         let harness = Harness(configuration: Fixture.configuration(applyStrategy: .nextResume, mandatoryApplyStrategy: .manual, downloadStrategy: .unmetered))
         let manual = DebugReport.text(of: await harness.core.debugSnapshot())

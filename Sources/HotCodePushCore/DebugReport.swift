@@ -7,6 +7,8 @@ public struct DebugSnapshot: Equatable {
     public let configuration: Configuration
     public let isDebugBuild: Bool
     public let state: GetStateResult
+    /// The refusals of a full pack that still count, each bundle resting for a day.
+    public let packRefusals: [PackRefusal]
     public let log: [LogEntry]
 }
 
@@ -77,7 +79,8 @@ public enum DebugReport {
             DebugRow(label: "Downloaded", value: describe(state.nextRelease) ?? "none"),
             DebugRow(label: "Fallback", value: describe(state.fallbackRelease) ?? "the embedded bundle"),
             DebugRow(label: "Embedded bundle", value: describeEmbeddedBundle(snapshot)),
-            DebugRow(label: "Failed bundles", value: state.failedBundleIds.isEmpty ? "none" : state.failedBundleIds.joined(separator: ", "))
+            DebugRow(label: "Failed bundles", value: state.failedBundleIds.isEmpty ? "none" : state.failedBundleIds.joined(separator: ", ")),
+            DebugRow(label: "Resting bundles", value: snapshot.packRefusals.isEmpty ? "none" : snapshot.packRefusals.map(\.bundleId).joined(separator: ", "))
         ])
     }
 

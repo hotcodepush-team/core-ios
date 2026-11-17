@@ -13,14 +13,6 @@ final class DownloaderTests: XCTestCase {
         XCTAssertTrue(harness.http.requests.isEmpty)
     }
 
-    func testShouldRefuseAPackUrlOffTheConfiguredHosts() async {
-        let harness = DownloaderHarness()
-        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
-        let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack, packUrl: "https://elsewhere.test/pack"))
-        XCTAssertEqual(failure?.reason, .manifestInvalid)
-        XCTAssertEqual(harness.http.requests.map { $0.url.host }, ["files.test"])
-    }
-
     func testShouldRefuseAManifestPathThatClimbsOutOfTheServedTree() async {
         let harness = DownloaderHarness()
         let failure = await harness.downloadFailure(harness.publish(DownloaderHarness.bundle(["../../escape.html": indexHtml]).manifest))
@@ -57,20 +49,6 @@ final class DownloaderTests: XCTestCase {
         XCTAssertTrue(leftovers.isEmpty, "\(leftovers)")
     }
 
-    func testShouldMoveASingleFileIntoTheStoreOnlyWhenItMatchesItsHash() async throws {
-        let harness = DownloaderHarness()
-        let large = Data((0..<1_000_000).map { UInt8($0 % 11) })
-        let manifest = DownloaderHarness.bundle(["large.bin": large]).manifest
-        harness.http.stub(DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(large)), body: large.dropLast() + Data([0xFF]))
-        let failure = await harness.downloadFailure(harness.publish(manifest, pack: DownloaderHarness.emptyPack))
-        XCTAssertEqual(failure?.reason, .contentMismatched)
-        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(large)))
-        harness.http.stub(DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(large)), body: large)
-        let outcome = try await harness.download(harness.publish(manifest, pack: DownloaderHarness.emptyPack))
-        XCTAssertEqual(outcome.downloadSizeBytes, DownloaderHarness.emptyPack.count + large.count)
-        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(large)))
-    }
-
     func testShouldRefuseAnEnvelopeNamingAnotherBundle() async {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
@@ -86,6 +64,15 @@ final class DownloaderTests: XCTestCase {
         let failure = await harness.downloadFailure(harness.publish(manifest, pack: bundle.pack))
         XCTAssertEqual(failure?.reason, .downloadFailed)
         XCTAssertEqual(harness.http.requests.map { $0.url.lastPathComponent }, ["manifest.json"])
+    }
+
+    func testShouldFailADownloadWhoseFullPackDoesNotFitInTheFreeSpaceWhenASmallerDeltaComesFirst() async {
+        let harness = DownloaderHarness()
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let release = harness.publish(bundle.manifest, pack: bundle.pack, packSizeBytes: Int.max / 4, deltas: ["b1": bundle.pack])
+        let failure = await harness.downloadFailure(release, baseBundleId: "b1")
+        XCTAssertEqual(failure?.reason, .downloadFailed)
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [])
     }
 
     func testShouldRefuseAPackEntryThatInflatesPastItsFileSize() async {
@@ -105,14 +92,11 @@ final class DownloaderTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: harness.root.appendingPathComponent("tmp").path), [])
     }
 
-    func testShouldStoreASingleFileThatIsItselfGzipAsItArrives() async throws {
+    func testShouldFailWithContentMismatchedWhenTheFullPackLacksAListedFile() async {
         let harness = DownloaderHarness()
-        let archive = try Gzip.compress(Data("console.log('precompressed')".utf8))
-        let manifest = DownloaderHarness.manifest(files: [.init(path: "assets/app.js.gz", sha256: Hashing.sha256Hex(archive), sizeBytes: archive.count)])
-        harness.http.stub("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/files/\(Hashing.sha256Hex(archive))", body: archive)
-        let failure = await harness.downloadFailure(harness.publish(manifest, pack: DownloaderHarness.emptyPack))
-        XCTAssertNil(failure)
-        XCTAssertEqual(try Data(contentsOf: harness.files.fileURL(sha256: Hashing.sha256Hex(archive))), archive)
+        let manifest = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs]).manifest
+        let failure = await harness.downloadFailure(harness.publish(manifest, pack: DownloaderHarness.bundle(["app.js": appJs]).pack))
+        XCTAssertEqual(failure, .contentMismatched("The pack lacks the file index.html"))
     }
 
     func testShouldRefuseAPackEntryThatIsNotGzip() async {
@@ -182,84 +166,142 @@ final class DownloaderTests: XCTestCase {
         XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.packUrl])
     }
 
-    func testShouldAskTheUpdatesHostDirectlyWhenTheEnvelopeListsNoDeltaForTheBase() async throws {
+    func testShouldTakeTheFullPackBeforeTheDeltaRouteAnswersAndAskTheRouteOnceAlsoWhenItGetsNoAnswer() async throws {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
-        harness.http.stub(DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1"), body: bundle.pack)
-        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b0": bundle.pack]), baseBundleId: "b1")
-        XCTAssertEqual(outcome.packKind, .streamed)
-        XCTAssertEqual(outcome.downloadSizeBytes, bundle.pack.count)
-        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1")])
-        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(appJs)))
+        let deltaRouteUrl = DownloaderHarness.deltaRouteUrl(baseBundleId: "b1")
+        harness.http.droppedRequestCounts[deltaRouteUrl] = 1
+        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack), baseBundleId: "b1")
+        XCTAssertEqual(outcome.packKind, .full)
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.packUrl])
+        await harness.backgroundWork.runAll()
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.packUrl, deltaRouteUrl])
     }
 
-    func testShouldFailTheDownloadWhenTheDeltaTheEnvelopeListsAnswers404() async {
+    func testShouldRefuseAManifestWhoseFullPackOrListedDeltaUrlIsOffTheConfiguredHostsBeforeTheDeltaIsRequested() async throws {
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let offHostPack = DownloaderHarness()
+        let offHostPackRelease = offHostPack.publish(bundle.manifest, pack: bundle.pack, packUrl: "https://elsewhere.test/pack", deltas: ["b1": bundle.pack])
+        let offHostPackFailure = await offHostPack.downloadFailure(offHostPackRelease, baseBundleId: "b1")
+        XCTAssertEqual(offHostPackFailure?.reason, .manifestInvalid)
+        XCTAssertEqual(offHostPack.requestUrlsAfterManifest(), [])
+        let offHostDelta = DownloaderHarness()
+        let offHostDeltaRelease = offHostDelta.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": bundle.pack])
+        let envelope = try Json.decoder.decode(ManifestEnvelope.self, from: try XCTUnwrap(offHostDelta.http.stubs[offHostDeltaRelease.manifestUrl]).body)
+        let offHostListedDelta = ManifestEnvelope.Delta(baseBundleId: "b0", url: "https://elsewhere.test/delta", sizeBytes: bundle.pack.count)
+        offHostDelta.http.stubJson(offHostDeltaRelease.manifestUrl, ManifestEnvelope(bundleId: envelope.bundleId, createdAt: envelope.createdAt, manifest: envelope.manifest, pack: envelope.pack, deltas: envelope.deltas + [offHostListedDelta]))
+        let offHostDeltaFailure = await offHostDelta.downloadFailure(offHostDeltaRelease, baseBundleId: "b1")
+        XCTAssertEqual(offHostDeltaFailure?.reason, .manifestInvalid)
+        XCTAssertEqual(offHostDelta.requestUrlsAfterManifest(), [])
+    }
+
+    func testShouldTakeTheFullPackWhenTheDeltaTheEnvelopeListsIsRefused() async throws {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let release = harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": bundle.pack])
         harness.http.stub(DownloaderHarness.deltaUrl(baseBundleId: "b1"), status: 404, body: Data())
-        harness.http.stub(DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1"), body: bundle.pack)
-        let failure = await harness.downloadFailure(release, baseBundleId: "b1")
-        XCTAssertEqual(failure?.reason, .downloadFailed)
-        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1")])
+        let outcome = try await harness.download(release, baseBundleId: "b1")
+        XCTAssertEqual(outcome.packKind, .full)
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1"), DownloaderHarness.packUrl])
+        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
     }
 
-    func testShouldFailTheDownloadWhenTheDeltaTheEnvelopeListsAnswersARedirect() async {
+    func testShouldTakeTheFullPackWhenAnEntryOfTheDeltaDoesNotVerify() async throws {
+        let harness = DownloaderHarness()
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let delta = PackWriter.pack([.file(sha256: Hashing.sha256Hex(appJs), body: try Gzip.compress(appJs)), .file(sha256: Hashing.sha256Hex(indexHtml), body: try Gzip.compress(Data("<html>v3</html>".utf8)))])
+        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": delta]), baseBundleId: "b1")
+        XCTAssertEqual(outcome.packKind, .full)
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1"), DownloaderHarness.packUrl])
+        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
+    }
+
+    func testShouldTakeTheFullPackWhenNoAttemptOfTheDeltaGetsAnAnswer() async throws {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
         let release = harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": bundle.pack])
-        harness.http.stub(DownloaderHarness.deltaUrl(baseBundleId: "b1"), status: 302, headers: ["Location": DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1")], body: Data())
+        harness.http.droppedRequestCounts[DownloaderHarness.deltaUrl(baseBundleId: "b1")] = 3
+        let outcome = try await harness.download(release, baseBundleId: "b1")
+        XCTAssertEqual(outcome.packKind, .full)
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), Array(repeating: DownloaderHarness.deltaUrl(baseBundleId: "b1"), count: 3) + [DownloaderHarness.packUrl])
+    }
+
+    func testShouldFailTheDownloadWithoutTheFullPackWhenTheDevicesStorageFails() async throws {
+        let harness = DownloaderHarness()
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let release = harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": bundle.pack])
+        try FileManager.default.createDirectory(at: harness.files.rootDirectory, withIntermediateDirectories: true)
+        try Data().write(to: harness.files.filesDirectory)
         let failure = await harness.downloadFailure(release, baseBundleId: "b1")
         XCTAssertEqual(failure?.reason, .downloadFailed)
         XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1")])
     }
 
-    func testShouldTakeTheFullPackWhenTheStreamedDeltaRedirects() async throws {
+    func testShouldTakeTheFullPackAndCountItsBytesAloneWhenAFileIsStillMissingAfterADelta() async throws {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
-        harness.http.stub(DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1"), status: 302, headers: ["Location": DownloaderHarness.packUrl], body: Data())
-        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack), baseBundleId: "b1")
+        let delta = DownloaderHarness.bundle(["app.js": appJs]).pack
+        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": delta]), baseBundleId: "b1")
         XCTAssertEqual(outcome.packKind, .full)
-        XCTAssertEqual(harness.http.requests.map { $0.url.absoluteString }.suffix(2), [DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1"), DownloaderHarness.packUrl])
+        XCTAssertEqual(outcome.downloadSizeBytes, bundle.pack.count)
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1"), DownloaderHarness.packUrl])
         XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
     }
 
-    func testShouldFetchTheFilesAStreamedDeltaDidNotCarryOneByOne() async throws {
+    func testShouldFailWithTheFullPacksReasonWhenTheFullPackAfterADeltaThatLeftAFileMissingGetsNoAnswer() async {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
-        harness.http.stub(DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1"), body: DownloaderHarness.bundle(["app.js": appJs]).pack)
-        harness.http.stub("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/files/\(Hashing.sha256Hex(indexHtml))", body: indexHtml)
-        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack), baseBundleId: "b1")
-        XCTAssertEqual(outcome.packKind, .streamed)
-        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
-        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == DownloaderHarness.packUrl })
+        let release = harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": DownloaderHarness.bundle(["app.js": appJs]).pack])
+        harness.http.droppedRequestCounts[DownloaderHarness.packUrl] = 3
+        let failure = await harness.downloadFailure(release, baseBundleId: "b1")
+        XCTAssertEqual(failure?.reason, .downloadFailed)
     }
 
-    func testShouldRefuseAStreamedDeltaLargerThanTheFullPack() async {
+    func testShouldTakeTheFullPackWhenThePatchCodeOfTheDeltaFailsToReadItsBase() async throws {
+        let harness = DownloaderHarness()
+        let old = try BspatchFixture.data("old.bin")
+        let new = try BspatchFixture.data("new.bin")
+        try FileManager.default.createDirectory(at: harness.files.fileURL(sha256: Hashing.sha256Hex(old)), withIntermediateDirectories: true)
+        let manifest = DownloaderHarness.manifest(files: [.init(path: "index.bundle", sha256: Hashing.sha256Hex(new), sizeBytes: new.count)])
+        let delta = PackWriter.pack([.patch(fromSha256: Hashing.sha256Hex(old), toSha256: Hashing.sha256Hex(new), body: try BspatchFixture.data("valid.patch"))])
+        let fullPack = PackWriter.pack([.file(sha256: Hashing.sha256Hex(new), body: try Gzip.compress(new))])
+        let outcome = try await harness.download(harness.publish(manifest, pack: fullPack, deltas: ["b1": delta]), baseBundleId: "b1")
+        XCTAssertEqual(outcome.packKind, .full)
+        XCTAssertEqual(try Data(contentsOf: harness.files.fileURL(sha256: Hashing.sha256Hex(new))), new)
+    }
+
+    func testShouldRemoveThePartialFileOfTheDeltaWhenTheDownloadMovesOnToTheFullPack() async throws {
         let harness = DownloaderHarness()
         let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
-        harness.http.stub(DownloaderHarness.streamedDeltaUrl(baseBundleId: "b1"), body: bundle.pack + Data(count: 512))
-        let failure = await harness.downloadFailure(harness.publish(bundle.manifest, pack: bundle.pack), baseBundleId: "b1")
-        XCTAssertEqual(failure?.reason, .downloadFailed)
-        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
+        let release = harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": bundle.pack])
+        let deltaFile = harness.downloader.resolvePackFile(PackSource(url: DownloaderHarness.deltaUrl(baseBundleId: "b1"), sizeBytes: bundle.pack.count, kind: .delta), bundleId: DownloaderHarness.bundleId)
+        try FileManager.default.createDirectory(at: deltaFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("earlier part".utf8).write(to: deltaFile)
+        harness.http.droppedRequestCounts[DownloaderHarness.deltaUrl(baseBundleId: "b1")] = 3
+        let outcome = try await harness.download(release, baseBundleId: "b1")
+        XCTAssertEqual(outcome.packKind, .full)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: deltaFile.path))
     }
 
-    func testShouldRefuseASingleFileLargerThanItsSize() async {
+    func testShouldTakeTheFullPackWhenTheDeltaFailsWithATransportErrorThatIsNotAUrlError() async throws {
         let harness = DownloaderHarness()
-        let manifest = DownloaderHarness.manifest(files: [.init(path: "index.html", sha256: Hashing.sha256Hex(indexHtml), sizeBytes: indexHtml.count - 1)])
-        harness.http.stub("\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/files/\(Hashing.sha256Hex(indexHtml))", body: indexHtml)
-        let failure = await harness.downloadFailure(harness.publish(manifest, pack: DownloaderHarness.emptyPack))
-        XCTAssertEqual(failure?.reason, .downloadFailed)
-        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        let release = harness.publish(bundle.manifest, pack: bundle.pack, deltas: ["b1": bundle.pack])
+        harness.http.transportErrors[DownloaderHarness.deltaUrl(baseBundleId: "b1")] = POSIXError(.ECONNRESET)
+        let outcome = try await harness.download(release, baseBundleId: "b1")
+        XCTAssertEqual(outcome.packKind, .full)
+        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.deltaUrl(baseBundleId: "b1"), DownloaderHarness.packUrl])
     }
 
-    func testShouldRefuseASingleFileThatDoesNotMatchItsHash() async {
+    func testShouldNotBlameTheFullPackForAFileThatVanishesFromTheDeviceWhileThePackArrives() async throws {
         let harness = DownloaderHarness()
-        let manifest = DownloaderHarness.manifest(files: [.init(path: "index.html", sha256: Hashing.sha256Hex(indexHtml), sizeBytes: indexHtml.count)])
-        harness.http.stub(DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(indexHtml)), body: Data("<html>v3</html>".utf8))
-        let failure = await harness.downloadFailure(harness.publish(manifest, pack: DownloaderHarness.emptyPack))
-        XCTAssertEqual(failure?.reason, .contentMismatched)
-        XCTAssertFalse(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
+        let bundle = DownloaderHarness.bundle(["index.html": indexHtml, "app.js": appJs])
+        try harness.files.writeFile(appJs, sha256: Hashing.sha256Hex(appJs))
+        harness.http.whileDownloading = { [files = harness.files, appJs] in
+            try? FileManager.default.removeItem(at: files.fileURL(sha256: Hashing.sha256Hex(appJs)))
+        }
+        let outcome = try await harness.download(harness.publish(bundle.manifest, pack: bundle.pack))
+        XCTAssertEqual(outcome.packKind, .full)
     }
 
     func testShouldFailAtOnceWithoutAPauseWhenThePackAnswers404() async {
@@ -282,16 +324,6 @@ final class DownloaderTests: XCTestCase {
         XCTAssertEqual(harness.clock.sleptSeconds, [1, 3])
     }
 
-    func testShouldStoreASingleFileWhenItsDownloadDropsTwiceAndTheThirdAttemptArrives() async throws {
-        let harness = DownloaderHarness()
-        let fileUrl = DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(indexHtml))
-        harness.http.stub(fileUrl, body: indexHtml)
-        harness.http.droppedRequestCounts[fileUrl] = 2
-        _ = try await harness.download(harness.publish(DownloaderHarness.manifest(files: [.init(path: "index.html", sha256: Hashing.sha256Hex(indexHtml), sizeBytes: indexHtml.count)]), pack: DownloaderHarness.emptyPack))
-        XCTAssertTrue(harness.files.hasFile(sha256: Hashing.sha256Hex(indexHtml)))
-        XCTAssertEqual(harness.requestUrlsAfterManifest(), [DownloaderHarness.packUrl, fileUrl, fileUrl, fileUrl])
-    }
-
     func testShouldApplyAPatchToAFileOfTheEmbeddedBundle() async throws {
         let harness = DownloaderHarness()
         let old = try BspatchFixture.data("old.bin")
@@ -302,7 +334,6 @@ final class DownloaderTests: XCTestCase {
         let outcome = try await harness.download(harness.publish(manifest, deltas: ["b1": delta]), baseBundleId: "b1")
         XCTAssertEqual(outcome.packKind, .delta)
         XCTAssertEqual(try Data(contentsOf: harness.files.fileURL(sha256: Hashing.sha256Hex(new))), new)
-        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == DownloaderHarness.fileUrl(sha256: Hashing.sha256Hex(new)) })
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: harness.root.appendingPathComponent("tmp").path), [])
     }
 }

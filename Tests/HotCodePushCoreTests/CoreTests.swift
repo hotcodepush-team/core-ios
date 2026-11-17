@@ -1000,6 +1000,7 @@ final class CoreTests: XCTestCase {
         let adopted = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(adopted, .upToDate(release: rerelease.release.release))
         harness.publish([v2, rerelease], sequence: 3, revoked: ["r2"], etag: "\"e3\"")
+        await harness.core.waitForBackgroundWork()
         let requestCount = harness.http.requests.count
         let result = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(result, .skipped(release: v2.release.release, reason: .releaseRevoked))
@@ -1024,6 +1025,7 @@ final class CoreTests: XCTestCase {
         let adopted = try await harness.core.sync(trigger: .manual)
         XCTAssertEqual(adopted, .upToDate(release: rerelease.release.release))
         harness.publish([v2, rerelease], sequence: 3, revoked: ["r2"], etag: "\"e3\"")
+        await harness.core.waitForBackgroundWork()
         let requestCount = harness.http.requests.count
         let result = try await harness.core.checkForUpdate()
         XCTAssertEqual(result, .skipped(release: v2.release.release, reason: .releaseRevoked))
@@ -2095,7 +2097,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.deviceOffline])
     }
 
-    func testShouldTakeTheStreamedDeltaWhenTheDeviceIsTwoReleasesBehind() async throws {
+    func testShouldAskTheDeltaRouteForTheRunningBundleAndTakeTheFullPackWhenTheDeviceIsTwoReleasesBehind() async throws {
         let harness = Harness(configuration: Fixture.configuration(applyStrategy: .immediate))
         let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
         harness.publish([v2], sequence: 1)
@@ -2108,14 +2110,29 @@ final class CoreTests: XCTestCase {
         harness.publish([v3, v4], sequence: 2, etag: "\"e2\"")
         let precomputedDeltaUrl = "\(Fixture.filesBaseUrl)/apps/\(Fixture.appId)/bundles/b4/deltas/b3"
         harness.http.stubJson(v4.release.manifestUrl, ManifestEnvelope(bundleId: "b4", createdAt: v4.envelope.createdAt, manifest: v4.envelope.manifest, pack: v4.envelope.pack, deltas: [.init(baseBundleId: "b3", url: precomputedDeltaUrl, sizeBytes: v4.pack.count)]))
-        let streamedDeltaUrl = "\(Fixture.updatesBaseUrl)/v1/apps/\(Fixture.appId)/bundles/b4/deltas/b2"
-        harness.http.stub(streamedDeltaUrl, body: v4.pack)
+        let deltaRouteUrl = Fixture.deltaRouteUrl(bundleId: "b4", baseBundleId: "b2")
         let result = try await harness.core.sync(trigger: .manual)
+        await harness.core.waitForBackgroundWork()
         XCTAssertEqual(result.status, .applied)
         XCTAssertEqual(result.release?.bundleId, "b4")
-        XCTAssertTrue(harness.http.requests.contains { $0.url.absoluteString == streamedDeltaUrl })
-        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == precomputedDeltaUrl || $0.url.absoluteString == v4.envelope.pack.url })
-        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.last { $0.type == "downloaded" }?.packKind, PackKind.streamed.rawValue)
+        XCTAssertEqual(harness.http.requests.filter { $0.url.absoluteString == deltaRouteUrl }.count, 1)
+        XCTAssertFalse(harness.http.requests.contains { $0.url.absoluteString == precomputedDeltaUrl })
+        XCTAssertEqual(StateStore(store: harness.store).unsentEvents.last { $0.type == "downloaded" }?.packKind, PackKind.full.rawValue)
+    }
+
+    func testShouldAskNothingAndSendNoDownloadedEventWhenNoFileIsMissing() async throws {
+        let harness = Harness()
+        let content = Data("<html>v2</html>".utf8)
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: content)
+        harness.publish([v2], sequence: 1)
+        await harness.core.handleAppStart()
+        for file in [content, Data("js-b2".utf8)] {
+            try harness.files.writeFile(file, sha256: Hashing.sha256Hex(file))
+        }
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.status, .downloaded)
+        XCTAssertEqual(harness.http.requests.map { $0.url.absoluteString }, [Fixture.indexUrl(), v2.release.manifestUrl])
+        XCTAssertFalse(StateStore(store: harness.store).unsentEvents.contains { $0.type == "downloaded" })
     }
 
     func testShouldFetchTheDeltaAgainstTheEmbeddedBundleOnTheFirstUpdate() async throws {
@@ -2158,6 +2175,55 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(harness.clock.sleptSeconds, [1, 3])
         XCTAssertEqual(harness.listener.updateFailed.map { $0.reason }, [.downloadFailed])
         XCTAssertEqual(StateStore(store: harness.store).unsentEvents.filter { $0.type == "failed" }.map { $0.reason }, [FailedReason.downloadFailed.rawValue])
+    }
+
+    func testShouldNotDownloadABundleAtTheNextCheckWhenItsFullPackFailedItsCheckAndPutItOnNoFailedList() async throws {
+        let harness = try await harnessWithARefusedPack()
+        let status = await harness.core.getState()
+        XCTAssertEqual(status.failedBundleIds, [])
+        let again = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(again, .skipped(release: CoreTests.refusedRelease.release.release, reason: .bundleFailedBefore))
+        XCTAssertEqual(harness.http.requests.filter { $0.url.absoluteString == CoreTests.refusedRelease.envelope.pack.url }.count, 1)
+    }
+
+    func testShouldDownloadTheBundleAgainAndDropItsRefusalOnceADayHasPassedAndNotASecondBefore() async throws {
+        let harness = try await harnessWithARefusedPack()
+        harness.http.stub(CoreTests.refusedRelease.envelope.pack.url, body: CoreTests.refusedRelease.pack)
+        harness.clock.now = harness.clock.now.addingTimeInterval(86_399)
+        let resting = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(resting, .skipped(release: CoreTests.refusedRelease.release.release, reason: .bundleFailedBefore))
+        harness.clock.now = harness.clock.now.addingTimeInterval(1)
+        let again = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(again.status, .downloaded)
+        XCTAssertEqual(StateStore(store: harness.store).packRefusals, [])
+    }
+
+    func testShouldDropThePackRefusalsWhenTheAppClearsUpdates() async throws {
+        let harness = try await harnessWithARefusedPack()
+        await harness.core.handleRendered()
+        await harness.core.clearUpdates()
+        XCTAssertEqual(StateStore(store: harness.store).packRefusals, [])
+    }
+
+    func testShouldDropThePackRefusalsWhenTheBinaryChanged() async throws {
+        let harness = try await harnessWithARefusedPack()
+        harness.restart(configuration: Fixture.configuration(builtAt: Fixture.builtAt.addingTimeInterval(86_400)))
+        await harness.core.handleAppStart()
+        XCTAssertEqual(StateStore(store: harness.store).packRefusals, [])
+    }
+
+    func testShouldRecordNoRefusalAndDownloadTheBundleAgainAtTheNextCheckWhenItsDownloadFailed() async throws {
+        let harness = Harness()
+        let v2 = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+        harness.publish([v2], sequence: 1)
+        harness.http.stub(v2.envelope.pack.url, status: 404, body: Data())
+        await harness.core.handleAppStart()
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.reason, FailedReason.downloadFailed.rawValue)
+        XCTAssertEqual(StateStore(store: harness.store).packRefusals, [])
+        harness.http.stub(v2.envelope.pack.url, body: v2.pack)
+        let again = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(again.status, .downloaded)
     }
 
     func testShouldDiscardADownloadedReleaseRevokedBeforeTheStartThatWouldApplyIt() async throws {
@@ -2640,6 +2706,19 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(result.reason, reason.rawValue, file: file, line: line)
         XCTAssertNil(result.release, file: file, line: line)
         XCTAssertEqual(harness.listener.updateFailed.map { $0.release }, [nil], file: file, line: line)
+    }
+
+    private static let refusedRelease = Fixture.release(number: 1, bundleId: "b2", content: Data("<html>v2</html>".utf8))
+
+    // Serves a full pack of zeros, which fails its check.
+    private func harnessWithARefusedPack() async throws -> Harness {
+        let harness = Harness()
+        harness.publish([CoreTests.refusedRelease], sequence: 1)
+        harness.http.stub(CoreTests.refusedRelease.envelope.pack.url, body: Data(count: CoreTests.refusedRelease.pack.count))
+        await harness.core.handleAppStart()
+        let result = try await harness.core.sync(trigger: .manual)
+        XCTAssertEqual(result.reason, FailedReason.contentMismatched.rawValue)
+        return harness
     }
 
     // Applies v2 at once after the first render and leaves it unconfirmed, so its readiness timer is the one scheduled.
